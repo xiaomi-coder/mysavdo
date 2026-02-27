@@ -1,38 +1,56 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StatCard, Badge, SectionHeader, Btn, Avatar } from '../components/UI';
 import { supabase } from '../utils/supabaseClient';
 
-const STORES = [
-  { id: 1, name: "Asosiy Do'kon", owner: 'Jasur Karimov', email: 'egasi@savdo.uz', plan: 'Business', revenue: 385000000, active: true, employees: 4, color: '#3B82F6' },
-  { id: 2, name: "Yunusobod Filial", owner: 'Dilnoza Ergasheva', email: 'dilnoza@savdo.uz', plan: 'Starter', revenue: 128000000, active: true, employees: 2, color: '#10B981' },
-  { id: 3, name: "Chilonzor Nuqtasi", owner: 'Bobur Toshev', email: 'bobur@savdo.uz', plan: 'Business', revenue: 214000000, active: false, employees: 3, color: '#A78BFA' },
-];
-
-const ALL_USERS = [
-  { id: 1, name: 'Jasur Karimov', email: 'egasi@savdo.uz', role: 'owner', store: "Asosiy Do'kon", active: true, lastLogin: 'Bugun 09:12', avatar: 'JK', color: '#3B82F6' },
-  { id: 2, name: 'Sardor Manager', email: 'manager@savdo.uz', role: 'manager', store: "Asosiy Do'kon", active: true, lastLogin: 'Bugun 08:45', avatar: 'SM', color: '#10B981' },
-  { id: 3, name: 'Aziz Kassir', email: 'kassir@savdo.uz', role: 'cashier', store: "Asosiy Do'kon", active: true, lastLogin: 'Bugun 09:00', avatar: 'AK', color: '#A78BFA' },
-  { id: 4, name: 'Malika Kassir', email: 'kassir2@savdo.uz', role: 'cashier', store: "Asosiy Do'kon", active: false, lastLogin: 'Kecha 18:30', avatar: 'MK', color: '#F59E0B' },
-  { id: 5, name: 'Dilnoza Ergasheva', email: 'dilnoza@savdo.uz', role: 'owner', store: 'Yunusobod Filial', active: true, lastLogin: 'Bugun 10:15', avatar: 'DE', color: '#10B981' },
-  { id: 6, name: 'Bobur Toshev', email: 'bobur@savdo.uz', role: 'owner', store: 'Chilonzor Nuqtasi', active: false, lastLogin: '3 kun oldin', avatar: 'BT', color: '#A78BFA' },
-];
-
-const ROLE_LABELS = { owner: "Do'kon Egasi", manager: 'Manager', cashier: 'Kassir' };
-const ROLE_COLORS = { owner: '#3B82F6', manager: '#10B981', cashier: '#A78BFA' };
+const ROLE_LABELS = { owner: "Do'kon Egasi", manager: 'Manager', cashier: 'Kassir', creator: 'Creator' };
+const ROLE_COLORS = { owner: '#3B82F6', manager: '#10B981', cashier: '#A78BFA', creator: '#F59E0B' };
 
 export default function CreatorPanel({ page }) {
   const [showAddStore, setShowAddStore] = useState(false);
   const [showAddUser, setShowAddUser] = useState(false);
   const [toast, setToast] = useState(null);
 
-  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2800); };
+  // Dynamic Data States
+  const [stores, setStores] = useState([]);
+  const [users, setUsers] = useState([]);
 
-  const totalRevenue = STORES.reduce((s, st) => s + st.revenue, 0);
+  useEffect(() => {
+    fetchData();
+  }, []);
 
-  if (page === 'dashboard') return <CreatorDashboard stores={STORES} totalRevenue={totalRevenue} />;
-  if (page === 'stores') return <StoresPage stores={STORES} onAdd={() => setShowAddStore(true)} showToast={showToast} showAddStore={showAddStore} setShowAddStore={setShowAddStore} />;
-  if (page === 'users') return <UsersPage users={ALL_USERS} onAdd={() => setShowAddUser(true)} showToast={showToast} showAddUser={showAddUser} setShowAddUser={setShowAddUser} />;
-  if (page === 'stats') return <StatsPage stores={STORES} totalRevenue={totalRevenue} />;
+  const fetchData = async () => {
+    const { data: storesData } = await supabase.from('stores').select('*');
+    const { data: usersData } = await supabase.from('users').select('*, stores(name)');
+
+    // Map data to expected format for UI
+    if (storesData) {
+      setStores(storesData.map(s => {
+        const storeUsersCount = usersData ? usersData.filter(u => u.store_id === s.id && u.role !== 'creator').length : 0;
+        return {
+          id: s.id, name: s.name, owner: s.owner_email, email: s.owner_email,
+          plan: s.max_branches > 1 ? (s.max_branches > 3 ? 'Enterprise' : 'Business') : 'Starter',
+          revenue: 0, // In a real app, calculate from transactions
+          active: s.is_active, employees: storeUsersCount, color: '#3B82F6'
+        };
+      }));
+    }
+
+    if (usersData) {
+      setUsers(usersData.map(u => ({
+        id: u.id, name: u.name, email: u.email, role: u.role, store: u.stores?.name || 'Tizim',
+        active: true, lastLogin: 'Yaqinda', avatar: u.name.substring(0, 2).toUpperCase(), color: ROLE_COLORS[u.role] || '#888'
+      })));
+    }
+  };
+
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2800); fetchData(); };
+
+  const totalRevenue = stores.reduce((s, st) => s + st.revenue, 0);
+
+  if (page === 'dashboard') return <CreatorDashboard stores={stores} users={users} totalRevenue={totalRevenue} />;
+  if (page === 'stores') return <StoresPage stores={stores} onAdd={() => setShowAddStore(true)} showToast={showToast} showAddStore={showAddStore} setShowAddStore={setShowAddStore} />;
+  if (page === 'users') return <UsersPage stores={stores} users={users} onAdd={() => setShowAddUser(true)} showToast={showToast} showAddUser={showAddUser} setShowAddUser={setShowAddUser} />;
+  if (page === 'stats') return <StatsPage stores={stores} totalRevenue={totalRevenue} />;
   if (page === 'settings') return <CreatorSettings />;
   return null;
 }
@@ -52,7 +70,7 @@ function CreatorDashboard({ stores, totalRevenue }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
         <StatCard icon="🏪" value={stores.length} label="Jami do'konlar" accent="#F59E0B" />
         <StatCard icon="✅" value={stores.filter(s => s.active).length} label="Aktiv do'konlar" accent="#10B981" />
-        <StatCard icon="👥" value={ALL_USERS.length} label="Jami foydalanuvchilar" accent="#3B82F6" />
+        <StatCard icon="👥" value={users.length} label="Jami foydalanuvchilar" accent="#3B82F6" />
         <StatCard icon="💰" value={`${(totalRevenue / 1000000000).toFixed(2)}B`} label="Umumiy daromad" accent="#A78BFA" />
       </div>
 
