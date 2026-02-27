@@ -1,0 +1,28 @@
+{
+  "name": "savdoplatform",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@supabase/supabase-js": "^2.98.0",
+    "lucide-react": "^0.323.0",
+    "react": "^18.2.0",
+    "react-barcode": "^1.6.1",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.0",
+    "react-scripts": "5.0.1",
+    "recharts": "^2.10.0"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead"
+    ],
+    "development": [
+      "last 1 chrome version"
+    ]
+  }
+}
