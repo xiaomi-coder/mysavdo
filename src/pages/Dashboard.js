@@ -1,8 +1,9 @@
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } from 'recharts';
 import { StatCard, Badge, SectionHeader, Btn } from '../components/UI';
-import { WEEKLY_DATA, RECENT_SALES } from '../utils/mockData';
+import { WEEKLY_DATA } from '../utils/mockData';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../utils/supabaseClient';
 
 const fmt = (n) => n >= 1000000
   ? (n / 1000000).toFixed(1) + ' mln'
@@ -23,8 +24,24 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 export default function Dashboard() {
-  const { sendTgAlert, expenses } = useAuth();
+  const { user, sendTgAlert, expenses } = useAuth();
   const [loadingTg, setLoadingTg] = React.useState(false);
+  const [recentSales, setRecentSales] = React.useState([]);
+
+  React.useEffect(() => {
+    if (user?.store_id) {
+      loadRecentSales(user.store_id);
+    }
+  }, [user]);
+
+  const loadRecentSales = async (storeId) => {
+    const { data } = await supabase.from('transactions')
+      .select('*')
+      .eq('store_id', storeId)
+      .order('created_at', { ascending: false })
+      .limit(6);
+    if (data) setRecentSales(data);
+  };
 
   const totalExpenses = expenses.reduce((acc, curr) => acc + curr.amount, 0);
   const calculatedFoyda = 3262500 - totalExpenses; // Basic mock static sub-profit minus dynamic expenses
@@ -149,25 +166,28 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {RECENT_SALES.map(s => (
+              {recentSales.map(s => (
                 <tr key={s.id} className="fast-transition" style={{ cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                  <td style={{ padding: '12px 12px 12px 0', fontSize: 12, fontFamily: 'JetBrains Mono,monospace', color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{s.id}</td>
+                  <td style={{ padding: '12px 12px 12px 0', fontSize: 12, fontFamily: 'JetBrains Mono,monospace', color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{s.receipt_no}</td>
                   <td style={{ padding: '12px 12px 12px 0', fontSize: 13, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{s.cashier}</td>
-                  <td style={{ padding: '12px 12px 12px 0', fontSize: 13, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{s.items} ta</td>
+                  <td style={{ padding: '12px 12px 12px 0', fontSize: 13, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{s.items?.length || 0} ta</td>
                   <td style={{ padding: '12px 12px 12px 0', fontSize: 13, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                    {s.method === 'Plastik' ? '💳' : s.method === 'Naqd' ? '💵' : '📱'} {s.method}
+                    {s.payment_method === 'card' ? '💳' : s.payment_method === 'cash' ? '💵' : '📱'} {s.payment_method}
                   </td>
                   <td style={{ padding: '12px 12px 12px 0', fontSize: 13, fontWeight: 700, color: s.status === 'cancelled' ? '#F43F5E' : '#10B981', borderBottom: '1px solid rgba(255,255,255,0.05)', textDecoration: s.status === 'cancelled' ? 'line-through' : 'none' }}>
-                    {s.total.toLocaleString()} so'm
+                    {s.total?.toLocaleString() || 0} so'm
                   </td>
-                  <td style={{ padding: '12px 12px 12px 0', fontSize: 12, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{s.time}</td>
+                  <td style={{ padding: '12px 12px 12px 0', fontSize: 12, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{new Date(s.created_at).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' })}</td>
                   <td style={{ padding: '12px 0 12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                    <Badge type={s.status === 'done' ? 'success' : 'danger'}>
-                      {s.status === 'done' ? '✓ Yakunlandi' : '✗ Bekor qilindi'}
+                    <Badge type={s.status === 'completed' ? 'success' : 'danger'}>
+                      {s.status === 'completed' ? '✓ Yakunlandi' : '✗ Bekor qilindi'}
                     </Badge>
                   </td>
                 </tr>
               ))}
+              {recentSales.length === 0 && (
+                <tr><td colSpan={7} style={{ textAlign: 'center', padding: 24, color: 'var(--t3)' }}>Hozircha sotuvlar yo'q</td></tr>
+              )}
             </tbody>
           </table>
         </div>

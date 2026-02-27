@@ -1,19 +1,38 @@
-import React, { useState } from 'react';
-import { PRODUCTS, CATEGORIES } from '../utils/mockData';
+import React, { useState, useEffect } from 'react';
+import { CATEGORIES } from '../utils/mockData'; // we can keep categories static or move them to DB later
 import { Btn, Badge, EmptyState } from '../components/UI';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../utils/supabaseClient';
 
 export default function POS() {
-  const { settings, addPendingTxn } = useAuth();
+  const { user, settings, addPendingTxn } = useAuth();
   const [search, setSearch] = useState('');
   const [cat, setCat] = useState('Hammasi');
   const [cart, setCart] = useState({});
   const [payMethod, setMethod] = useState('cash');
   const [discount, setDiscount] = useState(0);
   const [success, setSuccess] = useState(false);
-  const [receiptNo, setReceiptNo] = useState(125);
+  const [receiptNo, setReceiptNo] = useState(1);
+  const [products, setProducts] = useState([]);
 
-  const filtered = PRODUCTS.filter(p => {
+  useEffect(() => {
+    if (user?.store_id) {
+      loadProducts(user.store_id);
+      loadReceiptCount(user.store_id);
+    }
+  }, [user]);
+
+  const loadProducts = async (storeId) => {
+    const { data } = await supabase.from('products').select('*').eq('store_id', storeId);
+    if (data) setProducts(data.map(p => ({ ...p, emoji: p.image || '📦' })));
+  };
+
+  const loadReceiptCount = async (storeId) => {
+    const { count } = await supabase.from('transactions').select('*', { count: 'exact', head: true }).eq('store_id', storeId);
+    setReceiptNo((count || 0) + 1);
+  };
+
+  const filtered = products.filter(p => {
     const matchCat = cat === 'Hammasi' || p.cat === cat;
     const matchQ = p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.barcode.includes(search);
@@ -54,9 +73,28 @@ export default function POS() {
     { id: 'transfer', label: '📱 Transfer' },
   ];
 
-  const checkout = () => {
+  const checkout = async () => {
     if (!settings.isOnline && settings.offline) {
       addPendingTxn({ id: Date.now(), items: cartItems, total, method: payMethod, time: new Date().toISOString() });
+    } else {
+      // Create transaction in Supabase
+      const { error } = await supabase.from('transactions').insert({
+        store_id: user.store_id,
+        receipt_no: `#${receiptNo}`,
+        cashier: user.name,
+        items: cartItems,
+        total: total,
+        discount: discountAmt,
+        payment_method: payMethod,
+        status: 'completed'
+      });
+      if (error) console.error("Checkout db error:", error);
+
+      // Reduce stock locally and in DB
+      cartItems.forEach(async (item) => {
+        await supabase.from('products').update({ stock: item.stock - item.qty }).eq('id', item.id);
+      });
+      loadProducts(user.store_id);
     }
 
     // Generate and open Receipt
@@ -77,12 +115,12 @@ export default function POS() {
         </head>
         <body>
           <div class="center bold" style="font-size: 16px; margin-bottom: 4px;">SavdoPlatform</div>
-          <div class="center">"Asosiy Do'kon #1"</div>
-          <div class="center" style="font-size: 10px; margin-bottom: 6px;">Toshkent, Yunusobod</div>
+          <div class="center">"${user?.storeName || 'Do\'kon'}"</div>
+          <div class="center" style="font-size: 10px; margin-bottom: 6px;">Manzil kiritilmagan</div>
           <div class="line"></div>
           <div>Sana: ${new Date().toLocaleString('uz-UZ')}</div>
           <div>Chek RAQAMI: #${receiptNo}</div>
-          <div>Kassir: Jasur (Owner)</div>
+          <div>Kassir: ${user?.name || 'Kassir'}</div>
           <div class="line"></div>
           <div class="row bold"><span>Mahsulot</span><span>Summa</span></div>
           <div class="line"></div>
@@ -130,7 +168,7 @@ export default function POS() {
               onChange={e => setSearch(e.target.value)}
               onKeyDown={e => {
                 if (e.key === 'Enter' && search.trim()) {
-                  const matched = PRODUCTS.find(p => p.barcode === search.trim() || p.barcode.includes(search.trim()));
+                  const matched = products.find(p => p.barcode === search.trim() || p.barcode.includes(search.trim()));
                   if (matched) {
                     addToCart(matched);
                     setSearch('');

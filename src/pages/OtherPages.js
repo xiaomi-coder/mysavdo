@@ -3,6 +3,7 @@ import { useAuth, useTranslation } from '../context/AuthContext';
 import { EMPLOYEES, MONTHLY_DATA, REPORT_TYPES } from '../utils/mockData';
 import { StatCard, Badge, SectionHeader, Btn, Avatar } from '../components/UI';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { supabase } from '../utils/supabaseClient';
 
 const inputStyle = { width: '100%', padding: '11px 13px', background: 'var(--s2)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--t1)', fontSize: 13, fontFamily: 'Outfit,sans-serif', outline: 'none', boxSizing: 'border-box' };
 
@@ -16,9 +17,9 @@ function Modal({ children, onClose }) {
   );
 }
 
-// ── EMPLOYEES ──────────────────────────────────────────────────────
 export function Employees() {
-  const [employees, setEmployees] = useState(EMPLOYEES);
+  const { user } = useAuth();
+  const [employees, setEmployees] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [showDetail, setDetail] = useState(null);
   const [toast, setToast] = useState(null);
@@ -26,21 +27,48 @@ export function Employees() {
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', permissions: { pos: false, dashboard: false, ombor: false, nasiya: false, crm: false, hisobot: false, sozlamalar: false } });
 
+  React.useEffect(() => {
+    if (user?.store_id) {
+      loadEmployees(user.store_id);
+    }
+  }, [user]);
+
+  const loadEmployees = async (storeId) => {
+    const { data } = await supabase.from('users').select('*').eq('store_id', storeId);
+    if (data) {
+      setEmployees(data.map(u => ({ ...u, active: true, sales: 0, txns: 0, avatar: u.name.substring(0, 2).toUpperCase(), color: '#3B82F6' })));
+    }
+  };
+
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!form.name || !form.email || !form.password) return;
-    const colors = ['#3B82F6', '#10B981', '#F59E0B', '#A78BFA', '#F43F5E', '#22D3EE'];
     const activePerms = Object.keys(form.permissions).filter(k => form.permissions[k]);
     const role = activePerms.includes('sozlamalar') ? 'manager' : 'cashier';
 
     if (editMode && editId) {
-      setEmployees(prev => prev.map(e => e.id === editId ? { ...e, ...form, role, activePerms } : e));
-      showToast(`✅ ${form.name} ma'lumotlari yangilandi!`);
+      // Update existing user (simplified)
+      const { error } = await supabase.from('users').update({ name: form.name, role }).eq('id', editId);
+      if (!error) {
+        showToast(`✅ ${form.name} ma'lumotlari yangilandi!`);
+        loadEmployees(user.store_id);
+      }
     } else {
-      const newEmp = { id: Date.now(), ...form, role, activePerms, active: true, sales: 0, txns: 0, avatar: form.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase(), color: colors[Math.floor(Math.random() * colors.length)] };
-      setEmployees(prev => [...prev, newEmp]);
-      showToast(`✅ ${form.name} qo'shildi!`);
+      // Create new user
+      const { error } = await supabase.from('users').insert({
+        store_id: user.store_id,
+        name: form.name,
+        email: form.email,
+        password: form.password,
+        role: role
+      });
+      if (!error) {
+        showToast(`✅ ${form.name} qo'shildi!`);
+        loadEmployees(user.store_id);
+      } else {
+        showToast(`❌ Xatolik: ${error.message}`);
+      }
     }
 
     setShowAdd(false);

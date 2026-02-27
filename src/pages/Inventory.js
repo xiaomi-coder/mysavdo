@@ -1,19 +1,31 @@
-import React, { useState, useRef } from 'react';
-import { PRODUCTS, CATEGORIES } from '../utils/mockData';
+import React, { useState, useRef, useEffect } from 'react';
+import { CATEGORIES } from '../utils/mockData';
 import { StatCard, Badge, SectionHeader, Btn } from '../components/UI';
 import Barcode from 'react-barcode';
+import { useAuth } from '../context/AuthContext';
+import { supabase } from '../utils/supabaseClient';
 
 export default function Inventory() {
+  const { user } = useAuth();
   const [search, setSearch] = useState('');
   const [catFilter, setCat] = useState('Hammasi');
   const [statusFilter, setStatus] = useState('all');
-  const [products, setProducts] = useState(PRODUCTS);
+  const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState(CATEGORIES);
   const [showAdd, setShowAdd] = useState(false);
   const [showKirim, setShowKirim] = useState(null);
   const [kirimQty, setKirimQty] = useState('');
   const [kirimNote, setKirimNote] = useState('');
   const [toast, setToast] = useState(null);
+
+  useEffect(() => {
+    if (user?.store_id) loadProducts(user.store_id);
+  }, [user]);
+
+  const loadProducts = async (storeId) => {
+    const { data } = await supabase.from('products').select('*').eq('store_id', storeId);
+    if (data) setProducts(data.map(p => ({ ...p, emoji: p.image || '📦' })));
+  };
 
   // New product form
   const [newProd, setNewProd] = useState({ name: '', barcode: '', cat: 'Ichimliklar', cost: '', price: '', stock: '', minStock: '', emoji: '📦' });
@@ -59,20 +71,46 @@ export default function Inventory() {
     return matchQ && matchCat && matchSt;
   });
 
-  const handleKirim = () => {
+  const handleKirim = async () => {
     if (!kirimQty || isNaN(kirimQty) || parseInt(kirimQty) <= 0) return;
-    setProducts(prev => prev.map(p => p.id === showKirim.id ? { ...p, stock: p.stock + parseInt(kirimQty) } : p));
-    showToast(`✅ ${showKirim.name}: +${kirimQty} ta kirim qilindi`);
+
+    const newStock = showKirim.stock + parseInt(kirimQty);
+    const { error } = await supabase.from('products').update({ stock: newStock }).eq('id', showKirim.id);
+
+    if (!error) {
+      setProducts(prev => prev.map(p => p.id === showKirim.id ? { ...p, stock: newStock } : p));
+      showToast(`✅ ${showKirim.name}: +${kirimQty} ta kirim qilindi`);
+    } else {
+      showToast(`❌ Xatolik: ${error.message}`, 'danger');
+    }
+
     setShowKirim(null); setKirimQty(''); setKirimNote('');
   };
 
-  const handleAddProduct = () => {
+  const handleAddProduct = async () => {
     if (!newProd.name || !newProd.price || !newProd.cost) return;
-    const p = { ...newProd, id: Date.now(), cost: parseInt(newProd.cost), price: parseInt(newProd.price), stock: parseInt(newProd.stock) || 0, minStock: parseInt(newProd.minStock) || 10 };
-    setProducts(prev => [p, ...prev]);
-    showToast(`✅ "${p.name}" qo'shildi`);
-    setShowAdd(false);
-    setNewProd({ name: '', barcode: '', cat: categories[1] || 'Boshqa', cost: '', price: '', stock: '', minStock: '', emoji: '📦' });
+    const p = {
+      store_id: user.store_id,
+      name: newProd.name,
+      barcode: newProd.barcode,
+      cat: newProd.cat,
+      cost: parseInt(newProd.cost),
+      price: parseInt(newProd.price),
+      stock: parseInt(newProd.stock) || 0,
+      minStock: parseInt(newProd.minStock) || 10,
+      image: newProd.emoji
+    };
+
+    const { data, error } = await supabase.from('products').insert(p).select().single();
+
+    if (!error && data) {
+      setProducts(prev => [{ ...data, emoji: data.image || '📦' }, ...prev]);
+      showToast(`✅ "${newProd.name}" qo'shildi`);
+      setShowAdd(false);
+      setNewProd({ name: '', barcode: '', cat: categories[1] || 'Boshqa', cost: '', price: '', stock: '', minStock: '', emoji: '📦' });
+    } else {
+      showToast(`❌ Xatolik: ${error?.message}`, 'danger');
+    }
   };
 
   const handleAddCategory = () => {
