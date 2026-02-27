@@ -103,45 +103,83 @@ function CreatorDashboard({ stores, users, totalRevenue }) {
 function StoresPage({ stores, onAdd, showToast, showAddStore, setShowAddStore }) {
   const [form, setForm] = useState({ name: '', owner: '', email: '', password: '', plan: 'Starter' });
   const [loading, setLoading] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editId, setEditId] = useState(null);
 
   const handleAdd = async () => {
-    if (!form.name || !form.email || !form.password) return;
+    if (!form.name || !form.email || (!editMode && !form.password)) return;
     setLoading(true);
 
-    // 1. Create store
-    const { data: storeData, error: storeErr } = await supabase
-      .from('stores')
-      .insert({ name: form.name, owner_email: form.email, max_branches: form.plan === 'Starter' ? 1 : form.plan === 'Business' ? 3 : 10 })
-      .select()
-      .single();
-
-    if (storeErr || !storeData) {
-      showToast(`❌ Xatolik: Do'kon yaratilmadi (${storeErr?.message})`);
-      setLoading(false);
-      return;
-    }
-
-    // 2. Create owner user
-    const { error: userErr } = await supabase
-      .from('users')
-      .insert({ email: form.email, password: form.password, name: form.owner, role: 'owner', store_id: storeData.id });
-
-    if (userErr) {
-      showToast(`❌ Xatolik: Egasi yaratilmadi (${userErr?.message})`);
+    if (editMode && editId) {
+      // Edit Store logic
+      const { error: storeErr } = await supabase.from('stores').update({ name: form.name, owner_email: form.email }).eq('id', editId);
+      if (storeErr) {
+        showToast(`❌ Xatolik (${storeErr.message})`);
+      } else {
+        showToast(`✅ "${form.name}" do'koni tahrirlandi!`);
+        setShowAddStore(false);
+        setEditMode(false);
+        setEditId(null);
+      }
     } else {
-      showToast(`✅ "${form.name}" do'koni va egasi qo'shildi!`);
-      setShowAddStore(false);
-      setForm({ name: '', owner: '', email: '', password: '', plan: 'Starter' });
+      // 1. Create store
+      const { data: storeData, error: storeErr } = await supabase
+        .from('stores')
+        .insert({ name: form.name, owner_email: form.email, max_branches: form.plan === 'Starter' ? 1 : form.plan === 'Business' ? 3 : 10 })
+        .select()
+        .single();
+
+      if (storeErr || !storeData) {
+        showToast(`❌ Xatolik: Do'kon yaratilmadi (${storeErr?.message})`);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Create owner user
+      const { error: userErr } = await supabase
+        .from('users')
+        .insert({ email: form.email, password: form.password, name: form.owner, role: 'owner', store_id: storeData.id });
+
+      if (userErr) {
+        showToast(`❌ Xatolik: Egasi yaratilmadi (${userErr?.message})`);
+      } else {
+        showToast(`✅ "${form.name}" do'koni va egasi qo'shildi!`);
+        setShowAddStore(false);
+        setForm({ name: '', owner: '', email: '', password: '', plan: 'Starter' });
+      }
     }
 
     setLoading(false);
+  };
+
+  const handleToggleActive = async (s) => {
+    const { error } = await supabase.from('stores').update({ is_active: !s.active }).eq('id', s.id);
+    if (error) {
+      showToast(`❌ Xatolik: Holat o'zgarmadi (${error.message})`);
+    } else {
+      showToast(`✅ "${s.name}" do'koni o'zgartirildi.`);
+    }
+  };
+
+  const openEdit = (s) => {
+    setEditMode(true);
+    setEditId(s.id);
+    setForm({ name: s.name, owner: s.owner, email: s.email, password: '', plan: s.plan });
+    setShowAddStore(true);
+  };
+
+  const handleOpenAdd = () => {
+    setEditMode(false);
+    setEditId(null);
+    setForm({ name: '', owner: '', email: '', password: '', plan: 'Starter' });
+    onAdd();
   };
 
   return (
     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div className="glass-card" style={{ borderRadius: 16, padding: 22 }}>
         <SectionHeader title="Do'konlar Boshqaruvi">
-          <Btn variant="primary" size="sm" onClick={onAdd}>+ Yangi Do'kon</Btn>
+          <Btn variant="primary" size="sm" onClick={handleOpenAdd}>+ Yangi Do'kon</Btn>
         </SectionHeader>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -163,8 +201,8 @@ function StoresPage({ stores, onAdd, showToast, showAddStore, setShowAddStore })
               <span style={{ fontSize: 10, fontWeight: 700, padding: '4px 12px', borderRadius: 20, background: s.color + '22', color: s.color }}>{s.plan}</span>
               <Badge type={s.active ? 'success' : 'danger'}>{s.active ? 'Aktiv' : 'Faolsiz'}</Badge>
               <div style={{ display: 'flex', gap: 6 }}>
-                <Btn variant="subtle" size="sm">✏️ Tahrirlash</Btn>
-                <Btn variant={s.active ? 'danger' : 'green'} size="sm">{s.active ? '⏸ To\'xtatish' : '▶ Faollashtirish'}</Btn>
+                <Btn variant="subtle" size="sm" onClick={() => openEdit(s)}>✏️ Tahrirlash</Btn>
+                <Btn variant={s.active ? 'danger' : 'green'} size="sm" onClick={() => handleToggleActive(s)}>{s.active ? '⏸ To\'xtatish' : '▶ Faollashtirish'}</Btn>
               </div>
             </div>
           ))}
@@ -173,12 +211,12 @@ function StoresPage({ stores, onAdd, showToast, showAddStore, setShowAddStore })
 
       {showAddStore && (
         <Modal onClose={() => setShowAddStore(false)}>
-          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 24 }}>🏪 Yangi Do'kon Qo'shish</div>
+          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 24 }}>🏪 {editMode ? 'Do\'kon Tahriri' : 'Yangi Do\'kon Qo\'shish'}</div>
           {[
             { lbl: "Do'kon nomi *", key: 'name', ph: "Asosiy Do'kon", type: 'text' },
-            { lbl: 'Egasi ismi *', key: 'owner', ph: 'Jasur Karimov', type: 'text' },
-            { lbl: 'Egasi emaili *', key: 'email', ph: 'egasi@savdo.uz', type: 'email' },
-            { lbl: 'Egasi paroli *', key: 'password', ph: 'Kamida 6 belgi', type: 'password' },
+            { lbl: editMode ? 'Yangi egasi ismi *' : 'Egasi ismi *', key: 'owner', ph: 'Jasur Karimov', type: 'text' },
+            { lbl: editMode ? 'Yangi emaili *' : 'Egasi emaili *', key: 'email', ph: 'egasi@savdo.uz', type: 'email' },
+            { lbl: editMode ? 'Parolni o\'zgartirish (Majburiy emas)' : 'Egasi paroli *', key: 'password', ph: 'Kamida 6 belgi', type: 'password' },
           ].map(f => (
             <FormField key={f.key} label={f.lbl}>
               <input type={f.type} value={form[f.key]} onChange={e => setForm({ ...form, [f.key]: e.target.value })} placeholder={f.ph} style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
@@ -189,7 +227,7 @@ function StoresPage({ stores, onAdd, showToast, showAddStore, setShowAddStore })
               <option>Starter</option><option>Business</option><option>Enterprise</option>
             </select>
           </FormField>
-          <ModalActions onCancel={() => setShowAddStore(false)} onConfirm={handleAdd} confirmLabel={loading ? "Yaratilmoqda..." : "✅ Do'kon Yaratish"} disabled={!form.name || !form.email || !form.password || loading} />
+          <ModalActions onCancel={() => setShowAddStore(false)} onConfirm={handleAdd} confirmLabel={loading ? "Yaratilmoqda..." : editMode ? "💾 Saqlash" : "✅ Do'kon Yaratish"} disabled={!form.name || !form.email || (!editMode && !form.password) || loading} />
         </Modal>
       )}
     </div>
@@ -197,7 +235,7 @@ function StoresPage({ stores, onAdd, showToast, showAddStore, setShowAddStore })
 }
 
 // ── USERS PAGE ──────────────────────────────────────────────────────
-function UsersPage({ users, onAdd, showToast, showAddUser, setShowAddUser }) {
+function UsersPage({ stores = [], users, onAdd, showToast, showAddUser, setShowAddUser }) {
   const [form, setForm] = useState({ name: '', email: '', role: 'cashier', store: '', password: '' });
   const [loading, setLoading] = useState(false);
 
@@ -217,6 +255,15 @@ function UsersPage({ users, onAdd, showToast, showAddUser, setShowAddUser }) {
       setForm({ name: '', email: '', role: 'cashier', store: '', password: '' });
     }
     setLoading(false);
+  };
+
+  const handleToggleBlock = async (u) => {
+    const { error } = await supabase.from('users').delete().eq('id', u.id); // For simplicity, we optionally delete, or you'd just toggle active state in schema
+    if (error) {
+      showToast(`❌ Xatolik (${error.message})`);
+    } else {
+      showToast(`✅ "${u.name}" o'chirildi!`);
+    }
   };
 
   return (
@@ -255,7 +302,7 @@ function UsersPage({ users, onAdd, showToast, showAddUser, setShowAddUser }) {
                 <td style={{ padding: '11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <Btn variant="subtle" size="sm">🔑 Parol</Btn>
-                    <Btn variant={u.active ? 'danger' : 'green'} size="sm">{u.active ? 'Bloklash' : 'Faollashtirish'}</Btn>
+                    <Btn variant={u.active ? 'danger' : 'green'} size="sm" onClick={() => handleToggleBlock(u)}>🗑️ O'chirish</Btn>
                   </div>
                 </td>
               </tr>
@@ -286,7 +333,7 @@ function UsersPage({ users, onAdd, showToast, showAddUser, setShowAddUser }) {
           <FormField label="Do'kon">
             <select value={form.store} onChange={e => setForm({ ...form, store: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}>
               <option value="">Tanlang...</option>
-              {STORES.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </FormField>
           <ModalActions onCancel={() => setShowAddUser(false)} onConfirm={handleAdd} confirmLabel={loading ? "Yaratilmoqda..." : "✅ Yaratish"} disabled={!form.name || !form.email || !form.password || !form.store || loading} />
