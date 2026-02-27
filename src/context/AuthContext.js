@@ -148,8 +148,28 @@ export function AuthProvider({ children }) {
         .eq('email', email)
         .single();
 
-      if (error || !data) return { error: "Foydalanuvchi topilmadi" };
+      if (error || !data) {
+        // Fallback for demo accounts if DB is empty
+        if (email === 'owner@savdo.uz' && password === 'owner123') {
+          setUser({ id: 'demo1', email, role: 'owner', name: 'Demo Egasi', storeName: "Demo Do'kon", icon: '🏪', color: '#3B82F6', label: "Do'kon Egasi", permissions: ROLES['owner'].permissions, store_id: 'demo-store-1' });
+          return { success: true };
+        }
+        if (email === 'manager@savdo.uz' && password === 'manager123') {
+          setUser({ id: 'demo2', email, role: 'manager', name: 'Demo Manager', storeName: "Demo Do'kon", icon: '📦', color: '#10B981', label: 'Manager', permissions: ROLES['manager'].permissions, store_id: 'demo-store-1' });
+          return { success: true };
+        }
+        if (email === 'kassir@savdo.uz' && password === 'kassir123') {
+          setUser({ id: 'demo3', email, role: 'cashier', name: 'Demo Kassir', storeName: "Demo Do'kon", icon: '💳', color: '#A78BFA', label: 'Kassir', permissions: ROLES['cashier'].permissions, store_id: 'demo-store-1' });
+          return { success: true };
+        }
+        return { error: "Foydalanuvchi topilmadi" };
+      }
       if (data.password !== password) return { error: "Parol noto'g'ri" };
+
+      // Block if store is inactive
+      if (data.role !== 'creator' && data.stores && data.stores.is_active === false) {
+        return { error: "Sizning do'koningiz faoliyati to'xtatilgan. Iltimos, ma'muriyat bilan bog'laning." };
+      }
 
       const roleDefaults = ROLES[data.role] || {};
       const finalPermissions = Array.isArray(data.permissions) && data.permissions.length > 0
