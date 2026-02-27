@@ -19,27 +19,31 @@ export default function CreatorPanel({ page }) {
   }, []);
 
   const fetchData = async () => {
-    const { data: storesData } = await supabase.from('stores').select('*');
-    const { data: usersData } = await supabase.from('users').select('*, stores(name)');
+    try {
+      const { data: storesData } = await supabase.from('stores').select('*');
+      const { data: usersData } = await supabase.from('users').select('*, stores(name)');
 
-    // Map data to expected format for UI
-    if (storesData) {
-      setStores(storesData.map(s => {
-        const storeUsersCount = usersData ? usersData.filter(u => u.store_id === s.id && u.role !== 'creator').length : 0;
-        return {
-          id: s.id, name: s.name, owner: s.owner_email, email: s.owner_email,
-          plan: s.max_branches > 1 ? (s.max_branches > 3 ? 'Enterprise' : 'Business') : 'Starter',
-          revenue: 0, // In a real app, calculate from transactions
-          active: s.is_active, employees: storeUsersCount, color: '#3B82F6'
-        };
-      }));
-    }
+      // Map data to expected format for UI
+      if (storesData) {
+        setStores(storesData.map(s => {
+          const storeUsersCount = usersData ? usersData.filter(u => u.store_id === s.id && u.role !== 'creator').length : 0;
+          return {
+            id: s.id, name: s.name, owner: s.owner_email, email: s.owner_email,
+            plan: s.max_branches > 1 ? (s.max_branches > 3 ? 'Enterprise' : 'Business') : 'Starter',
+            revenue: 0, // In a real app, calculate from transactions
+            active: s.is_active, employees: storeUsersCount, color: '#3B82F6'
+          };
+        }));
+      }
 
-    if (usersData) {
-      setUsers(usersData.map(u => ({
-        id: u.id, name: u.name, email: u.email, role: u.role, store: u.stores?.name || 'Tizim',
-        active: true, lastLogin: 'Yaqinda', avatar: u.name.substring(0, 2).toUpperCase(), color: ROLE_COLORS[u.role] || '#888'
-      })));
+      if (usersData) {
+        setUsers(usersData.map(u => ({
+          id: u.id, name: u.name, email: u.email, role: u.role, store: u.stores?.name || 'Tizim',
+          active: true, lastLogin: 'Yaqinda', avatar: u.name?.substring(0, 2).toUpperCase() || '??', color: ROLE_COLORS[u.role] || '#888'
+        })));
+      }
+    } catch (err) {
+      console.error('Error fetching creator panel data:', err);
     }
   };
 
@@ -56,7 +60,7 @@ export default function CreatorPanel({ page }) {
 }
 
 // ── CREATOR DASHBOARD ───────────────────────────────────────────────
-function CreatorDashboard({ stores, totalRevenue }) {
+function CreatorDashboard({ stores, users, totalRevenue }) {
   return (
     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div style={{ background: 'linear-gradient(135deg,rgba(245,158,11,0.08),rgba(59,130,246,0.04))', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 16, padding: '20px 24px', display: 'flex', alignItems: 'center', gap: 16 }}>
