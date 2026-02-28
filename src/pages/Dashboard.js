@@ -1,12 +1,8 @@
 import React from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { StatCard, Badge, SectionHeader, Btn } from '../components/UI';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../utils/supabaseClient';
-
-const fmt = (n) => n >= 1000000
-  ? (n / 1000000).toFixed(1) + ' mln'
-  : n.toLocaleString() + ' so\'m';
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
@@ -26,38 +22,132 @@ export default function Dashboard() {
   const { user, sendTgAlert } = useAuth();
   const [loadingTg, setLoadingTg] = React.useState(false);
   const [recentSales, setRecentSales] = React.useState([]);
-  const [expenses, setExpenses] = React.useState([]);
+  const [totalSales, setTotalSales] = React.useState(0);
+  const [totalItems, setTotalItems] = React.useState(0);
+  const [totalReceipts, setTotalReceipts] = React.useState(0);
+  const [activeCashiers, setActiveCashiers] = React.useState(0);
+  const [totalExpenses, setTotalExpenses] = React.useState(0);
+  const [lowStockProducts, setLowStockProducts] = React.useState([]);
+  const [topProducts, setTopProducts] = React.useState([]);
+  const [weeklyData, setWeeklyData] = React.useState([]);
+  const [productCount, setProductCount] = React.useState(0);
+  const [outOfStock, setOutOfStock] = React.useState(0);
+  const [lowCount, setLowCount] = React.useState(0);
 
   React.useEffect(() => {
     if (user?.store_id) {
-      loadRecentSales(user.store_id);
-      loadExpenses(user.store_id);
+      loadAll(user.store_id);
     }
   }, [user]);
 
-  const loadRecentSales = async (storeId) => {
-    const { data } = await supabase.from('transactions')
+  const loadAll = async (storeId) => {
+    // 1. Recent transactions
+    const { data: txns } = await supabase.from('transactions')
       .select('*')
       .eq('store_id', storeId)
-      .order('created_at', { ascending: false })
+      .order('date', { ascending: false })
       .limit(6);
-    if (data) setRecentSales(data);
+    if (txns) setRecentSales(txns);
+
+    // 2. Today's stats
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayISO = today.toISOString();
+
+    const { data: todayTxns } = await supabase.from('transactions')
+      .select('total, items, cashier')
+      .eq('store_id', storeId)
+      .eq('status', 'completed')
+      .gte('date', todayISO);
+
+    if (todayTxns) {
+      const sales = todayTxns.reduce((s, t) => s + (Number(t.total) || 0), 0);
+      const items = todayTxns.reduce((s, t) => s + (t.items?.length || 0), 0);
+      const cashiers = new Set(todayTxns.map(t => t.cashier)).size;
+      setTotalSales(sales);
+      setTotalItems(items);
+      setTotalReceipts(todayTxns.length);
+      setActiveCashiers(cashiers);
+    }
+
+    // 3. Expenses
+    const { data: expData } = await supabase.from('expenses').select('amount').eq('store_id', storeId);
+    if (expData) {
+      setTotalExpenses(expData.reduce((s, e) => s + (Number(e.amount) || 0), 0));
+    }
+
+    // 4. Products — low stock & top products from transactions
+    const { data: prods } = await supabase.from('products').select('name, stock, price').eq('store_id', storeId);
+    if (prods) {
+      setProductCount(prods.length);
+      const low = prods.filter(p => p.stock > 0 && p.stock <= 10);
+      const out = prods.filter(p => p.stock <= 0);
+      setLowStockProducts([...out.map(p => `${p.name} (0 ta)`), ...low.map(p => `${p.name} (${p.stock} ta)`)]);
+      setOutOfStock(out.length);
+      setLowCount(low.length);
+    }
+
+    // 5. Top products from all transactions
+    const { data: allTxns } = await supabase.from('transactions')
+      .select('items')
+      .eq('store_id', storeId)
+      .eq('status', 'completed');
+
+    if (allTxns) {
+      const productMap = {};
+      allTxns.forEach(t => {
+        if (t.items && Array.isArray(t.items)) {
+          t.items.forEach(item => {
+            const name = item.name || item.n || 'Noma\'lum';
+            const qty = item.qty || item.q || 1;
+            productMap[name] = (productMap[name] || 0) + qty;
+          });
+        }
+      });
+      const sorted = Object.entries(productMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+      const maxQty = sorted[0]?.[1] || 1;
+      setTopProducts(sorted.map(([name, qty], i) => ({
+        rank: i + 1,
+        name,
+        qty,
+        pct: Math.round((qty / maxQty) * 100),
+        rankColor: i === 0 ? '#F59E0B' : '#94A3B8'
+      })));
+    }
+
+    // 6. Weekly chart data — last 7 days
+    const days = ['Yak', 'Du', 'Se', 'Chor', 'Pay', 'Ju', 'Sha'];
+    const weekData = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      d.setHours(0, 0, 0, 0);
+      const nextD = new Date(d);
+      nextD.setDate(nextD.getDate() + 1);
+
+      const { data: dayTxns } = await supabase.from('transactions')
+        .select('total')
+        .eq('store_id', storeId)
+        .eq('status', 'completed')
+        .gte('date', d.toISOString())
+        .lt('date', nextD.toISOString());
+
+      const sotuv = dayTxns ? dayTxns.reduce((s, t) => s + (Number(t.total) || 0), 0) : 0;
+      weekData.push({ day: days[d.getDay()], sotuv, foyda: Math.round(sotuv * 0.25) });
+    }
+    setWeeklyData(weekData);
   };
 
-  const loadExpenses = async (storeId) => {
-    const { data } = await supabase.from('expenses').select('amount').eq('store_id', storeId);
-    if (data) setExpenses(data);
-  };
-
-  const totalExpenses = expenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
-  const calculatedFoyda = 3262500 - totalExpenses; // Basic mock static sub-profit minus dynamic expenses
+  const foyda = totalSales - totalExpenses;
 
   const handleSendTgReport = () => {
     setLoadingTg(true);
+    const topList = topProducts.map((p, i) => `${i + 1}. ${p.name} (${p.qty} ta)`).join('\n');
+    const lowList = lowStockProducts.join(', ') || 'Yo\'q';
     setTimeout(() => {
       setLoadingTg(false);
-      sendTgAlert(`📊 KUNLIK HISOBOT (Asosiy Do'kon)\n\n💸 UMUMIY SAVDO\n💰 Jami Savdo: 12,450,000 so'm\n📈 Sof Foyda: ${calculatedFoyda.toLocaleString()} so'm\n📉 Xarajatlar: ${totalExpenses.toLocaleString()} so'm\n\n💳 KASSA HOLATI\n💵 Naqd: 8,400,000 so'm\n💳 Plastik (Karta): 3,050,000 so'm\n📝 Nasiya: 1,000,000 so'm\n\n📦 STATISTIKA\n🧾 Cheklar soni: 124 ta\n🔝 Top 5 Mahsulotlar:\n1. Coca Cola 0.5L (284 ta)\n2. Lipton Choy (196 ta)\n3. Xurmo Shokolad (154 ta)\n4. Lays Chips (128 ta)\n5. Red Bull (95 ta)\n\n⚠️ DIQQAT! Ombor qoldig'i kam:\nCoca Cola, Lipton, Oreo`);
-    }, 1200);
+      sendTgAlert(`📊 KUNLIK HISOBOT\n\n💸 UMUMIY SAVDO\n💰 Jami Savdo: ${totalSales.toLocaleString()} so'm\n📈 Sof Foyda: ${foyda.toLocaleString()} so'm\n📉 Xarajatlar: ${totalExpenses.toLocaleString()} so'm\n\n📦 STATISTIKA\n🧾 Cheklar soni: ${totalReceipts} ta\n🔝 Top ${topProducts.length} Mahsulotlar:\n${topList}\n\n⚠️ Ombor qoldig'i kam:\n${lowList}`);
+    }, 800);
   };
 
   return (
@@ -75,46 +165,43 @@ export default function Dashboard() {
 
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
-        <StatCard icon="💰" value="12,450,000" label={<>Bugungi sotuv <span style={{ color: '#10B981', background: 'rgba(16,185,129,0.1)', padding: '2px 6px', borderRadius: 10, fontSize: 10, marginLeft: 6 }}>Foyda: {calculatedFoyda.toLocaleString()}</span></>} change="+14.2% kecha bilan" changeType="up" accent="#3B82F6" />
-        <StatCard icon="📦" value="847" label="Sotilgan mahsulotlar" change="+8.7% o'tgan hafta" changeType="up" accent="#10B981" />
-        <StatCard icon="🧾" value="124" label="Cheklar soni" change="+5 ta bugun" changeType="up" accent="#F59E0B" />
-        <StatCard icon="👤" value="3" label="Aktiv kassirlar" change="1 ta offline" changeType="down" accent="#A78BFA" />
+        <StatCard icon="💰" value={totalSales.toLocaleString()} label={<>Bugungi sotuv <span style={{ color: '#10B981', background: 'rgba(16,185,129,0.1)', padding: '2px 6px', borderRadius: 10, fontSize: 10, marginLeft: 6 }}>Foyda: {foyda.toLocaleString()}</span></>} accent="#3B82F6" />
+        <StatCard icon="📦" value={totalItems.toLocaleString()} label="Sotilgan mahsulotlar" accent="#10B981" />
+        <StatCard icon="🧾" value={totalReceipts} label="Cheklar soni" accent="#F59E0B" />
+        <StatCard icon="👤" value={activeCashiers} label="Aktiv kassirlar" accent="#A78BFA" />
       </div>
 
       {/* Alert */}
-      <div style={{
-        background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)',
-        borderRadius: 12, padding: '12px 16px',
-        display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#F59E0B',
-      }}>
-        ⚠️ <strong>Diqqat:</strong>&nbsp;3 ta mahsulot minimal qoldiqdan past — Coca Cola (4 ta), Lipton (15 ta), Oreo (0 ta)
-      </div>
+      {lowStockProducts.length > 0 && (
+        <div style={{
+          background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)',
+          borderRadius: 12, padding: '12px 16px',
+          display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#F59E0B',
+        }}>
+          ⚠️ <strong>Diqqat:</strong>&nbsp;{lowStockProducts.length} ta mahsulot kam yoki tugagan — {lowStockProducts.slice(0, 5).join(', ')}
+        </div>
+      )}
 
       {/* Charts row */}
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14 }}>
 
         {/* Bar chart */}
         <div className="glass-card" style={{ borderRadius: 16, padding: 22 }}>
-          <SectionHeader title="Haftalik Sotuv">
-            <select style={{
-              background: 'var(--s2)', border: '1px solid var(--border)',
-              color: 'var(--t2)', borderRadius: 8, padding: '5px 10px',
-              fontSize: 12, fontFamily: 'Outfit,sans-serif', outline: 'none',
-            }}>
-              <option>Bu hafta</option>
-              <option>O'tgan hafta</option>
-            </select>
-          </SectionHeader>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={[]} barGap={4}>
-              <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
-              <XAxis dataKey="day" tick={{ fill: 'var(--t2)', fontSize: 12 }} axisLine={false} tickLine={false} />
-              <YAxis hide />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-              <Bar dataKey="sotuv" name="Sotuv" fill="#3B82F6" radius={[6, 6, 0, 0]} />
-              <Bar dataKey="foyda" name="Foyda" fill="#10B981" radius={[6, 6, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <SectionHeader title="Haftalik Sotuv" />
+          {weeklyData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={weeklyData} barGap={4}>
+                <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
+                <XAxis dataKey="day" tick={{ fill: 'var(--t2)', fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis hide />
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+                <Bar dataKey="sotuv" name="Sotuv" fill="#3B82F6" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="foyda" name="Foyda" fill="#10B981" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--t3)', fontSize: 13 }}>Hozircha sotuvlar yo'q</div>
+          )}
           <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
             <LegendDot color="#3B82F6" label="Sotuv" />
             <LegendDot color="#10B981" label="Foyda" />
@@ -125,13 +212,7 @@ export default function Dashboard() {
         <div className="glass-card" style={{ borderRadius: 16, padding: 22 }}>
           <SectionHeader title="Top Mahsulotlar" />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {[
-              { rank: 1, name: 'Coca Cola 0.5L', pct: 95, sales: '284 ta', rankColor: '#F59E0B' },
-              { rank: 2, name: 'Lipton Choy', pct: 78, sales: '196 ta', rankColor: '#94A3B8' },
-              { rank: 3, name: 'Xurmo Shokolad', pct: 62, sales: '154 ta', rankColor: '#94A3B8' },
-              { rank: 4, name: 'Lays Chips', pct: 51, sales: '128 ta', rankColor: '#94A3B8' },
-              { rank: 5, name: 'Red Bull', pct: 38, sales: '95 ta', rankColor: '#94A3B8' },
-            ].map(p => (
+            {topProducts.length > 0 ? topProducts.map(p => (
               <div key={p.rank} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid rgba(30,45,61,0.5)' }}>
                 <div style={{
                   width: 24, height: 24, borderRadius: 7,
@@ -145,9 +226,11 @@ export default function Dashboard() {
                     <div style={{ height: '100%', width: `${p.pct}%`, background: 'linear-gradient(90deg,#3B82F6,#22D3EE)', borderRadius: 2 }} />
                   </div>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--t2)', flexShrink: 0 }}>{p.sales}</div>
+                <div style={{ fontSize: 11, color: 'var(--t2)', flexShrink: 0 }}>{p.qty} ta</div>
               </div>
-            ))}
+            )) : (
+              <div style={{ padding: 20, textAlign: 'center', color: 'var(--t3)', fontSize: 12 }}>Hozircha sotuvlar yo'q</div>
+            )}
           </div>
         </div>
       </div>
@@ -183,7 +266,7 @@ export default function Dashboard() {
                   <td style={{ padding: '12px 12px 12px 0', fontSize: 13, fontWeight: 700, color: s.status === 'cancelled' ? '#F43F5E' : '#10B981', borderBottom: '1px solid rgba(255,255,255,0.05)', textDecoration: s.status === 'cancelled' ? 'line-through' : 'none' }}>
                     {s.total?.toLocaleString() || 0} so'm
                   </td>
-                  <td style={{ padding: '12px 12px 12px 0', fontSize: 12, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{new Date(s.created_at).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' })}</td>
+                  <td style={{ padding: '12px 12px 12px 0', fontSize: 12, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{new Date(s.date || s.created_at).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' })}</td>
                   <td style={{ padding: '12px 0 12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                     <Badge type={s.status === 'completed' ? 'success' : 'danger'}>
                       {s.status === 'completed' ? '✓ Yakunlandi' : '✗ Bekor qilindi'}
@@ -201,9 +284,9 @@ export default function Dashboard() {
 
       {/* Quick summary */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14 }}>
-        <SummaryCard icon="🎯" title="Oylik maqsad" val="68%" sub="340 mln / 500 mln so'm" color="#3B82F6" />
-        <SummaryCard icon="📦" title="Ombordagi tovarlar" val="1,247" sub="33 ta tugagan, 86 ta kam" color="#F59E0B" />
-        <SummaryCard icon="⭐" title="Eng yaxshi xodim" val="Aziz K." sub="4,250,000 so'm · 312 sotuv" color="#10B981" />
+        <SummaryCard icon="📦" title="Ombordagi tovarlar" val={productCount.toLocaleString()} sub={`${outOfStock} ta tugagan, ${lowCount} ta kam`} color="#F59E0B" />
+        <SummaryCard icon="💸" title="Umumiy xarajatlar" val={totalExpenses.toLocaleString()} sub="Umumiy xarajatlar yig'indisi" color="#F43F5E" />
+        <SummaryCard icon="📈" title="Sof foyda" val={foyda.toLocaleString()} sub="Sotuv — Xarajatlar" color="#10B981" />
       </div>
     </div>
   );
