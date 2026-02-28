@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { CATEGORIES } from '../utils/mockData';
 import { StatCard, Badge, SectionHeader, Btn } from '../components/UI';
 import Barcode from 'react-barcode';
 import { useAuth } from '../context/AuthContext';
@@ -11,7 +10,7 @@ export default function Inventory() {
   const [catFilter, setCat] = useState('Hammasi');
   const [statusFilter, setStatus] = useState('all');
   const [products, setProducts] = useState([]);
-  const [categories, setCategories] = useState(CATEGORIES);
+  const [categories, setCategories] = useState([{ name: "Hammasi", icon: "📦" }]);
   const [showAdd, setShowAdd] = useState(false);
   const [showKirim, setShowKirim] = useState(null);
   const [kirimQty, setKirimQty] = useState('');
@@ -24,7 +23,11 @@ export default function Inventory() {
 
   const loadProducts = async (storeId) => {
     const { data } = await supabase.from('products').select('*').eq('store_id', storeId);
-    if (data) setProducts(data.map(p => ({ ...p, emoji: p.image || '📦' })));
+    if (data) {
+      setProducts(data.map(p => ({ ...p, emoji: p.image || '📦' })));
+      const uniqueCats = ['Hammasi', ...new Set(data.map(p => p.category || p.cat).filter(Boolean))];
+      setCategories(uniqueCats.map(c => ({ name: c, icon: '📦' })));
+    }
   };
 
   // New product form

@@ -130,12 +130,6 @@ export function AuthProvider({ children }) {
 
   const toggleSetting = (k) => setSettings(p => ({ ...p, [k]: !p[k] }));
 
-  const [expenses, setExpenses] = useState([
-    { id: 1, date: '2026-02-27', cat: 'Kommunal', desc: "Svet uchun to'lov", amount: 150000, cashier: "Jasur Do'kon Egasi" }
-  ]);
-
-  const addExpense = (exp) => setExpenses(prev => [...prev, exp]);
-
   const sendTgAlert = (msg) => {
     setTgAlert(msg);
   };
@@ -195,7 +189,7 @@ export function AuthProvider({ children }) {
   const hasPermission = (perm) => user?.permissions?.includes(perm);
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, hasPermission, sendTgAlert, expenses, addExpense, settings, toggleSetting, addPendingTxn, pendingTxns, setSettings }}>
+    <AuthContext.Provider value={{ user, login, logout, hasPermission, sendTgAlert, settings, toggleSetting, addPendingTxn, pendingTxns, setSettings }}>
       {children}
       {tgAlert && <TelegramToast msg={tgAlert} onClose={() => setTgAlert(null)} />}
     </AuthContext.Provider>

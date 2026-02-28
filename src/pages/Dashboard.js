@@ -1,7 +1,6 @@
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } from 'recharts';
 import { StatCard, Badge, SectionHeader, Btn } from '../components/UI';
-import { WEEKLY_DATA } from '../utils/mockData';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../utils/supabaseClient';
 
@@ -100,7 +99,7 @@ export default function Dashboard() {
             </select>
           </SectionHeader>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={WEEKLY_DATA} barGap={4}>
+            <BarChart data={[]} barGap={4}>
               <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
               <XAxis dataKey="day" tick={{ fill: 'var(--t2)', fontSize: 12 }} axisLine={false} tickLine={false} />
               <YAxis hide />

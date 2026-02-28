@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useAuth, useTranslation } from '../context/AuthContext';
-import { EMPLOYEES, MONTHLY_DATA, REPORT_TYPES } from '../utils/mockData';
 import { StatCard, Badge, SectionHeader, Btn, Avatar } from '../components/UI';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { supabase } from '../utils/supabaseClient';
@@ -390,7 +389,7 @@ export function Reports() {
           <div style={{ padding: 20, background: 'var(--s2)', borderRadius: 12 }}>
             <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 18 }}>📈 Oylik Sotuv Dinamikasi</div>
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={MONTHLY_DATA}>
+              <BarChart data={[]}>
                 <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
                 <XAxis dataKey="month" tick={{ fill: 'var(--t2)', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <Tooltip cursor={{ fill: 'rgba(255,255,255,0.04)' }} contentStyle={{ background: 'var(--s1)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
@@ -555,7 +554,7 @@ export function Reports() {
   return (
     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14 }}>
-        {REPORT_TYPES.map(r => (
+        {[].map(r => (
           <div key={r.id} onClick={() => setSelected(r)} className="glass-card fast-transition" style={{ border: `1px solid ${selected?.id === r.id ? r.color : 'rgba(255,255,255,0.05)'}`, borderRadius: 16, padding: 22, cursor: 'pointer', background: selected?.id === r.id ? `${r.color}15` : 'var(--s1)' }}
             onMouseEnter={e => { e.currentTarget.style.borderColor = r.color; e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 8px 24px ${r.color}22` }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = selected?.id === r.id ? r.color : 'rgba(255,255,255,0.05)'; e.currentTarget.style.transform = selected?.id === r.id ? 'translateY(-2px)' : 'none'; e.currentTarget.style.boxShadow = selected?.id === r.id ? `0 8px 24px ${r.color}22` : 'none' }}>
@@ -583,7 +582,7 @@ export function Reports() {
       </div>
       {/* Dynamic Detailed Content */}
       {renderDetailedReport()}
-    </div>
+    </div >
   );
 }
 

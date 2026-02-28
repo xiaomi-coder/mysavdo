@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { CATEGORIES } from '../utils/mockData'; // we can keep categories static or move them to DB later
 import { Btn, Badge, EmptyState } from '../components/UI';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../utils/supabaseClient';
@@ -33,11 +32,13 @@ export default function POS() {
   };
 
   const filtered = products.filter(p => {
-    const matchCat = cat === 'Hammasi' || p.cat === cat;
-    const matchQ = p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.barcode.includes(search);
+    const pCat = p.category || p.cat;
+    const matchCat = cat === 'Hammasi' || pCat === cat;
+    const matchQ = p.name.toLowerCase().includes(search.toLowerCase()) || (p.barcode || '').includes(search);
     return matchCat && matchQ;
   });
+
+  const dynamicCats = ['Hammasi', ...new Set(products.map(p => p.category || p.cat).filter(Boolean))];
 
   const addToCart = (p) => {
     if (p.stock === 0) return;
@@ -151,6 +152,15 @@ export default function POS() {
     setReceiptNo(n => n + 1);
     setTimeout(() => { setSuccess(false); clearCart(); }, 2600);
   };
+  const catBtnStyle = {
+    padding: '6px 16px', borderRadius: 20, fontSize: 12, fontWeight: 700,
+    fontFamily: 'Outfit,sans-serif', cursor: 'pointer', transition: 'all .15s',
+    border: '1px solid var(--border)', background: 'var(--s1)', color: 'var(--t2)',
+    whiteSpace: 'nowrap'
+  };
+  const catBtnActive = {
+    border: '1px solid rgba(59,130,246,0.4)', background: 'rgba(59,130,246,0.12)', color: '#3B82F6'
+  };
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 16, padding: 20, height: 'calc(100vh - 64px)', overflow: 'hidden' }}>
@@ -190,15 +200,11 @@ export default function POS() {
         </div>
 
         {/* Categories */}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {CATEGORIES.map(c => (
-            <button key={c} onClick={() => setCat(c)} style={{
-              padding: '6px 16px', borderRadius: 20, fontSize: 12, fontWeight: 700,
-              fontFamily: 'Outfit,sans-serif', cursor: 'pointer', transition: 'all .15s',
-              border: `1px solid ${cat === c ? 'rgba(59,130,246,0.4)' : 'var(--border)'}`,
-              background: cat === c ? 'rgba(59,130,246,0.12)' : 'var(--s1)',
-              color: cat === c ? '#3B82F6' : 'var(--t2)',
-            }}>{c}</button>
+        <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
+          {dynamicCats.map(c => (
+            <button key={c} onClick={() => setCat(c)} className="fast-transition" style={{ ...catBtnStyle, ...(cat === c ? catBtnActive : {}) }}>
+              {c}
+            </button>
           ))}
         </div>
 

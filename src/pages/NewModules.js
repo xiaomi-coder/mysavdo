@@ -1,83 +1,79 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StatCard, Badge, SectionHeader, Btn, Avatar } from '../components/UI';
+import { useAuth } from '../context/AuthContext';
+import { supabase } from '../utils/supabaseClient';
 
-// ── MOCK DATA ──────────────────────────────────────────────────────────────
-const CUSTOMERS_DATA = [
-  {
-    id: 1, name: 'Sardor Toshmatov', phone: '+998901234567', totalSpent: 4250000, visits: 12, lastVisit: '2025-02-20', debt: 0, avatar: 'ST', color: '#3B82F6',
-    purchases: [
-      { date: '2025-02-20', items: 'Samsung A55, Qopqoq', total: 3200000, method: 'Plastik' },
-      { date: '2025-01-15', items: 'Zaryadlovchi', total: 150000, method: 'Naqd' },
-      { date: '2024-12-10', items: 'Naushnik', total: 350000, method: 'Transfer' },
-    ]
-  },
-  {
-    id: 2, name: 'Malika Rahimova', phone: '+998901234568', totalSpent: 1800000, visits: 5, lastVisit: '2025-02-18', debt: 450000, avatar: 'MR', color: '#A78BFA',
-    purchases: [
-      { date: '2025-02-18', items: 'iPhone 15 qopqoq', total: 85000, method: 'Naqd' },
-      { date: '2025-01-20', items: 'AirPods Pro', total: 1200000, method: 'Nasiya', debt: 450000 },
-    ]
-  },
-  {
-    id: 3, name: 'Jasur Karimov', phone: '+998901234569', totalSpent: 7600000, visits: 23, lastVisit: '2025-02-21', debt: 0, avatar: 'JK', color: '#10B981',
-    purchases: [
-      { date: '2025-02-21', items: 'iPhone 15 Pro 256GB', total: 5500000, method: 'Plastik' },
-      { date: '2025-01-05', items: 'MagSafe, Qopqoq', total: 380000, method: 'Naqd' },
-    ]
-  },
-  {
-    id: 4, name: 'Zulfiya Umarova', phone: '+998901234570', totalSpent: 620000, visits: 3, lastVisit: '2025-01-30', debt: 200000, avatar: 'ZU', color: '#F59E0B',
-    purchases: [
-      { date: '2025-01-30', items: 'Redmi Note 13', total: 820000, method: 'Nasiya', debt: 200000 },
-    ]
-  },
-  {
-    id: 5, name: 'Otabek Yusupov', phone: '+998901234571', totalSpent: 3100000, visits: 8, lastVisit: '2025-02-19', debt: 0, avatar: 'OY', color: '#F43F5E',
-    purchases: [
-      { date: '2025-02-19', items: 'Samsung S24, Stiklo', total: 1200000, method: 'Transfer' },
-    ]
-  },
-  {
-    id: 6, name: 'Feruza Nazarova', phone: '+998901234572', totalSpent: 950000, visits: 4, lastVisit: '2025-02-10', debt: 300000, avatar: 'FN', color: '#22D3EE',
-    purchases: [
-      { date: '2025-02-10', items: 'Xiaomi 14, Qopqoq', total: 1250000, method: 'Nasiya', debt: 300000 },
-    ]
-  },
-];
-
-const DEBTS_DATA = CUSTOMERS_DATA.filter(c => c.debt > 0).map(c => ({
-  ...c,
-  dueDate: '2025-03-15',
-  daysLeft: Math.floor(Math.random() * 25) + 5,
-  paid: Math.round((c.totalSpent / (c.totalSpent + c.debt)) * 100),
-}));
-
-// ── CRM PAGE ──────────────────────────────────────────────────────────────
 export function CRM() {
+  const { user } = useAuth();
+  const [customers, setCustomers] = useState([]);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [filter, setFilter] = useState('all');
 
-  const filtered = CUSTOMERS_DATA.filter(c => {
-    const matchQ = c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search);
-    const matchF = filter === 'all' ? true : filter === 'debt' ? c.debt > 0 : c.visits >= 10;
+  const [form, setForm] = useState({ name: '', phone: '', address: '' });
+
+  useEffect(() => {
+    if (user?.store_id) loadCustomers(user.store_id);
+  }, [user]);
+
+  const loadCustomers = async (storeId) => {
+    // We will compute 'debt' based on debts table eventually, but for now we look at customers table
+    const { data: cData } = await supabase.from('customers').select('*').eq('store_id', storeId).order('last_visit', { ascending: false });
+    const { data: dData } = await supabase.from('debts').select('*').eq('store_id', storeId).eq('status', 'To\'lanmagan');
+
+    if (cData) {
+      setCustomers(cData.map(c => {
+        const activeDebts = dData ? dData.filter(d => d.client === c.name || d.phone === c.phone) : [];
+        const totalDebtAmount = activeDebts.reduce((sum, d) => sum + Number(d.amount), 0);
+        return {
+          ...c,
+          debt: totalDebtAmount,
+          avatar: c.name?.substring(0, 2)?.toUpperCase() || 'C',
+          color: '#3B82F6',
+          purchasesHistory: [], // To fully populate, we'd pull from transactions
+        };
+      }));
+    }
+  };
+
+  const handleAddCustomer = async () => {
+    if (!form.name || !form.phone || !user?.store_id) return;
+
+    const { error } = await supabase.from('customers').insert({
+      store_id: user.store_id,
+      name: form.name,
+      phone: form.phone,
+      total_spent: 0,
+      purchases: 0
+    });
+
+    if (!error) {
+      loadCustomers(user.store_id);
+      setShowAdd(false);
+      setForm({ name: '', phone: '', address: '' });
+    }
+  };
+
+  const filtered = customers.filter(c => {
+    const matchQ = c.name?.toLowerCase().includes(search.toLowerCase()) || c.phone?.includes(search);
+    const matchF = filter === 'all' ? true : filter === 'debt' ? c.debt > 0 : c.purchases >= 10;
     return matchQ && matchF;
   });
 
-  const totalDebt = CUSTOMERS_DATA.reduce((s, c) => s + c.debt, 0);
-  const totalRevenue = CUSTOMERS_DATA.reduce((s, c) => s + c.totalSpent, 0);
-  const debtors = CUSTOMERS_DATA.filter(c => c.debt > 0).length;
+  const totalDebt = customers.reduce((s, c) => s + (c.debt || 0), 0);
+  const totalRevenue = customers.reduce((s, c) => s + (Number(c.total_spent) || 0), 0);
+  const debtors = customers.filter(c => c.debt > 0).length;
 
   return (
     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
 
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
-        <StatCard icon="👥" value={CUSTOMERS_DATA.length} label="Jami mijozlar" accent="#3B82F6" />
+        <StatCard icon="👥" value={customers.length} label="Jami mijozlar" accent="#3B82F6" />
         <StatCard icon="💰" value={`${(totalRevenue / 1000000).toFixed(1)}M`} label="Jami daromad (so'm)" accent="#10B981" />
         <StatCard icon="💸" value={debtors} label="Nasiyadorlar" accent="#F43F5E" change={`${(totalDebt / 1000000).toFixed(2)}M qarz`} changeType="down" />
-        <StatCard icon="⭐" value="Jasur K." label="Eng yaxshi mijoz" accent="#F59E0B" />
+        <StatCard icon="⭐" value={customers[0]?.name || '-'} label="Eng yangi mijoz" accent="#F59E0B" />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 380px' : '1fr', gap: 16 }}>
@@ -131,15 +127,15 @@ export function CRM() {
                     </div>
                   </td>
                   <td style={{ padding: '11px 10px 11px 0', fontSize: 12, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)', fontFamily: 'JetBrains Mono,monospace' }}>{c.phone}</td>
-                  <td style={{ padding: '11px 10px 11px 0', fontSize: 13, borderBottom: '1px solid rgba(255,255,255,0.05)', textAlign: 'center' }}>{c.visits}</td>
-                  <td style={{ padding: '11px 10px 11px 0', fontSize: 13, fontWeight: 700, color: '#10B981', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{c.totalSpent.toLocaleString()}</td>
+                  <td style={{ padding: '11px 10px 11px 0', fontSize: 13, borderBottom: '1px solid rgba(255,255,255,0.05)', textAlign: 'center' }}>{c.purchases}</td>
+                  <td style={{ padding: '11px 10px 11px 0', fontSize: 13, fontWeight: 700, color: '#10B981', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{Number(c.total_spent).toLocaleString()}</td>
                   <td style={{ padding: '11px 10px 11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                     {c.debt > 0
                       ? <Badge type="danger">{c.debt.toLocaleString()} so'm</Badge>
                       : <Badge type="success">✓ Toza</Badge>
                     }
                   </td>
-                  <td style={{ padding: '11px 10px 11px 0', fontSize: 11, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{c.lastVisit}</td>
+                  <td style={{ padding: '11px 10px 11px 0', fontSize: 11, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{new Date(c.last_visit).toLocaleDateString()}</td>
                   <td style={{ padding: '11px 0 11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                     <Btn variant="subtle" size="sm">Ko'rish</Btn>
                   </td>
@@ -168,9 +164,9 @@ export function CRM() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               {[
-                { l: 'Jami xaridlar', v: selected.visits + ' ta' },
-                { l: 'Jami summa', v: selected.totalSpent.toLocaleString() + " so'm" },
-                { l: 'Oxirgi tashrif', v: selected.lastVisit },
+                { l: 'Jami xaridlar', v: selected.purchases + ' ta' },
+                { l: 'Jami summa', v: Number(selected.total_spent).toLocaleString() + " so'm" },
+                { l: 'Oxirgi tashrif', v: new Date(selected.last_visit).toLocaleDateString() },
                 { l: 'Holat', v: selected.debt > 0 ? '⚠️ Nasiyador' : '✅ Toza' },
               ].map(s => (
                 <div key={s.l} style={{ background: 'var(--s2)', borderRadius: 10, padding: '12px 14px' }}>
@@ -183,7 +179,7 @@ export function CRM() {
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Xaridlar Tarixi</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {selected.purchases.map((p, i) => (
+                {selected.purchasesHistory?.map((p, i) => (
                   <div key={i} style={{ padding: '12px 14px', background: 'var(--s2)', borderRadius: 10 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                       <span style={{ fontSize: 12, fontWeight: 700 }}>{p.items}</span>
@@ -196,6 +192,7 @@ export function CRM() {
                     {p.debt > 0 && <div style={{ fontSize: 11, color: '#F43F5E', marginTop: 6 }}>⚠️ Qolgan qarz: {p.debt.toLocaleString()} so'm</div>}
                   </div>
                 ))}
+                {(!selected.purchasesHistory || selected.purchasesHistory.length === 0) && <div style={{ fontSize: 12, color: 'var(--t3)', fontStyle: 'italic' }}>Tarix topilmadi</div>}
               </div>
             </div>
 
@@ -212,19 +209,17 @@ export function CRM() {
         <div className="modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, backdropFilter: 'blur(8px)' }}>
           <div className="modal-content" style={{ background: 'linear-gradient(145deg, rgba(26, 35, 50, 0.95) 0%, rgba(13, 17, 23, 0.98) 100%)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: 36, width: 400, maxWidth: '90vw', boxShadow: '0 24px 60px rgba(0,0,0,0.4)' }}>
             <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 24 }}>👥 Yangi Mijoz Qo'shish</div>
-            {[
-              { lbl: 'Ism Familiya', ph: 'Sardor Toshmatov', type: 'text' },
-              { lbl: 'Telefon raqam', ph: '+998 90 123 45 67', type: 'tel' },
-              { lbl: 'Manzil (ixtiyoriy)', ph: 'Toshkent, Yunusobod', type: 'text' },
-            ].map(f => (
-              <div key={f.lbl} style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--t2)', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: .8 }}>{f.lbl}</label>
-                <input type={f.type} placeholder={f.ph} className="fast-transition" style={{ width: '100%', padding: '11px 14px', background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, color: 'var(--t1)', fontSize: 14, fontFamily: 'Outfit,sans-serif', outline: 'none', backdropFilter: 'blur(4px)' }} onFocus={e => e.target.style.borderColor = 'rgba(59,130,246,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.05)'} />
-              </div>
-            ))}
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--t2)', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: .8 }}>Ism Familiya</label>
+              <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Sardor Toshmatov" className="fast-transition" style={{ width: '100%', padding: '11px 14px', background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, color: 'var(--t1)', fontSize: 14, fontFamily: 'Outfit,sans-serif', outline: 'none', backdropFilter: 'blur(4px)' }} onFocus={e => e.target.style.borderColor = 'rgba(59,130,246,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.05)'} />
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--t2)', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: .8 }}>Telefon</label>
+              <input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+998 90 123 45 67" className="fast-transition" style={{ width: '100%', padding: '11px 14px', background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, color: 'var(--t1)', fontSize: 14, fontFamily: 'Outfit,sans-serif', outline: 'none', backdropFilter: 'blur(4px)' }} onFocus={e => e.target.style.borderColor = 'rgba(59,130,246,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.05)'} />
+            </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
               <button className="fast-transition" onClick={() => setShowAdd(false)} style={{ flex: 1, padding: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 11, color: 'var(--t2)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'} onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}>Bekor</button>
-              <Btn variant="primary" onClick={() => setShowAdd(false)} style={{ flex: 1 }}>Saqlash</Btn>
+              <Btn variant="primary" onClick={handleAddCustomer} style={{ flex: 1 }} disabled={!form.name || !form.phone}>Saqlash</Btn>
             </div>
           </div>
         </div>
@@ -235,46 +230,79 @@ export function CRM() {
 
 // ── NASIYA PAGE ────────────────────────────────────────────────────────────
 export function Nasiya() {
+  const { user } = useAuth();
   const [showPay, setShowPay] = useState(null);
   const [paidAmount, setPaidAmount] = useState('');
   const [success, setSuccess] = useState(false);
-  const [debts, setDebts] = useState(DEBTS_DATA);
+  const [debts, setDebts] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [newDebt, setNewDebt] = useState({ name: '', phone: '', debt: '', daysLeft: 30 });
   const [toast, setToast] = useState(null);
 
+  useEffect(() => {
+    if (user?.store_id) loadDebts(user.store_id);
+  }, [user]);
+
+  const loadDebts = async (storeId) => {
+    const { data } = await supabase.from('debts').select('*').eq('store_id', storeId).eq('status', 'To\'lanmagan');
+    if (data) {
+      setDebts(data.map(d => {
+        const dDate = new Date(d.date);
+        dDate.setDate(dDate.getDate() + 30); // simplistic assumption
+        const diffTime = dDate.getTime() - new Date().getTime();
+        const daysL = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return {
+          id: d.id, name: d.client, phone: d.phone, debt: Number(d.amount),
+          daysLeft: daysL, paid: 0, dueDate: dDate.toLocaleDateString(),
+          avatar: d.client?.substring(0, 2)?.toUpperCase(), color: '#3B82F6'
+        }
+      }));
+    }
+  };
+
   const totalDebt = debts.reduce((s, d) => s + d.debt, 0);
   const urgent = debts.filter(d => d.daysLeft <= 7).length;
 
-  const handlePay = () => {
-    if (!paidAmount || isNaN(paidAmount)) return;
-    setSuccess(true);
-    setTimeout(() => {
-      setSuccess(false);
-      setDebts(prev => prev.map(d => d.id === showPay.id ? { ...d, debt: Math.max(0, d.debt - parseInt(paidAmount)) } : d));
-      setShowPay(null);
-      setPaidAmount('');
-    }, 2000);
+  const handlePay = async () => {
+    if (!paidAmount || isNaN(paidAmount) || !user?.store_id) return;
+
+    // We logically reduce or complete debt
+    const newAmt = Math.max(0, showPay.debt - parseInt(paidAmount));
+    const newStatus = newAmt === 0 ? "To'landi" : "To'lanmagan";
+
+    const { error } = await supabase.from('debts').update({ amount: newAmt, status: newStatus }).eq('id', showPay.id);
+    if (!error) {
+      setSuccess(true);
+      setTimeout(() => {
+        setSuccess(false);
+        loadDebts(user.store_id);
+        setShowPay(null);
+        setPaidAmount('');
+      }, 2000);
+    } else {
+      setToast(`❌ Xatolik yuz berdi (${error.message})`);
+      setTimeout(() => setToast(null), 2500);
+    }
   };
 
-  const handleAddDebt = () => {
-    if (!newDebt.name || !newDebt.debt) return;
-    const d = {
-      id: Date.now(),
-      name: newDebt.name,
+  const handleAddDebt = async () => {
+    if (!newDebt.name || !newDebt.debt || !user?.store_id) return;
+
+    const { error } = await supabase.from('debts').insert({
+      store_id: user.store_id,
+      client: newDebt.name,
+      amount: parseInt(newDebt.debt),
       phone: newDebt.phone || '+998',
-      debt: parseInt(newDebt.debt),
-      daysLeft: parseInt(newDebt.daysLeft) || 30,
-      paid: 0,
-      dueDate: new Date(Date.now() + parseInt(newDebt.daysLeft || 30) * 86400000).toISOString().split('T')[0],
-      avatar: newDebt.name.substring(0, 2).toUpperCase(),
-      color: '#3B82F6'
-    };
-    setDebts(prev => [d, ...prev]);
-    setShowAdd(false);
-    setNewDebt({ name: '', phone: '', debt: '', daysLeft: 30 });
-    setToast('✅ Nasiya qabul qilindi!');
-    setTimeout(() => setToast(null), 2500);
+      status: "To'lanmagan"
+    });
+
+    if (!error) {
+      loadDebts(user.store_id);
+      setShowAdd(false);
+      setNewDebt({ name: '', phone: '', debt: '', daysLeft: 30 });
+      setToast('✅ Nasiya qabul qilindi!');
+      setTimeout(() => setToast(null), 2500);
+    }
   };
 
   return (

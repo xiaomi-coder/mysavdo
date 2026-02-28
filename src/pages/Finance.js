@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { StatCard, SectionHeader, Btn, Badge } from '../components/UI';
+import { supabase } from '../utils/supabaseClient';
 
 const CATEGORIES = [
     { name: 'Ijara', icon: '🏢', color: '#8B5CF6' },
@@ -27,7 +28,8 @@ function Modal({ children, onClose }) {
 }
 
 export default function Finance() {
-    const { user, expenses, addExpense } = useAuth();
+    const { user } = useAuth();
+    const [expenses, setExpenses] = useState([]);
     const [showAdd, setShowAdd] = useState(false);
     const [toast, setToast] = useState(null);
 
@@ -37,28 +39,47 @@ export default function Finance() {
     const [desc, setDesc] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
 
-    const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
+    useEffect(() => {
+        if (user?.store_id) {
+            loadExpenses(user.store_id);
+        }
+    }, [user]);
 
-    const handleAddReturn = () => {
-        if (!amount || isNaN(amount) || amount <= 0) return;
-
-        addExpense({
-            id: Date.now(),
-            date,
-            cat,
-            desc: desc || CATEGORIES.find(c => c.name === cat)?.name || 'Xarajat',
-            amount: parseInt(amount),
-            cashier: user?.name,
-        });
-
-        showToast(`✅ Xarajat saqlandi: ${parseInt(amount).toLocaleString()} so'm`);
-        setShowAdd(false);
-        setAmount(''); setDesc('');
+    const loadExpenses = async (storeId) => {
+        const { data, error } = await supabase.from('expenses').select('*').eq('store_id', storeId).order('date', { ascending: false });
+        if (!error && data) {
+            setExpenses(data.map(d => ({ ...d, date: new Date(d.date).toISOString().split('T')[0] })));
+        }
     };
 
-    const totalExp = expenses.reduce((a, b) => a + b.amount, 0);
+    const handleAddReturn = async () => {
+        if (!amount || isNaN(amount) || amount <= 0 || !user?.store_id) return;
+
+        const newExp = {
+            store_id: user.store_id,
+            date: date,
+            category: cat,
+            note: desc || CATEGORIES.find(c => c.name === cat)?.name || 'Xarajat',
+            amount: parseInt(amount),
+            cashier: user.name || 'Noma\'lum',
+        };
+
+        const { data, error } = await supabase.from('expenses').insert(newExp).select().single();
+
+        if (error) {
+            showToast(`❌ Xatolik: ${error.message}`);
+        } else {
+            setExpenses(prev => [{ ...data, date: new Date(data.date).toISOString().split('T')[0], cat: data.category, desc: data.note }, ...prev]);
+            showToast(`✅ Xarajat saqlandi: ${parseInt(amount).toLocaleString()} so'm`);
+            setShowAdd(false);
+            setAmount(''); setDesc('');
+        }
+    };
+
+    const totalExp = expenses.reduce((a, b) => a + (Number(b.amount) || 0), 0);
     const catBreakdown = expenses.reduce((acc, exp) => {
-        acc[exp.cat] = (acc[exp.cat] || 0) + exp.amount;
+        const catName = exp.category || exp.cat;
+        acc[catName] = (acc[catName] || 0) + (Number(exp.amount) || 0);
         return acc;
     }, {});
 
@@ -101,20 +122,21 @@ export default function Finance() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {[...expenses].reverse().map(exp => {
-                                    const catObj = CATEGORIES.find(c => c.name === exp.cat) || CATEGORIES[7];
+                                {[...expenses].map(exp => {
+                                    const catName = exp.category || exp.cat;
+                                    const catObj = CATEGORIES.find(c => c.name === catName) || CATEGORIES[7];
                                     return (
                                         <tr key={exp.id} className="fast-transition" style={{ cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                                             <td style={{ padding: '12px 12px 12px 0', fontSize: 12, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{exp.date}</td>
                                             <td style={{ padding: '12px 12px 12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                                                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: catObj.color + '15', color: catObj.color, padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>
-                                                    <span>{catObj.icon}</span> {exp.cat}
+                                                    <span>{catObj.icon}</span> {catName}
                                                 </div>
                                             </td>
-                                            <td style={{ padding: '12px 12px 12px 0', fontSize: 13, fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{exp.desc}</td>
+                                            <td style={{ padding: '12px 12px 12px 0', fontSize: 13, fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{exp.note || exp.desc}</td>
                                             <td style={{ padding: '12px 12px 12px 0', fontSize: 13, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{exp.cashier}</td>
                                             <td style={{ padding: '12px 12px 12px 0', fontSize: 14, fontWeight: 800, color: '#EF4444', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                                -{exp.amount.toLocaleString()} <span style={{ fontSize: 10, color: 'var(--t3)' }}>UZS</span>
+                                                -{Number(exp.amount).toLocaleString()} <span style={{ fontSize: 10, color: 'var(--t3)' }}>UZS</span>
                                             </td>
                                         </tr>
                                     )

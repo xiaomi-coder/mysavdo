@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth, useTranslation } from '../context/AuthContext';
-import { PRODUCTS } from '../utils/mockData';
+import { supabase } from '../utils/supabaseClient';
 
 export default function Topbar() {
   const location = useLocation();
   const { user, pendingTxns } = useAuth();
   const { t } = useTranslation();
   const [showNotif, setShowNotif] = useState(false);
+  const [stockAlerts, setStockAlerts] = useState({ out: 0, low: 0 });
   const notifRef = useRef(null);
 
   // Close dropdown on click outside
@@ -18,6 +19,21 @@ export default function Topbar() {
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
+
+  useEffect(() => {
+    if (user?.store_id) {
+      loadStockAlerts(user.store_id);
+    }
+  }, [user]);
+
+  const loadStockAlerts = async (storeId) => {
+    const { data } = await supabase.from('products').select('stock').eq('store_id', storeId).lte('stock', 10);
+    if (data) {
+      const out = data.filter(p => p.stock === 0).length;
+      const low = data.filter(p => p.stock > 0 && p.stock <= 10).length;
+      setStockAlerts({ out, low });
+    }
+  };
 
   const getPageTitle = (path) => {
     switch (path) {
@@ -40,14 +56,12 @@ export default function Topbar() {
 
   // Dynamic Notifications
   const notifs = [];
-  const lowStockItems = PRODUCTS.filter(p => p.stock <= 10 && p.stock > 0);
-  const outOfStockItems = PRODUCTS.filter(p => p.stock === 0);
 
-  if (outOfStockItems.length > 0) {
-    notifs.push({ icon: '❌', text: `${outOfStockItems.length} ta mahsulot tugadi!`, time: 'Hozir', color: '#F43F5E' });
+  if (stockAlerts.out > 0) {
+    notifs.push({ icon: '❌', text: `${stockAlerts.out} ta mahsulot tugadi!`, time: 'Hozir', color: '#F43F5E' });
   }
-  if (lowStockItems.length > 0) {
-    notifs.push({ icon: '⚠️', text: `${lowStockItems.length} ta mahsulot qoldig'i kam (<10)`, time: 'Hozir', color: '#F59E0B' });
+  if (stockAlerts.low > 0) {
+    notifs.push({ icon: '⚠️', text: `${stockAlerts.low} ta mahsulot qoldig'i kam (<10)`, time: 'Hozir', color: '#F59E0B' });
   }
   if (pendingTxns?.length > 0) {
     notifs.push({ icon: '📶', text: `${pendingTxns.length} ta sotuv offline xotirada. Internet kutilmoqda.`, time: 'Kutilmoqda', color: '#3B82F6' });
