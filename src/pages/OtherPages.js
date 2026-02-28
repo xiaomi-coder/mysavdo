@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth, useTranslation } from '../context/AuthContext';
 import { StatCard, Badge, SectionHeader, Btn, Avatar } from '../components/UI';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
@@ -35,7 +35,24 @@ export function Employees() {
   const loadEmployees = async (storeId) => {
     const { data } = await supabase.from('users').select('*').eq('store_id', storeId);
     if (data) {
-      setEmployees(data.map(u => ({ ...u, active: true, sales: 0, txns: 0, avatar: u.name.substring(0, 2).toUpperCase(), color: '#3B82F6' })));
+      // Fetch transaction stats per cashier
+      const { data: txns } = await supabase.from('transactions').select('cashier, total').eq('store_id', storeId).eq('status', 'completed');
+      const cashierStats = {};
+      if (txns) {
+        txns.forEach(t => {
+          const c = t.cashier;
+          if (!cashierStats[c]) cashierStats[c] = { sales: 0, txns: 0 };
+          cashierStats[c].sales += Number(t.total) || 0;
+          cashierStats[c].txns += 1;
+        });
+      }
+      setEmployees(data.filter(u => u.role !== 'owner').map(u => ({
+        ...u, active: true,
+        sales: cashierStats[u.name]?.sales || 0,
+        txns: cashierStats[u.name]?.txns || 0,
+        avatar: (u.name || '??').substring(0, 2).toUpperCase(),
+        color: u.role === 'manager' ? '#10B981' : '#A78BFA'
+      })));
     }
   };
 
@@ -97,11 +114,10 @@ export function Employees() {
 
   return (
     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14 }}>
         <StatCard icon="👥" value={employees.length} label="Jami xodimlar" accent="#3B82F6" />
         <StatCard icon="✅" value={activeCount} label="Aktiv xodimlar" accent="#10B981" />
-        <StatCard icon="⭐" value={topEmp?.name?.split(' ')[0] || '-'} label="Eng yaxshi" accent="#F59E0B" />
-        <StatCard icon="📊" value="96%" label="Davomat" accent="#A78BFA" />
+        <StatCard icon="⭐" value={topEmp?.name?.split(' ')[0] || '-'} label="Eng yaxshi sotuvchi" accent="#F59E0B" />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: 16 }}>
@@ -328,7 +344,7 @@ export function Analytics() {
       <div className="glass-card" style={{ borderRadius: 16, padding: 22 }}>
         <SectionHeader title="Oylik Sotuv Trendi va AI Prognozi" />
         <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={MONTHLY_DATA}>
+          <BarChart data={[]}>
             <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
             <XAxis dataKey="month" tick={{ fill: 'var(--t2)', fontSize: 12 }} axisLine={false} tickLine={false} />
             <YAxis hide />
@@ -351,35 +367,45 @@ export function Analytics() {
 
 // ── REPORTS ────────────────────────────────────────────────────────
 export function Reports() {
+  const { user } = useAuth();
   const [selected, setSelected] = useState(null);
+  const [reportStats, setReportStats] = useState({ totalSales: 0, totalProfit: 0, txnCount: 0, avgCheck: 0, totalExpenses: 0, totalDebt: 0, productCount: 0, lowStock: 0 });
 
-  const getReportData = (type) => {
-    switch (type) {
-      case 'sales': return [
-        { l: 'Jami sotuv', v: "385,000,000 so'm", c: '#3B82F6' }, { l: 'Jami foyda', v: "96,250,000 so'm", c: '#10B981' }, { l: 'Tranzaksiyalar', v: '1,842 ta', c: '#F59E0B' }, { l: "O'rtacha chek", v: "209,000 so'm", c: '#A78BFA' }
-      ];
-      case 'products': return [
-        { l: "Eng ko'p sotilgan", v: "Coca Cola (120ta)", c: '#3B82F6' }, { l: 'Kam qoldiq', v: "15 tur", c: '#F43F5E' }, { l: 'Yangi tovarlar', v: '8 ta', c: '#10B981' }, { l: "Eng ko'p foyda keltirdi", v: "Red Bull (2.4M)", c: '#F59E0B' }
-      ];
-      case 'staff': return [
-        { l: 'Eng yaxshi sotuvchi', v: "Aziz K. (45M)", c: '#10B981' }, { l: "O'rtacha savdo", v: "15,000,000 so'm", c: '#3B82F6' }, { l: 'Namunaviy xodimlar', v: '3 ta', c: '#F59E0B' }, { l: "Kechikishlar", v: "Yo'q", c: '#A78BFA' }
-      ];
-      case 'finance': return [
-        { l: 'Sof Foyda', v: "96,250,000 so'm", c: '#10B981' }, { l: 'Kirim', v: "385,000,000 so'm", c: '#3B82F6' }, { l: 'Chiqim', v: "45,000,000 so'm", c: '#F43F5E' }, { l: "Qarzdorlik", v: "12,400,000 so'm", c: '#F59E0B' }
-      ];
-      case 'forecast': return [
-        { l: 'Kutilayotgan Sotuv', v: "410,000,000 so'm", c: '#A78BFA' }, { l: 'Kutilayotgan Foyda', v: "105,000,000 so'm", c: '#10B981' }, { l: "O'sish prognozi", v: '+12%', c: '#3B82F6' }, { l: "Tavsiyalar", v: "3 ta faol", c: '#F59E0B' }
-      ];
-      case 'tax': return [
-        { l: 'Aylanmadan Soliq (4%)', v: "15,400,000 so'm", c: '#F43F5E' }, { l: "Daromad Solig'i", v: "11,550,000 so'm", c: '#F43F5E' }, { l: "Jami To'lovlar", v: "26,950,000 so'm", c: '#F59E0B' }, { l: "Holat", v: "Yaxshi", c: '#10B981' }
-      ];
-      default: return [
-        { l: 'Jami sotuv', v: "385,000,000 so'm", c: '#3B82F6' }, { l: 'Jami foyda', v: "96,250,000 so'm", c: '#10B981' }, { l: 'Tranzaksiyalar', v: '1,842 ta', c: '#F59E0B' }, { l: "O'rtacha chek", v: "209,000 so'm", c: '#A78BFA' }
-      ];
-    }
+  useEffect(() => {
+    if (user?.store_id) loadReportData(user.store_id);
+  }, [user]);
+
+  const loadReportData = async (storeId) => {
+    const { data: txns } = await supabase.from('transactions').select('total, items').eq('store_id', storeId).eq('status', 'completed');
+    const { data: exps } = await supabase.from('expenses').select('amount').eq('store_id', storeId);
+    const { data: debts } = await supabase.from('debts').select('amount').eq('store_id', storeId).eq('status', "To'lanmagan");
+    const { data: prods } = await supabase.from('products').select('stock').eq('store_id', storeId);
+
+    const totalSales = txns ? txns.reduce((s, t) => s + (Number(t.total) || 0), 0) : 0;
+    const txnCount = txns ? txns.length : 0;
+    const avgCheck = txnCount > 0 ? Math.round(totalSales / txnCount) : 0;
+    const totalExpenses = exps ? exps.reduce((s, e) => s + (Number(e.amount) || 0), 0) : 0;
+    const totalDebt = debts ? debts.reduce((s, d) => s + (Number(d.amount) || 0), 0) : 0;
+    const productCount = prods ? prods.length : 0;
+    const lowStock = prods ? prods.filter(p => p.stock <= 10).length : 0;
+    const totalProfit = totalSales - totalExpenses;
+
+    setReportStats({ totalSales, totalProfit, txnCount, avgCheck, totalExpenses, totalDebt, productCount, lowStock });
   };
 
-  const currentData = getReportData(selected?.id);
+  const fmt = n => n >= 1000000 ? (n / 1000000).toFixed(1) + ' mln' : n.toLocaleString();
+
+  const getReportData = () => {
+    const r = reportStats;
+    return [
+      { l: 'Jami sotuv', v: `${fmt(r.totalSales)} so'm`, c: '#3B82F6' },
+      { l: 'Jami foyda', v: `${fmt(r.totalProfit)} so'm`, c: '#10B981' },
+      { l: 'Tranzaksiyalar', v: `${r.txnCount} ta`, c: '#F59E0B' },
+      { l: "O'rtacha chek", v: `${fmt(r.avgCheck)} so'm`, c: '#A78BFA' },
+    ];
+  };
+
+  const currentData = getReportData();
 
   const renderDetailedReport = () => {
     const type = selected ? selected.id : 'sales';
@@ -404,11 +430,16 @@ export function Reports() {
             </ResponsiveContainer>
           </div>
           <div style={{ padding: 20, background: 'var(--s2)', borderRadius: 12 }}>
-            <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 18 }}>🏆 Eng Serdaromad Kunlar</div>
-            {[{ d: '25 Fevral', sum: '18,500,000', up: true }, { d: '20 Fevral', sum: '15,200,000', up: true }, { d: '14 Fevral', sum: '14,800,000', up: true }, { d: '01 Fevral', sum: '12,900,000', up: false }].map((d, i) => (
+            <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 18 }}>📊 Umumiy ma'lumotlar</div>
+            {[
+              { d: 'Jami xarajatlar', sum: fmt(reportStats.totalExpenses), color: '#F43F5E' },
+              { d: 'Jami qarzdorlik', sum: fmt(reportStats.totalDebt), color: '#F59E0B' },
+              { d: 'Ombordagi tovarlar', sum: `${reportStats.productCount} ta`, color: '#3B82F6' },
+              { d: 'Kam qoldiq (<10)', sum: `${reportStats.lowStock} ta`, color: '#F43F5E' },
+            ].map((d, i) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: i !== 3 ? '1px solid rgba(255,255,255,0.05)' : 'none', fontSize: 13 }}>
                 <span style={{ color: 'var(--t2)', fontWeight: 600 }}>{d.d}</span>
-                <span style={{ fontWeight: 800, color: d.up ? '#10B981' : 'var(--t1)' }}>{d.sum} so'm</span>
+                <span style={{ fontWeight: 800, color: d.color }}>{d.sum}</span>
               </div>
             ))}
           </div>
@@ -416,7 +447,7 @@ export function Reports() {
       );
     }
     if (type === 'products') {
-      const topProds = [{ n: 'Coca Cola 1.5L', v: 450, max: 500, c: '#F43F5E' }, { n: 'Lays Chips', v: 380, max: 500, c: '#F59E0B' }, { n: 'Snickers', v: 320, max: 500, c: '#8B5CF6' }, { n: 'Red Bull', v: 210, max: 500, c: '#3B82F6' }];
+      const topProds = [];
       return (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 16 }}>
           <div style={{ padding: 20, background: 'var(--s2)', borderRadius: 12 }}>

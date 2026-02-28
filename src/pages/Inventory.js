@@ -31,7 +31,12 @@ export default function Inventory() {
   };
 
   // New product form
-  const [newProd, setNewProd] = useState({ name: '', barcode: '', cat: 'Ichimliklar', cost: '', price: '', stock: '', minStock: '', emoji: '📦' });
+  const [newProd, setNewProd] = useState({ name: '', barcode: '', cat: '', cost: '', price: '', stock: '', minStock: '', emoji: '📦' });
+
+  const generateBarcode = () => {
+    const bc = '200' + Math.floor(Math.random() * 9000000000 + 1000000000).toString();
+    setNewProd(prev => ({ ...prev, barcode: bc }));
+  };
   const [newCat, setNewCat] = useState('');
   const [showAddCat, setShowAddCat] = useState(false);
 
@@ -95,12 +100,11 @@ export default function Inventory() {
     const p = {
       store_id: user.store_id,
       name: newProd.name,
-      barcode: newProd.barcode,
-      cat: newProd.cat,
-      cost: parseInt(newProd.cost),
+      barcode: newProd.barcode || '',
+      category: newProd.cat || 'Boshqa',
+      cost_price: parseInt(newProd.cost),
       price: parseInt(newProd.price),
       stock: parseInt(newProd.stock) || 0,
-      minStock: parseInt(newProd.minStock) || 10,
       image: newProd.emoji
     };
 
@@ -108,9 +112,11 @@ export default function Inventory() {
 
     if (!error && data) {
       setProducts(prev => [{ ...data, emoji: data.image || '📦' }, ...prev]);
+      const uniqueCats = ['Hammasi', ...new Set([...products, data].map(pr => pr.category || pr.cat).filter(Boolean))];
+      setCategories(uniqueCats.map(c => ({ name: c, icon: '📦' })));
       showToast(`✅ "${newProd.name}" qo'shildi`);
       setShowAdd(false);
-      setNewProd({ name: '', barcode: '', cat: categories[1] || 'Boshqa', cost: '', price: '', stock: '', minStock: '', emoji: '📦' });
+      setNewProd({ name: '', barcode: '', cat: '', cost: '', price: '', stock: '', minStock: '', emoji: '📦' });
     } else {
       showToast(`❌ Xatolik: ${error?.message}`, 'danger');
     }
@@ -118,7 +124,7 @@ export default function Inventory() {
 
   const handleAddCategory = () => {
     if (!newCat.trim()) return;
-    setCategories(prev => [...prev, newCat.trim()]);
+    setCategories(prev => [...prev, { name: newCat.trim(), icon: '📦' }]);
     setNewProd(prev => ({ ...prev, cat: newCat.trim() }));
     setNewCat('');
     setShowAddCat(false);
@@ -199,8 +205,8 @@ export default function Inventory() {
                       >
                         <td style={{ padding: '11px 10px 11px 0', fontFamily: 'JetBrains Mono,monospace', fontSize: 11, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{p.barcode}</td>
                         <td style={{ padding: '11px 10px 11px 0', fontSize: 13, fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'nowrap', filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))' }}>{p.emoji} {p.name}</td>
-                        <td style={{ padding: '11px 10px 11px 0', fontSize: 12, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{p.cat}</td>
-                        <td style={{ padding: '11px 10px 11px 0', fontSize: 12, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'nowrap' }}>{(p.cost || p.price * 0.75).toLocaleString()}</td>
+                        <td style={{ padding: '11px 10px 11px 0', fontSize: 12, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{p.category || p.cat}</td>
+                        <td style={{ padding: '11px 10px 11px 0', fontSize: 12, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'nowrap' }}>{(p.cost_price || p.cost || 0).toLocaleString()}</td>
                         <td style={{ padding: '11px 10px 11px 0', fontSize: 13, fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'nowrap', color: '#10B981' }}>{p.price.toLocaleString()}</td>
                         <td style={{ padding: '11px 10px 11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -403,7 +409,10 @@ export default function Inventory() {
               <input value={newProd.name} onChange={e => setNewProd({ ...newProd, name: e.target.value })} placeholder="Coca Cola 0.5L" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
             </FormField>
             <FormField label="Barcode">
-              <input value={newProd.barcode} onChange={e => setNewProd({ ...newProd, barcode: e.target.value })} placeholder="8690637" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input value={newProd.barcode} onChange={e => setNewProd({ ...newProd, barcode: e.target.value })} placeholder="8690637" style={{ ...inputStyle, flex: 1 }} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+                <Btn variant="subtle" onClick={generateBarcode}>🎲 Random</Btn>
+              </div>
             </FormField>
             <FormField label="Kategoriya">
               {showAddCat ? (
