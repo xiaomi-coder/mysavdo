@@ -152,6 +152,20 @@ function StoresPage({ stores, onAdd, showToast, showAddStore, setShowAddStore })
     setLoading(false);
   };
 
+  const handleDeleteStore = async (s) => {
+    const confirm1 = window.confirm(`Siz rostan ham "${s.name}" do'konini o'chirmoqchimisiz?`);
+    if (!confirm1) return;
+    const confirm2 = window.confirm(`Ishonchingiz komilmi? Bu do'kon va uning barcha ma'lumotlari butunlay o'chib ketadi!`);
+    if (!confirm2) return;
+
+    const { error } = await supabase.from('stores').delete().eq('id', s.id);
+    if (error) {
+      showToast(`❌ Xatolik (${error.message})`);
+    } else {
+      showToast(`✅ "${s.name}" do'koni o'chirildi!`);
+    }
+  };
+
   const handleToggleActive = async (s) => {
     const { error } = await supabase.from('stores').update({ is_active: !s.active }).eq('id', s.id);
     if (error) {
@@ -203,6 +217,7 @@ function StoresPage({ stores, onAdd, showToast, showAddStore, setShowAddStore })
               <div style={{ display: 'flex', gap: 6 }}>
                 <Btn variant="subtle" size="sm" onClick={() => openEdit(s)}>✏️ Tahrirlash</Btn>
                 <Btn variant={s.active ? 'danger' : 'green'} size="sm" onClick={() => handleToggleActive(s)}>{s.active ? '⏸ To\'xtatish' : '▶ Faollashtirish'}</Btn>
+                <Btn variant="danger" size="sm" onClick={() => handleDeleteStore(s)}>🗑️ O'chirish</Btn>
               </div>
             </div>
           ))}
@@ -258,7 +273,16 @@ function UsersPage({ stores = [], users, onAdd, showToast, showAddUser, setShowA
   };
 
   const handleToggleBlock = async (u) => {
-    const { error } = await supabase.from('users').delete().eq('id', u.id); // For simplicity, we optionally delete, or you'd just toggle active state in schema
+    if (u.role === 'creator') {
+      showToast(`❌ Creator (tizim yaratuvchisi) akkauntini o'chirib bo'lmaydi!`);
+      return;
+    }
+    const confirm1 = window.confirm(`Siz rostan ham "${u.name}" foydalanuvchisini o'chirmoqchimisiz?`);
+    if (!confirm1) return;
+    const confirm2 = window.confirm(`Ishonchingiz komilmi? Foydalanuvchi butunlay o'chib ketadi!`);
+    if (!confirm2) return;
+
+    const { error } = await supabase.from('users').delete().eq('id', u.id);
     if (error) {
       showToast(`❌ Xatolik (${error.message})`);
     } else {
