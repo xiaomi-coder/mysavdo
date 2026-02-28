@@ -62,8 +62,8 @@ export default function Inventory() {
   };
 
   const filtered = products.filter(p => {
-    const matchQ = p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode.includes(search);
-    const matchCat = catFilter === 'Hammasi' || p.cat === catFilter;
+    const matchQ = (p.name || '').toLowerCase().includes(search.toLowerCase()) || (p.barcode || '').includes(search);
+    const matchCat = catFilter === 'Hammasi' || (p.category || p.cat) === catFilter;
     const st = getStatus(p);
 
     let matchSt = true;
@@ -165,7 +165,7 @@ export default function Inventory() {
                 </div>
                 {/* Category filter */}
                 <select value={catFilter} onChange={e => setCat(e.target.value)} className="fast-transition" style={{ padding: '8px 12px', background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 9, color: 'var(--t1)', fontSize: 12, fontFamily: 'Outfit,sans-serif', outline: 'none', cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'} onMouseLeave={e => e.currentTarget.style.background = 'rgba(17, 24, 39, 0.4)'}>
-                  {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                  {categories.map(c => <option key={c.name} value={c.name}>{c.icon} {c.name}</option>)}
                 </select>
                 {/* Status filter */}
                 <select value={statusFilter} onChange={e => setStatus(e.target.value)} className="fast-transition" style={{ padding: '8px 12px', background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 9, color: 'var(--t1)', fontSize: 12, fontFamily: 'Outfit,sans-serif', outline: 'none', cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'} onMouseLeave={e => e.currentTarget.style.background = 'rgba(17, 24, 39, 0.4)'}>
@@ -415,7 +415,7 @@ export default function Inventory() {
               ) : (
                 <div style={{ display: 'flex', gap: 8 }}>
                   <select value={newProd.cat} onChange={e => setNewProd({ ...newProd, cat: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}>
-                    {categories.filter(c => c !== 'Hammasi').map(c => <option key={c}>{c}</option>)}
+                    {categories.filter(c => c.name !== 'Hammasi').map(c => <option key={c.name} value={c.name}>{c.icon} {c.name}</option>)}
                   </select>
                   <Btn variant="subtle" onClick={() => setShowAddCat(true)}>+ Yangi</Btn>
                 </div>

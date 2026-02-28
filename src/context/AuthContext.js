@@ -56,8 +56,8 @@ export const ROLE_NAV = {
   owner: [
     { to: '/dashboard', icon: '📊', label: 'dashboard' },
     { to: '/pos', icon: '🛒', label: 'pos' },
-    { to: '/inventory', icon: '📦', label: 'inventory', badge: '3' },
-    { to: '/nasiya', icon: '💸', label: 'nasiya', badge: '4' },
+    { to: '/inventory', icon: '📦', label: 'inventory' },
+    { to: '/nasiya', icon: '💸', label: 'nasiya' },
     { to: '/finance', icon: '💰', label: 'finance' },
     { to: '/customers', icon: '👥', label: 'crm' },
     { to: '/employees', icon: '🧑‍💼', label: 'employees' },
@@ -69,7 +69,7 @@ export const ROLE_NAV = {
   manager: [
     { to: '/dashboard', icon: '📊', label: 'dashboard' },
     { to: '/pos', icon: '🛒', label: 'pos' },
-    { to: '/inventory', icon: '📦', label: 'inventory', badge: '3' },
+    { to: '/inventory', icon: '📦', label: 'inventory' },
     { to: '/nasiya', icon: '💸', label: 'nasiya' },
     { to: '/finance', icon: '💰', label: 'finance' },
     { to: '/reports', icon: '📈', label: 'reports' },
