@@ -247,9 +247,143 @@ export function Employees() {
 
 // ── ANALYTICS ──────────────────────────────────────────────────────
 export function Analytics() {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
   const [applied, setApplied] = useState({});
+  const [insights, setInsights] = useState([]);
+  const [monthlyData, setMonthlyData] = useState([]);
+  const [stats, setStats] = useState({ totalSales: 0, totalProfit: 0, productCount: 0, lowStock: 0 });
+
+  useEffect(() => {
+    if (user?.store_id) {
+      analyzeData(user.store_id);
+    }
+  }, [user]);
+
+  const analyzeData = async (storeId) => {
+    setLoading(true);
+
+    // Fetch products and transactions
+    const { data: prods } = await supabase.from('products').select('*').eq('store_id', storeId);
+    const { data: txns } = await supabase.from('transactions').select('total, items, date').eq('store_id', storeId).eq('status', 'completed');
+    const { data: exps } = await supabase.from('expenses').select('amount').eq('store_id', storeId);
+
+    const products = prods || [];
+    const transactions = txns || [];
+    const expenses = exps || [];
+
+    const totalSales = transactions.reduce((s, t) => s + (Number(t.total) || 0), 0);
+    const totalExpenses = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+    const totalProfit = totalSales - totalExpenses;
+    const lowStock = products.filter(p => p.stock <= 10).length;
+
+    setStats({ totalSales, totalProfit, productCount: products.length, lowStock });
+
+    // Analyze product sales from transaction items
+    const productSales = {};
+    transactions.forEach(t => {
+      if (t.items && Array.isArray(t.items)) {
+        t.items.forEach(item => {
+          const name = item.name || item.n || 'Nomalum';
+          const qty = item.qty || item.q || 1;
+          productSales[name] = (productSales[name] || 0) + qty;
+        });
+      }
+    });
+
+    const sorted = Object.entries(productSales).sort((a, b) => b[1] - a[1]);
+    const topSelling = sorted.slice(0, 3);
+    const slowSelling = sorted.slice(-3).reverse();
+
+    // Build dynamic insights
+    const dynamicInsights = [];
+
+    if (topSelling.length > 0) {
+      const topDesc = topSelling.map(([n, q]) => `${n} (${q} ta)`).join(', ');
+      dynamicInsights.push({
+        id: 'i1', icon: '🚀', color: '#10B981',
+        title: 'Eng Ko\'p Sotilganlar',
+        desc: `${topDesc} — do'koningizda eng ko'p sotilayotgan mahsulotlar.`,
+        tag: `${topSelling.length} ta mahsulot`, tagType: 'g'
+      });
+    } else {
+      dynamicInsights.push({
+        id: 'i1', icon: '🚀', color: '#10B981',
+        title: 'Hozircha Ma\'lumot Yo\'q',
+        desc: 'POS orqali sotuv qilganingizda eng ko\'p sotilgan mahsulotlar shu yerda chiqadi.',
+        tag: 'Sotuv kutilmoqda', tagType: 'p'
+      });
+    }
+
+    if (slowSelling.length > 0 && sorted.length >= 3) {
+      const slowDesc = slowSelling.map(([n, q]) => `${n} (${q} ta)`).join(', ');
+      dynamicInsights.push({
+        id: 'i2', icon: '🐌', color: '#F43F5E',
+        title: 'Kam Sotilayotganlar',
+        desc: `${slowDesc} — bu mahsulotlar kam sotilmoqda. Chegirma yoki aksiya o'tkazishni o'ylab ko'ring.`,
+        tag: `${slowSelling.length} ta mahsulot`, tagType: 'r'
+      });
+    } else {
+      dynamicInsights.push({
+        id: 'i2', icon: '🐌', color: '#F43F5E',
+        title: 'Kam Sotilganlar',
+        desc: 'Yetarli sotuv ma\'lumoti to\'planganda kam sotilgan mahsulotlar aniqlanadi.',
+        tag: 'Ma\'lumot kutilmoqda', tagType: 'p'
+      });
+    }
+
+    // Stock warning insight
+    if (lowStock > 0) {
+      const lowProds = products.filter(p => p.stock <= 10 && p.stock > 0).slice(0, 3).map(p => `${p.name} (${p.stock} ta)`).join(', ');
+      const outProds = products.filter(p => p.stock <= 0).length;
+      dynamicInsights.push({
+        id: 'i3', icon: '📦', color: '#F59E0B',
+        title: 'Ombor Ogohlantirishlari',
+        desc: `${lowStock} ta mahsulot kam qoldiqda${outProds > 0 ? `, ${outProds} ta tugagan` : ''}. ${lowProds ? `Jumladan: ${lowProds}` : ''}`,
+        tag: `${lowStock} ta ogohlantirish`, tagType: 'r'
+      });
+    } else {
+      dynamicInsights.push({
+        id: 'i3', icon: '📦', color: '#F59E0B',
+        title: 'Ombor Holati',
+        desc: products.length > 0 ? 'Barcha mahsulotlar normalda — yetarli zaxira mavjud.' : 'Omborga tovar qo\'shing — keyin shu yerda holat tahlili chiqadi.',
+        tag: products.length > 0 ? 'Yaxshi ✅' : 'Ombor bo\'sh', tagType: products.length > 0 ? 'g' : 'p'
+      });
+    }
+
+    // Profit insight
+    const fmtNum = n => n >= 1000000 ? (n / 1000000).toFixed(1) + ' mln' : n.toLocaleString();
+    dynamicInsights.push({
+      id: 'i4', icon: '💰', color: '#A78BFA',
+      title: 'Foyda Tahlili',
+      desc: totalSales > 0
+        ? `Jami sotuv: ${fmtNum(totalSales)} so'm. Xarajatlar: ${fmtNum(totalExpenses)} so'm. Sof foyda: ${fmtNum(totalProfit)} so'm.`
+        : 'Hali sotuv amalga oshirilmagan. POS orqali sotuv qilganingizda foyda tahlili shu yerda chiqadi.',
+      tag: totalSales > 0 ? `Foyda: ${fmtNum(totalProfit)} so'm` : 'Hisoblash kutilmoqda',
+      tagType: totalProfit > 0 ? 'g' : totalProfit < 0 ? 'r' : 'p'
+    });
+
+    setInsights(dynamicInsights);
+
+    // Monthly chart data (last 6 months)
+    const months = ['Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyun', 'Iyul', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
+    const now = new Date();
+    const mData = [];
+    for (let i = 5; i >= 0; i--) {
+      const m = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const mEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+      const mTxns = transactions.filter(t => {
+        const d = new Date(t.date);
+        return d >= m && d < mEnd;
+      });
+      const sotuv = mTxns.reduce((s, t) => s + (Number(t.total) || 0), 0);
+      mData.push({ month: months[m.getMonth()], sotuv });
+    }
+    setMonthlyData(mData);
+
+    setLoading(false);
+  };
 
   const handleApply = (id, msg) => {
     setLoading(true);
@@ -265,13 +399,6 @@ export function Analytics() {
     if (!active || !payload?.length) return null;
     return <div className="glass" style={{ borderRadius: 10, padding: '10px 14px', fontSize: 12, border: '1px solid rgba(255,255,255,0.1)' }}><div style={{ fontWeight: 700, marginBottom: 4 }}>{label}</div><div style={{ color: '#A78BFA' }}>{(payload[0].value / 1000000).toFixed(1)} mln so'm</div></div>;
   };
-
-  const insights = [
-    { id: 'i1', icon: '🚀', color: '#10B981', title: 'Nima Tez Ketayapti?', desc: "Coca Cola (+34%), Red Bull (+28%) — so'nggi 7 kunda eng yuqori o'sish qayd etdi.", actionLabel: "Zaxirani ko'paytirish (Buyurtma)", successMsg: "✅ Ta'minotchiga avtomatik buyurtma xabari yuborildi." },
-    { id: 'i2', icon: '🐌', color: '#F43F5E', title: 'Nima Kam Ketayapti?', desc: 'Oreo (-45%), Pringles (-38%) — 30 kun ichida 5 donadan kam sotildi.', actionLabel: "10% Chegirma E'lon qilish", successMsg: "✅ Oreo va Pringles mahsulotlariga kassada 10% chegirma qo'llandi." },
-    { id: 'i3', icon: '🔮', color: '#A78BFA', title: '30 Kunlik Prognoz', desc: "Kelgusi oy: 385 mln so'm (+12%). Bayram haftasida 35% o'sish kutilmoqda.", tag: '~ 94% aniqlik', tagType: 'p' },
-    { id: 'i4', icon: '💎', color: '#F59E0B', title: 'Narx Optimizatsiyasi', desc: 'Red Bull narxi atrofidagi raqobatchilarda 19,500 so\'m. Agar siz ham narxni 19,500 ga oshirsangiz, foyda 8% oshadi.', actionLabel: "Narxni 19,500 ga sozlash", successMsg: "✅ Red Bull narxi tizimda 19,500 so'm etib belgilandi." },
-  ];
 
   return (
     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20, position: 'relative' }}>
@@ -296,68 +423,61 @@ export function Analytics() {
         <span style={{ fontSize: 44, filter: 'drop-shadow(0 4px 8px rgba(167,139,250,0.3))' }}>🤖</span>
         <div>
           <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 4, background: 'linear-gradient(90deg, #A78BFA, #3B82F6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>SavdoPlatform AI Markazi</div>
-          <div style={{ fontSize: 13, color: 'var(--t2)' }}>Sun'iy intellekt tomonidan so'nggi 30 kunlik tranzaksiyalar asosida tayyorlangan tahlillar va maslahatlar. Haqiqiy vaqtda yangilanadi.</div>
+          <div style={{ fontSize: 13, color: 'var(--t2)' }}>Do'koningiz ma'lumotlari asosida tayyorlangan tahlillar va maslahatlar.</div>
         </div>
-        <button onClick={() => {
-          setLoading(true);
-          setTimeout(() => { setLoading(false); setToast("✅ Ma'lumotlar qayta tahlil qilindi!"); setTimeout(() => setToast(null), 3000); }, 1500);
-        }} style={{ marginLeft: 'auto', padding: '10px 18px', background: 'var(--s2)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, color: 'white', cursor: 'pointer', fontSize: 13, fontFamily: 'Outfit', fontWeight: 700, transition: 'all 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseLeave={e => e.currentTarget.style.background = 'var(--s2)'}>
+        <button onClick={() => analyzeData(user?.store_id)} style={{ marginLeft: 'auto', padding: '10px 18px', background: 'var(--s2)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, color: 'white', cursor: 'pointer', fontSize: 13, fontFamily: 'Outfit', fontWeight: 700, transition: 'all 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseLeave={e => e.currentTarget.style.background = 'var(--s2)'}>
           ↻ Qayta Tahlil Qilish
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 16 }}>
-        {insights.map((ins) => (
-          <div key={ins.id} className="glass-card fast-transition" style={{ borderRadius: 16, padding: 22, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', border: '1px solid rgba(255,255,255,0.05)' }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.borderColor = ins.color + '44'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.05)'; }}>
-            <div style={{ position: 'absolute', top: -50, right: -50, width: 140, height: 140, background: ins.color, opacity: 0.08, borderRadius: '50%', filter: 'blur(35px)' }} />
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
-              <div style={{ fontSize: 32, filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.3))' }}>{ins.icon}</div>
-              <div style={{ fontSize: 16, fontWeight: 800 }}>{ins.title}</div>
-            </div>
-
-            <div style={{ fontSize: 13, color: 'var(--t2)', lineHeight: 1.6, flex: 1, marginBottom: 20 }}>
-              {ins.desc}
-            </div>
-
-            <div style={{ marginTop: 'auto' }}>
-              {ins.actionLabel ? (
-                <button
-                  disabled={applied[ins.id] || loading}
-                  onClick={() => handleApply(ins.id, ins.successMsg)}
-                  style={{ width: '100%', padding: '10px 16px', background: applied[ins.id] ? 'rgba(255,255,255,0.03)' : ins.color + '15', border: `1px solid ${applied[ins.id] ? 'transparent' : ins.color + '44'}`, borderRadius: 10, color: applied[ins.id] ? 'var(--t3)' : ins.color, fontSize: 13, fontWeight: 800, cursor: applied[ins.id] ? 'default' : 'pointer', transition: 'all 0.2s', fontFamily: 'Outfit' }}
-                  onMouseEnter={e => { if (!applied[ins.id]) e.currentTarget.style.background = ins.color + '25'; }}
-                  onMouseLeave={e => { if (!applied[ins.id]) e.currentTarget.style.background = ins.color + '15'; }}
-                >
-                  {applied[ins.id] ? '✓ Qaror Qabul Qilindi' : `⚡ ${ins.actionLabel}`}
-                </button>
-              ) : (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, padding: '6px 14px', borderRadius: 20, background: ins.tagType === 'g' ? 'rgba(16,185,129,0.1)' : ins.tagType === 'r' ? 'rgba(244,63,94,0.1)' : ins.tagType === 'p' ? 'rgba(167,139,250,0.15)' : 'rgba(245,158,11,0.1)', color: ins.tagType === 'g' ? '#10B981' : ins.tagType === 'r' ? '#F43F5E' : ins.tagType === 'p' ? '#A78BFA' : '#F59E0B' }}>
+      {insights.length > 0 ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 16 }}>
+          {insights.map((ins) => (
+            <div key={ins.id} className="glass-card fast-transition" style={{ borderRadius: 16, padding: 22, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', border: '1px solid rgba(255,255,255,0.05)' }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.borderColor = ins.color + '44'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.05)'; }}>
+              <div style={{ position: 'absolute', top: -50, right: -50, width: 140, height: 140, background: ins.color, opacity: 0.08, borderRadius: '50%', filter: 'blur(35px)' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+                <div style={{ fontSize: 32, filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.3))' }}>{ins.icon}</div>
+                <div style={{ fontSize: 16, fontWeight: 800 }}>{ins.title}</div>
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--t2)', lineHeight: 1.6, flex: 1, marginBottom: 20 }}>
+                {ins.desc}
+              </div>
+              <div style={{ marginTop: 'auto' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, padding: '6px 14px', borderRadius: 20, background: ins.tagType === 'g' ? 'rgba(16,185,129,0.1)' : ins.tagType === 'r' ? 'rgba(244,63,94,0.1)' : 'rgba(167,139,250,0.15)', color: ins.tagType === 'g' ? '#10B981' : ins.tagType === 'r' ? '#F43F5E' : '#A78BFA' }}>
                   {ins.tag}
                 </span>
-              )}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : !loading && (
+        <div className="glass-card" style={{ borderRadius: 16, padding: 40, textAlign: 'center', color: 'var(--t3)' }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
+          <div style={{ fontSize: 14 }}>Ma'lumotlar yuklanmoqda...</div>
+        </div>
+      )}
 
       <div className="glass-card" style={{ borderRadius: 16, padding: 22 }}>
-        <SectionHeader title="Oylik Sotuv Trendi va AI Prognozi" />
-        <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={[]}>
-            <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
-            <XAxis dataKey="month" tick={{ fill: 'var(--t2)', fontSize: 12 }} axisLine={false} tickLine={false} />
-            <YAxis hide />
-            <Tooltip content={<CustomTT />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-            <Bar dataKey="sotuv" fill="url(#colorSotuv)" radius={[6, 6, 0, 0]} barSize={40} />
-            <defs>
-              <linearGradient id="colorSotuv" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#8B5CF6" stopOpacity={1} />
-                <stop offset="100%" stopColor="#3B82F6" stopOpacity={0.7} />
-              </linearGradient>
-            </defs>
-          </BarChart>
-        </ResponsiveContainer>
+        <SectionHeader title="Oylik Sotuv Trendi" />
+        {monthlyData.some(m => m.sotuv > 0) ? (
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={monthlyData}>
+              <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
+              <XAxis dataKey="month" tick={{ fill: 'var(--t2)', fontSize: 12 }} axisLine={false} tickLine={false} />
+              <YAxis hide />
+              <Tooltip content={<CustomTT />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+              <Bar dataKey="sotuv" fill="url(#colorSotuv)" radius={[6, 6, 0, 0]} barSize={40} />
+              <defs>
+                <linearGradient id="colorSotuv" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#8B5CF6" stopOpacity={1} />
+                  <stop offset="100%" stopColor="#3B82F6" stopOpacity={0.7} />
+                </linearGradient>
+              </defs>
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--t3)', fontSize: 13 }}>Hozircha sotuv ma'lumotlari yo'q</div>
+        )}
       </div>
     </div>
   );
