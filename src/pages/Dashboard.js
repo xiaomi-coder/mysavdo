@@ -23,13 +23,15 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 export default function Dashboard() {
-  const { user, sendTgAlert, expenses } = useAuth();
+  const { user, sendTgAlert } = useAuth();
   const [loadingTg, setLoadingTg] = React.useState(false);
   const [recentSales, setRecentSales] = React.useState([]);
+  const [expenses, setExpenses] = React.useState([]);
 
   React.useEffect(() => {
     if (user?.store_id) {
       loadRecentSales(user.store_id);
+      loadExpenses(user.store_id);
     }
   }, [user]);
 
@@ -42,7 +44,12 @@ export default function Dashboard() {
     if (data) setRecentSales(data);
   };
 
-  const totalExpenses = expenses.reduce((acc, curr) => acc + curr.amount, 0);
+  const loadExpenses = async (storeId) => {
+    const { data } = await supabase.from('expenses').select('amount').eq('store_id', storeId);
+    if (data) setExpenses(data);
+  };
+
+  const totalExpenses = expenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
   const calculatedFoyda = 3262500 - totalExpenses; // Basic mock static sub-profit minus dynamic expenses
 
   const handleSendTgReport = () => {
