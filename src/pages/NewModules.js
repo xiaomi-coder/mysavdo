@@ -676,7 +676,7 @@ export function ChekPrinter() {
             {showQr && (
               <div style={{ textAlign: 'center', margin: '10px 0', fontSize: 10, color: '#555' }}>
                 ▪▫▪▪▫▪▫▪<br />▫▪▪▫▪▪▫▪<br />▪▪▫▪▫▪▪▫<br />
-                <div style={{ marginTop: 4 }}>savdoplatform.uz</div>
+                <div style={{ marginTop: 4 }}>mybazzar.uz</div>
               </div>
             )}
 

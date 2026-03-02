@@ -423,7 +423,7 @@ function CreatorSettings() {
       <div className="glass-card" style={{ borderRadius: 16, padding: 22 }}>
         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 16 }}>🔧 Tizim Sozlamalari</div>
         {[
-          { label: 'Platforma nomi', val: 'SavdoPlatform' },
+          { label: 'Platforma nomi', val: 'MyBazzar' },
           { label: 'Versiya', val: 'v2.0.0' },
           { label: 'Texnik email', val: 'support@savdo.uz' },
         ].map(s => (

@@ -54,7 +54,7 @@ export default function Login() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
             <div style={{ width: 46, height: 46, borderRadius: 14, background: 'linear-gradient(135deg,#3B82F6,#22D3EE)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, boxShadow: '0 0 24px rgba(59,130,246,0.35)' }}>🏪</div>
             <div>
-              <div style={{ fontSize: 22, fontWeight: 900, background: 'linear-gradient(90deg,#fff,#22D3EE)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>SavdoPlatform</div>
+              <div style={{ fontSize: 22, fontWeight: 900, background: 'linear-gradient(90deg,#fff,#22D3EE)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>MyBazzar</div>
               <div style={{ fontSize: 11, color: 'var(--t3)', fontWeight: 400 }}>Aqlli savdo boshqaruv tizimi</div>
             </div>
           </div>

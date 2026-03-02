@@ -31,7 +31,7 @@ export default function Sidebar() {
       <div style={{ padding: '18px 16px 16px', borderBottom: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg,#3B82F6,#22D3EE)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, boxShadow: '0 0 18px rgba(59,130,246,0.35)', flexShrink: 0 }}>🏪</div>
-          <span style={{ fontSize: 16, fontWeight: 900, background: 'linear-gradient(90deg,#fff,#22D3EE)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>SavdoPlatform</span>
+          <span style={{ fontSize: 16, fontWeight: 900, background: 'linear-gradient(90deg,#fff,#22D3EE)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>MyBazzar</span>
         </div>
         {user?.storeName && (
           <div style={{ marginTop: 8, fontSize: 11, color: 'var(--t2)', padding: '4px 10px', background: 'var(--s2)', borderRadius: 8, display: 'inline-block' }}>

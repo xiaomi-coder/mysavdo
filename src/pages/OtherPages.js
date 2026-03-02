@@ -422,7 +422,7 @@ export function Analytics() {
       <div style={{ background: 'linear-gradient(135deg,rgba(167,139,250,0.1),rgba(59,130,246,0.06))', border: '1px solid rgba(167,139,250,0.2)', borderRadius: 16, padding: '20px 24px', display: 'flex', alignItems: 'center', gap: 16, boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}>
         <span style={{ fontSize: 44, filter: 'drop-shadow(0 4px 8px rgba(167,139,250,0.3))' }}>🤖</span>
         <div>
-          <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 4, background: 'linear-gradient(90deg, #A78BFA, #3B82F6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>SavdoPlatform AI Markazi</div>
+          <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 4, background: 'linear-gradient(90deg, #A78BFA, #3B82F6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>MyBazzar AI Markazi</div>
           <div style={{ fontSize: 13, color: 'var(--t2)' }}>Do'koningiz ma'lumotlari asosida tayyorlangan tahlillar va maslahatlar.</div>
         </div>
         <button onClick={() => analyzeData(user?.store_id)} style={{ marginLeft: 'auto', padding: '10px 18px', background: 'var(--s2)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, color: 'white', cursor: 'pointer', fontSize: 13, fontFamily: 'Outfit', fontWeight: 700, transition: 'all 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseLeave={e => e.currentTarget.style.background = 'var(--s2)'}>

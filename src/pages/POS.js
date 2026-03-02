@@ -115,7 +115,7 @@ export default function POS() {
           </style>
         </head>
         <body>
-          <div class="center bold" style="font-size: 16px; margin-bottom: 4px;">SavdoPlatform</div>
+          <div class="center bold" style="font-size: 16px; margin-bottom: 4px;">MyBazzar</div>
           <div class="center">"${user?.storeName || 'Do\'kon'}"</div>
           <div class="center" style="font-size: 10px; margin-bottom: 6px;">Manzil kiritilmagan</div>
           <div class="line"></div>
@@ -140,7 +140,7 @@ export default function POS() {
           <div class="row" style="margin-top: 4px;"><span>To'lov turi:</span><span>${paymentLabel.trim()}</span></div>
           <div class="line"></div>
           <div class="center" style="margin-top: 10px;">Xaridingiz uchun rahmat!</div>
-          <div class="center" style="margin-top: 2px;">*** savdoplatform.uz ***</div>
+          <div class="center" style="margin-top: 2px;">*** mybazzar.uz ***</div>
           <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
         </body>
       </html>

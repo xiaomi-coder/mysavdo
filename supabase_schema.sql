@@ -1,4 +1,4 @@
--- SavdoPlatform3 Supabase Schema (Multi-Tenant & Creator Logic)
+-- MyBazzar Supabase Schema (Multi-Tenant & Creator Logic)
 
 -- Tizim toza holatda o'rnatilishi uchun avvalgi jadvallarni o'chiramiz:
 DROP TABLE IF EXISTS expenses CASCADE;

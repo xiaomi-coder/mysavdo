@@ -1,10 +1,10 @@
-# 🏪 SavdoPlatform — Aqlli Savdo Boshqaruv Tizimi
+# 🏪 MyBazzar — Aqlli Savdo Boshqaruv Tizimi
 
 ## Ishga tushirish
 
 ```bash
 # 1. Papkaga kiring
-cd savdoplatform
+cd mybazzar
 
 # 2. Paketlarni o'rnating
 npm install
@@ -57,7 +57,7 @@ Deploy: Railway / Render / VPS
 ## Struktura
 
 ```
-savdoplatform/
+mybazzar/
 ├── public/
 │   └── index.html
 ├── src/
