@@ -30,7 +30,7 @@ export default function Sidebar() {
       {/* Logo */}
       <div style={{ padding: '18px 16px 16px', borderBottom: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg,#3B82F6,#22D3EE)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, boxShadow: '0 0 18px rgba(59,130,246,0.35)', flexShrink: 0 }}>🏪</div>
+          <img src="/logo.png" alt="MyBazzar" style={{ width: 36, height: 36, borderRadius: 10, objectFit: 'cover', boxShadow: '0 0 18px rgba(59,130,246,0.35)', flexShrink: 0 }} />
           <span style={{ fontSize: 16, fontWeight: 900, background: 'linear-gradient(90deg,#fff,#22D3EE)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>MyBazzar</span>
         </div>
         {user?.storeName && (

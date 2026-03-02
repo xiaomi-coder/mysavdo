@@ -51,12 +51,9 @@ export default function Login() {
           <style>{`@keyframes fadeInUp { from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)} }`}</style>
 
           {/* Logo */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 14, background: 'linear-gradient(135deg,#3B82F6,#22D3EE)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, boxShadow: '0 0 24px rgba(59,130,246,0.35)' }}>🏪</div>
-            <div>
-              <div style={{ fontSize: 22, fontWeight: 900, background: 'linear-gradient(90deg,#fff,#22D3EE)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>MyBazzar</div>
-              <div style={{ fontSize: 11, color: 'var(--t3)', fontWeight: 400 }}>Aqlli savdo boshqaruv tizimi</div>
-            </div>
+          <div style={{ textAlign: 'center', marginBottom: 8 }}>
+            <img src="/logo.png" alt="MyBazzar" style={{ width: 120, height: 120, borderRadius: 18, objectFit: 'cover', boxShadow: '0 0 30px rgba(59,130,246,0.3)', marginBottom: 8 }} />
+            <div style={{ fontSize: 11, color: 'var(--t3)', fontWeight: 400 }}>Aqlli savdo boshqaruv tizimi</div>
           </div>
 
           <div style={{ fontSize: 14, color: 'var(--t2)', marginBottom: 28, marginTop: 16 }}>Tizimga kirish uchun ma'lumotlaringizni kiriting</div>
