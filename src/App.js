@@ -10,6 +10,7 @@ import { Employees, Analytics, Reports, Settings } from './pages/OtherPages';
 import { CRM, Nasiya, ChekPrinter } from './pages/NewModules';
 import Finance from './pages/Finance';
 import CreatorPanel from './pages/CreatorPanel';
+import LandingPage from './pages/LandingPage';
 
 function PrivateRoute({ children, permission }) {
   const { user, hasPermission } = useAuth();
@@ -20,7 +21,7 @@ function PrivateRoute({ children, permission }) {
 
 function RoleRedirect() {
   const { user } = useAuth();
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/" replace />;
   if (user.role === 'creator') return <Navigate to="/creator" replace />;
   if (user.role === 'cashier') return <Navigate to="/pos" replace />;
   return <Navigate to="/dashboard" replace />;
@@ -40,9 +41,9 @@ function AppRoutes() {
   const { user } = useAuth();
   return (
     <Routes>
+      <Route path="/" element={user ? <RoleRedirect /> : <LandingPage />} />
       <Route path="/login" element={user ? <RoleRedirect /> : <Login />} />
-      <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
-        <Route index element={<RoleRedirect />} />
+      <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
         <Route path="no-access" element={<NoAccess />} />
         {/* Creator */}
         <Route path="creator" element={<PrivateRoute permission="dashboard_creator"><CreatorPanel page="dashboard" /></PrivateRoute>} />
