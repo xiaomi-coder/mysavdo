@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /no-access
+Disallow: /creator
+Disallow: /creator/*
+
+Sitemap: https://mybazzar.uz/sitemap.xml
