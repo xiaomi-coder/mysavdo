@@ -87,25 +87,25 @@ export function AuthProvider({ children }) {
 
   // Settings & Offline State
   const [settings, setSettings] = useState(() => {
-    const saved = localStorage.getItem('savdo_settings');
+    const saved = localStorage.getItem('mybazzar_settings');
     return saved ? JSON.parse(saved) : { dark: true, notif: true, sms: false, offline: true, twofa: false, isOnline: navigator.onLine, language: 'UZ' };
   });
 
   useEffect(() => {
-    localStorage.setItem('savdo_settings', JSON.stringify(settings));
+    localStorage.setItem('mybazzar_settings', JSON.stringify(settings));
     if (!settings.dark) document.body.classList.add('light-mode');
     else document.body.classList.remove('light-mode');
   }, [settings.dark]);
 
   const [pendingTxns, setPendingTxns] = useState(() => {
-    const saved = localStorage.getItem('savdo_pending_txns');
+    const saved = localStorage.getItem('mybazzar_pending_txns');
     return saved ? JSON.parse(saved) : [];
   });
 
   const addPendingTxn = (txn) => {
     setPendingTxns(p => {
       const updated = [...p, txn];
-      localStorage.setItem('savdo_pending_txns', JSON.stringify(updated));
+      localStorage.setItem('mybazzar_pending_txns', JSON.stringify(updated));
       return updated;
     });
   };
@@ -115,7 +115,7 @@ export function AuthProvider({ children }) {
       setTimeout(() => {
         setTgAlert(`✅ Sinxronizatsiya qilindi!\nInternet uzilishi vaqtida saqlangan ${pendingTxns.length} ta sotuv bazaga yuborildi.`);
         setPendingTxns([]);
-        localStorage.removeItem('savdo_pending_txns');
+        localStorage.removeItem('mybazzar_pending_txns');
       }, 2000);
     }
   }, [settings.isOnline, pendingTxns]);
@@ -144,15 +144,15 @@ export function AuthProvider({ children }) {
 
       if (error || !data) {
         // Fallback for demo accounts if DB is empty
-        if (email === 'owner@savdo.uz' && password === 'owner123') {
+        if (email === 'owner@mybazzar.uz' && password === 'owner123') {
           setUser({ id: 'demo1', email, role: 'owner', name: 'Demo Egasi', storeName: "Demo Do'kon", icon: '🏪', color: '#3B82F6', label: "Do'kon Egasi", permissions: ROLES['owner'].permissions, store_id: 'demo-store-1' });
           return { success: true };
         }
-        if (email === 'manager@savdo.uz' && password === 'manager123') {
+        if (email === 'manager@mybazzar.uz' && password === 'manager123') {
           setUser({ id: 'demo2', email, role: 'manager', name: 'Demo Manager', storeName: "Demo Do'kon", icon: '📦', color: '#10B981', label: 'Manager', permissions: ROLES['manager'].permissions, store_id: 'demo-store-1' });
           return { success: true };
         }
-        if (email === 'kassir@savdo.uz' && password === 'kassir123') {
+        if (email === 'kassir@mybazzar.uz' && password === 'kassir123') {
           setUser({ id: 'demo3', email, role: 'cashier', name: 'Demo Kassir', storeName: "Demo Do'kon", icon: '💳', color: '#A78BFA', label: 'Kassir', permissions: ROLES['cashier'].permissions, store_id: 'demo-store-1' });
           return { success: true };
         }

@@ -69,7 +69,7 @@ export default function Login() {
               <input
                 type="email" value={email} onChange={e => { setEmail(e.target.value); setError(''); }}
                 onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                placeholder="email@savdo.uz"
+                placeholder="email@mybazzar.uz"
                 className="fast-transition"
                 style={{ width: '100%', padding: '13px 14px 13px 40px', background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 11, color: 'var(--t1)', fontSize: 14, fontFamily: 'Outfit,sans-serif', outline: 'none', boxSizing: 'border-box', backdropFilter: 'blur(4px)' }}
                 onFocus={e => e.target.style.borderColor = 'rgba(59,130,246,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.05)'}

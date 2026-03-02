@@ -188,7 +188,7 @@ export function Employees() {
         <Modal onClose={() => setShowAdd(false)}>
           <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 24 }}>👤 {editMode ? 'Xodimni Tahrirlash' : "Yangi Xodim Qo'shish"}</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '0 12px' }}>
-            {[{ lbl: 'Ism Familiya *', key: 'name', ph: 'Aziz Karimov', type: 'text' }, { lbl: 'Email *', key: 'email', ph: 'aziz@savdo.uz', type: 'email' }, { lbl: 'Telefon', key: 'phone', ph: '+998 90 123 45 67', type: 'tel' }, { lbl: 'Parol *', key: 'password', ph: '••••••••', type: 'text' }].map(f => (
+            {[{ lbl: 'Ism Familiya *', key: 'name', ph: 'Aziz Karimov', type: 'text' }, { lbl: 'Email *', key: 'email', ph: 'aziz@mybazzar.uz', type: 'email' }, { lbl: 'Telefon', key: 'phone', ph: '+998 90 123 45 67', type: 'tel' }, { lbl: 'Parol *', key: 'password', ph: '••••••••', type: 'text' }].map(f => (
               <div key={f.key} style={{ marginBottom: 14 }}>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--t2)', display: 'block', marginBottom: 7, textTransform: 'uppercase', letterSpacing: .8 }}>{f.lbl}</label>
                 <input type={f.type} value={form[f.key]} onChange={e => setForm({ ...form, [f.key]: e.target.value })} placeholder={f.ph} style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />

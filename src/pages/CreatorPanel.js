@@ -230,7 +230,7 @@ function StoresPage({ stores, onAdd, showToast, showAddStore, setShowAddStore })
           {[
             { lbl: "Do'kon nomi *", key: 'name', ph: "Asosiy Do'kon", type: 'text' },
             { lbl: editMode ? 'Yangi egasi ismi *' : 'Egasi ismi *', key: 'owner', ph: 'Jasur Karimov', type: 'text' },
-            { lbl: editMode ? 'Yangi emaili *' : 'Egasi emaili *', key: 'email', ph: 'egasi@savdo.uz', type: 'email' },
+            { lbl: editMode ? 'Yangi emaili *' : 'Egasi emaili *', key: 'email', ph: 'egasi@mybazzar.uz', type: 'email' },
             { lbl: editMode ? 'Parolni o\'zgartirish (Majburiy emas)' : 'Egasi paroli *', key: 'password', ph: 'Kamida 6 belgi', type: 'password' },
           ].map(f => (
             <FormField key={f.key} label={f.lbl}>
@@ -340,7 +340,7 @@ function UsersPage({ stores = [], users, onAdd, showToast, showAddUser, setShowA
           <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 24 }}>👤 Yangi Foydalanuvchi</div>
           {[
             { lbl: 'Ism Familiya *', key: 'name', ph: 'Aziz Karimov', type: 'text' },
-            { lbl: 'Email *', key: 'email', ph: 'aziz@savdo.uz', type: 'email' },
+            { lbl: 'Email *', key: 'email', ph: 'aziz@mybazzar.uz', type: 'email' },
             { lbl: 'Parol *', key: 'password', ph: 'Kamida 6 belgi', type: 'password' },
           ].map(f => (
             <FormField key={f.key} label={f.lbl}>
@@ -425,7 +425,7 @@ function CreatorSettings() {
         {[
           { label: 'Platforma nomi', val: 'MyBazzar' },
           { label: 'Versiya', val: 'v2.0.0' },
-          { label: 'Texnik email', val: 'support@savdo.uz' },
+          { label: 'Texnik email', val: 'support@mybazzar.uz' },
         ].map(s => (
           <div key={s.label} style={{ marginBottom: 14 }}>
             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--t2)', display: 'block', marginBottom: 7, textTransform: 'uppercase', letterSpacing: .8 }}>{s.label}</label>
