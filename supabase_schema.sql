@@ -14,6 +14,7 @@ CREATE TABLE stores (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
   owner_email TEXT NOT NULL,
+  store_type TEXT NOT NULL DEFAULT 'general', -- 'general', 'phone'
   is_active BOOLEAN DEFAULT true,
   max_branches INTEGER DEFAULT 1,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -23,7 +24,7 @@ CREATE TABLE stores (
 CREATE TABLE users (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   email TEXT UNIQUE NOT NULL,
-  password TEXT NOT NULL, -- Note: In production, rely on Supabase Auth (auth.users). This is for demo logic if bypassing Auth.
+  password TEXT NOT NULL,
   role TEXT NOT NULL, -- 'creator', 'owner', 'manager', 'cashier'
   name TEXT NOT NULL,
   store_id UUID REFERENCES stores(id) ON DELETE CASCADE,
@@ -35,7 +36,7 @@ CREATE TABLE users (
 INSERT INTO users (email, password, role, name, permissions) VALUES
 ('creator', 'xiaomicoder', 'creator', 'Tizim Yaratuvchisi (Creator)', '["dashboard_creator", "stores", "all_stats", "create_owner"]');
 
--- 3. Products Table (Ombor)
+-- 3. Products Table (Ombor — Oddiy + Telefon)
 CREATE TABLE products (
   id SERIAL PRIMARY KEY,
   store_id UUID REFERENCES stores(id) ON DELETE CASCADE NOT NULL,
@@ -46,6 +47,14 @@ CREATE TABLE products (
   category TEXT NOT NULL,
   image TEXT,
   barcode TEXT,
+  -- Telefon do'koni uchun maxsus maydonlar
+  phone_model TEXT,       -- Model: Samsung Galaxy S24, iPhone 16...
+  phone_memory TEXT,      -- Xotira: 128GB, 256GB...
+  phone_color TEXT,       -- Rang: Qora, Oq, Ko'k...
+  phone_imei1 TEXT,       -- IMEI 1
+  phone_imei2 TEXT,       -- IMEI 2
+  phone_serial TEXT,      -- Seriya raqami (S/N)
+  phone_condition TEXT,   -- Holat: Yangi, B/U, Refurbished
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

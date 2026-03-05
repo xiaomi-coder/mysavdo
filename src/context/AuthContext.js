@@ -138,7 +138,7 @@ export function AuthProvider({ children }) {
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('*, stores(name)')
+        .select('*, stores(name, store_type)')
         .eq('email', email)
         .single();
 
@@ -173,6 +173,7 @@ export function AuthProvider({ children }) {
       setUser({
         ...data,
         storeName: data.stores?.name,
+        storeType: data.stores?.store_type || 'general',
         icon: roleDefaults.icon,
         color: roleDefaults.color,
         label: roleDefaults.label,

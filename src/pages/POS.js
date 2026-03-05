@@ -5,6 +5,7 @@ import { supabase } from '../utils/supabaseClient';
 
 export default function POS() {
   const { user, settings, addPendingTxn } = useAuth();
+  const isPhone = user?.storeType === 'phone';
   const [search, setSearch] = useState('');
   const [cat, setCat] = useState('Hammasi');
   const [cart, setCart] = useState({});
@@ -34,7 +35,10 @@ export default function POS() {
   const filtered = products.filter(p => {
     const pCat = p.category || p.cat;
     const matchCat = cat === 'Hammasi' || pCat === cat;
-    const matchQ = p.name.toLowerCase().includes(search.toLowerCase()) || (p.barcode || '').includes(search);
+    const q = search.toLowerCase();
+    const matchQ = p.name.toLowerCase().includes(q) || (p.barcode || '').includes(search)
+      || (p.phone_imei1 || '').includes(search) || (p.phone_imei2 || '').includes(search)
+      || (p.phone_serial || '').toLowerCase().includes(q);
     return matchCat && matchQ;
   });
 
@@ -126,11 +130,12 @@ export default function POS() {
           <div class="row bold"><span>Mahsulot</span><span>Summa</span></div>
           <div class="line"></div>
           ${cartItems.map(item => `
-            <div>${item.name}</div>
+            <div>${isPhone ? (item.phone_model || item.name) : item.name}${isPhone && item.phone_memory ? ` (${item.phone_memory})` : ''}</div>
             <div class="row">
               <span style="padding-left: 8px;">${item.qty} x ${item.price.toLocaleString()}</span>
               <span>${(item.price * item.qty).toLocaleString()}</span>
             </div>
+            ${isPhone && item.phone_imei1 ? `<div style="font-size:9px;color:#888;padding-left:8px;">IMEI1: ${item.phone_imei1}${item.phone_imei2 ? ` | IMEI2: ${item.phone_imei2}` : ''}${item.phone_serial ? ` | S/N: ${item.phone_serial}` : ''}</div>` : ''}
           `).join('')}
           <div class="line"></div>
           <div class="row"><span>Jami:</span><span>${subtotal.toLocaleString()} so'm</span></div>
@@ -185,7 +190,7 @@ export default function POS() {
                   }
                 }
               }}
-              placeholder="Mahsulot nomi yoki barcode..."
+              placeholder={isPhone ? "IMEI, S/N yoki model qidiring..." : "Mahsulot nomi yoki barcode..."}
               style={{
                 width: '100%', padding: '12px 14px 12px 40px',
                 background: 'var(--s1)', border: '1px solid var(--border)',
@@ -241,10 +246,12 @@ export default function POS() {
                     {inCart}
                   </div>
                 )}
-                <div style={{ fontSize: 30, marginBottom: 8, filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.2))' }}>{p.emoji}</div>
-                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4, lineHeight: 1.3 }}>{p.name}</div>
+                <div style={{ fontSize: isPhone ? 22 : 30, marginBottom: isPhone ? 4 : 8, filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.2))' }}>{p.emoji || (isPhone ? '📱' : '📦')}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2, lineHeight: 1.3 }}>{isPhone ? (p.phone_model || p.name) : p.name}</div>
+                {isPhone && p.phone_memory && <div style={{ fontSize: 10, color: '#22D3EE', fontWeight: 700, marginBottom: 2 }}>💾 {p.phone_memory} {p.phone_color ? `· ${p.phone_color}` : ''}</div>}
+                {isPhone && p.phone_imei1 && <div style={{ fontSize: 8, color: 'var(--t3)', fontFamily: 'JetBrains Mono,monospace', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis' }}>IMEI: {p.phone_imei1}</div>}
                 <div style={{ fontSize: 14, fontWeight: 800, color: '#22D3EE' }}>{p.price.toLocaleString()} so'm</div>
-                <div style={{ fontSize: 11, color: p.stock === 0 ? '#F43F5E' : p.stock < 10 ? '#F59E0B' : 'var(--t2)', marginTop: 4 }}>
+                <div style={{ fontSize: 11, color: p.stock === 0 ? '#F43F5E' : p.stock < 10 ? '#F59E0B' : 'var(--t2)', marginTop: 2 }}>
                   {p.stock === 0 ? '❌ Tugagan' : `${p.stock} ta qoldi`}
                 </div>
               </div>
@@ -281,9 +288,10 @@ export default function POS() {
                 borderBottom: '1px solid rgba(30,45,61,0.5)',
                 animation: 'slideIn .2s ease',
               }}>
-                <span style={{ fontSize: 20 }}>{item.emoji}</span>
+                <span style={{ fontSize: 20 }}>{item.emoji || (isPhone ? '📱' : '📦')}</span>
                 <div style={{ flex: 1, overflow: 'hidden' }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{isPhone ? (item.phone_model || item.name) : item.name}</div>
+                  {isPhone && item.phone_memory && <div style={{ fontSize: 9, color: '#22D3EE' }}>{item.phone_memory} {item.phone_color ? `· ${item.phone_color}` : ''}</div>}
                   <div style={{ fontSize: 11, color: 'var(--t2)' }}>{(item.price * item.qty).toLocaleString()} so'm</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>

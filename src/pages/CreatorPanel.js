@@ -29,9 +29,10 @@ export default function CreatorPanel({ page }) {
           const storeUsersCount = usersData ? usersData.filter(u => u.store_id === s.id && u.role !== 'creator').length : 0;
           return {
             id: s.id, name: s.name, owner: s.owner_email, email: s.owner_email,
+            storeType: s.store_type || 'general',
             plan: s.max_branches > 1 ? (s.max_branches > 3 ? 'Enterprise' : 'Business') : 'Starter',
-            revenue: 0, // In a real app, calculate from transactions
-            active: s.is_active, employees: storeUsersCount, color: '#3B82F6'
+            revenue: 0,
+            active: s.is_active, employees: storeUsersCount, color: s.store_type === 'phone' ? '#A78BFA' : '#3B82F6'
           };
         }));
       }
@@ -85,7 +86,10 @@ function CreatorDashboard({ stores, users, totalRevenue }) {
               <div style={{ width: 40, height: 40, borderRadius: 10, background: s.color + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>🏪</div>
               <Badge type={s.active ? 'success' : 'danger'}>{s.active ? 'Aktiv' : 'Faolsiz'}</Badge>
             </div>
-            <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4 }}>{s.name}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <div style={{ fontSize: 15, fontWeight: 800 }}>{s.name}</div>
+              <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: s.storeType === 'phone' ? 'rgba(167,139,250,0.15)' : 'rgba(59,130,246,0.15)', color: s.storeType === 'phone' ? '#A78BFA' : '#3B82F6' }}>{s.storeType === 'phone' ? '📱 Telefon' : '📦 Oddiy'}</span>
+            </div>
             <div style={{ fontSize: 12, color: 'var(--t2)', marginBottom: 12 }}>👤 {s.owner} · {s.employees} xodim</div>
             <div style={{ fontSize: 16, fontWeight: 800, color: '#10B981' }}>{(s.revenue / 1000000).toFixed(0)}M so'm</div>
             <div style={{ fontSize: 11, color: 'var(--t2)', marginBottom: 14 }}>Bu oy daromad</div>
@@ -101,7 +105,7 @@ function CreatorDashboard({ stores, users, totalRevenue }) {
 
 // ── STORES PAGE ─────────────────────────────────────────────────────
 function StoresPage({ stores, onAdd, showToast, showAddStore, setShowAddStore }) {
-  const [form, setForm] = useState({ name: '', owner: '', email: '', password: '', plan: 'Starter' });
+  const [form, setForm] = useState({ name: '', owner: '', email: '', password: '', plan: 'Starter', storeType: 'general' });
   const [loading, setLoading] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editId, setEditId] = useState(null);
@@ -125,7 +129,7 @@ function StoresPage({ stores, onAdd, showToast, showAddStore, setShowAddStore })
       // 1. Create store
       const { data: storeData, error: storeErr } = await supabase
         .from('stores')
-        .insert({ name: form.name, owner_email: form.email, max_branches: form.plan === 'Starter' ? 1 : form.plan === 'Business' ? 3 : 10 })
+        .insert({ name: form.name, owner_email: form.email, store_type: form.storeType, max_branches: form.plan === 'Starter' ? 1 : form.plan === 'Business' ? 3 : 10 })
         .select()
         .single();
 
@@ -145,7 +149,7 @@ function StoresPage({ stores, onAdd, showToast, showAddStore, setShowAddStore })
       } else {
         showToast(`✅ "${form.name}" do'koni va egasi qo'shildi!`);
         setShowAddStore(false);
-        setForm({ name: '', owner: '', email: '', password: '', plan: 'Starter' });
+        setForm({ name: '', owner: '', email: '', password: '', plan: 'Starter', storeType: 'general' });
       }
     }
 
@@ -178,14 +182,14 @@ function StoresPage({ stores, onAdd, showToast, showAddStore, setShowAddStore })
   const openEdit = (s) => {
     setEditMode(true);
     setEditId(s.id);
-    setForm({ name: s.name, owner: s.owner, email: s.email, password: '', plan: s.plan });
+    setForm({ name: s.name, owner: s.owner, email: s.email, password: '', plan: s.plan, storeType: s.storeType || 'general' });
     setShowAddStore(true);
   };
 
   const handleOpenAdd = () => {
     setEditMode(false);
     setEditId(null);
-    setForm({ name: '', owner: '', email: '', password: '', plan: 'Starter' });
+    setForm({ name: '', owner: '', email: '', password: '', plan: 'Starter', storeType: 'general' });
     onAdd();
   };
 
@@ -201,7 +205,10 @@ function StoresPage({ stores, onAdd, showToast, showAddStore, setShowAddStore })
             <div key={s.id} className="fast-transition" style={{ background: 'rgba(17, 24, 39, 0.4)', borderRadius: 14, padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 16, border: `1px solid ${s.active ? 'rgba(255,255,255,0.05)' : 'rgba(244,63,94,0.15)'}` }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseLeave={e => e.currentTarget.style.background = 'rgba(17, 24, 39, 0.4)'}>
               <div style={{ width: 44, height: 44, borderRadius: 12, background: s.color + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🏪</div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>{s.name}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700 }}>{s.name}</div>
+                  <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: s.storeType === 'phone' ? 'rgba(167,139,250,0.15)' : 'rgba(59,130,246,0.15)', color: s.storeType === 'phone' ? '#A78BFA' : '#3B82F6' }}>{s.storeType === 'phone' ? '📱 Telefon' : '📦 Oddiy'}</span>
+                </div>
                 <div style={{ fontSize: 12, color: 'var(--t2)' }}>👤 {s.owner} · ✉️ {s.email}</div>
               </div>
               <div style={{ textAlign: 'center' }}>
@@ -237,6 +244,16 @@ function StoresPage({ stores, onAdd, showToast, showAddStore, setShowAddStore })
               <input type={f.type} value={form[f.key]} onChange={e => setForm({ ...form, [f.key]: e.target.value })} placeholder={f.ph} style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
             </FormField>
           ))}
+          <FormField label="Do'kon turi">
+            <div style={{ display: 'flex', gap: 10 }}>
+              {[{ val: 'general', icon: '📦', label: 'Oddiy do\'kon' }, { val: 'phone', icon: '📱', label: 'Telefon do\'koni' }].map(t => (
+                <div key={t.val} onClick={() => setForm({ ...form, storeType: t.val })} style={{ flex: 1, padding: '14px 12px', borderRadius: 12, cursor: 'pointer', textAlign: 'center', background: form.storeType === t.val ? (t.val === 'phone' ? 'rgba(167,139,250,0.12)' : 'rgba(59,130,246,0.12)') : 'rgba(17,24,39,0.4)', border: `1px solid ${form.storeType === t.val ? (t.val === 'phone' ? 'rgba(167,139,250,0.4)' : 'rgba(59,130,246,0.4)') : 'rgba(255,255,255,0.05)'}`, transition: 'all .2s' }}>
+                  <div style={{ fontSize: 28, marginBottom: 6 }}>{t.icon}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: form.storeType === t.val ? (t.val === 'phone' ? '#A78BFA' : '#3B82F6') : 'var(--t2)' }}>{t.label}</div>
+                </div>
+              ))}
+            </div>
+          </FormField>
           <FormField label="Tarif rejasi">
             <select value={form.plan} onChange={e => setForm({ ...form, plan: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}>
               <option>Starter</option><option>Business</option><option>Enterprise</option>

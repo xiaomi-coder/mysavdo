@@ -4,8 +4,20 @@ import Barcode from 'react-barcode';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../utils/supabaseClient';
 
+const PHONE_BRANDS = [
+  { name: 'Samsung', icon: '📱' }, { name: 'iPhone', icon: '🍎' },
+  { name: 'Xiaomi/Redmi', icon: '🔴' }, { name: 'Honor', icon: '💎' },
+  { name: 'Infinix', icon: '♾️' }, { name: 'Tecno', icon: '🔵' },
+  { name: 'ZTE', icon: '🟢' }, { name: 'Realme', icon: '🟡' },
+  { name: 'OPPO', icon: '🟣' }, { name: 'Vivo', icon: '🔷' },
+  { name: 'Aksesuar', icon: '🎧' }, { name: 'Boshqa', icon: '📦' },
+];
+const PHONE_MEMORIES = ['32GB', '64GB', '128GB', '256GB', '512GB', '1TB'];
+const PHONE_CONDITIONS = ['Yangi', 'B/U', 'Refurbished'];
+
 export default function Inventory() {
   const { user } = useAuth();
+  const isPhone = user?.storeType === 'phone';
   const [search, setSearch] = useState('');
   const [catFilter, setCat] = useState('Hammasi');
   const [statusFilter, setStatus] = useState('all');
@@ -24,14 +36,22 @@ export default function Inventory() {
   const loadProducts = async (storeId) => {
     const { data } = await supabase.from('products').select('*').eq('store_id', storeId);
     if (data) {
-      setProducts(data.map(p => ({ ...p, emoji: p.image || '📦' })));
-      const uniqueCats = ['Hammasi', ...new Set(data.map(p => p.category || p.cat).filter(Boolean))];
-      setCategories(uniqueCats.map(c => ({ name: c, icon: '📦' })));
+      setProducts(data.map(p => ({ ...p, emoji: p.image || (isPhone ? '📱' : '📦') })));
+      if (isPhone) {
+        const allCats = ['Hammasi', ...PHONE_BRANDS.map(b => b.name)];
+        setCategories(allCats.map(c => ({ name: c, icon: (PHONE_BRANDS.find(b => b.name === c)?.icon || '📦') })));
+      } else {
+        const uniqueCats = ['Hammasi', ...new Set(data.map(p => p.category || p.cat).filter(Boolean))];
+        setCategories(uniqueCats.map(c => ({ name: c, icon: '📦' })));
+      }
     }
   };
 
   // New product form
-  const [newProd, setNewProd] = useState({ name: '', barcode: '', cat: '', cost: '', price: '', stock: '', minStock: '', emoji: '📦' });
+  const emptyProd = isPhone
+    ? { name: '', barcode: '', cat: 'Samsung', cost: '', price: '', stock: '1', minStock: '1', emoji: '📱', phoneModel: '', phoneMemory: '128GB', phoneColor: '', phoneImei1: '', phoneImei2: '', phoneSerial: '', phoneCondition: 'Yangi' }
+    : { name: '', barcode: '', cat: '', cost: '', price: '', stock: '', minStock: '', emoji: '📦' };
+  const [newProd, setNewProd] = useState(emptyProd);
 
   const generateBarcode = () => {
     const bc = '200' + Math.floor(Math.random() * 9000000000 + 1000000000).toString();
@@ -67,7 +87,10 @@ export default function Inventory() {
   };
 
   const filtered = products.filter(p => {
-    const matchQ = (p.name || '').toLowerCase().includes(search.toLowerCase()) || (p.barcode || '').includes(search);
+    const q = search.toLowerCase();
+    const matchQ = (p.name || '').toLowerCase().includes(q) || (p.barcode || '').includes(search)
+      || (p.phone_imei1 || '').includes(search) || (p.phone_imei2 || '').includes(search)
+      || (p.phone_serial || '').toLowerCase().includes(q) || (p.phone_model || '').toLowerCase().includes(q);
     const matchCat = catFilter === 'Hammasi' || (p.category || p.cat) === catFilter;
     const st = getStatus(p);
 
@@ -99,24 +122,31 @@ export default function Inventory() {
     if (!newProd.name || !newProd.price || !newProd.cost) return;
     const p = {
       store_id: user.store_id,
-      name: newProd.name,
+      name: isPhone ? `${newProd.cat} ${newProd.phoneModel}`.trim() : newProd.name,
       barcode: newProd.barcode || '',
       category: newProd.cat || 'Boshqa',
       cost_price: parseInt(newProd.cost),
       price: parseInt(newProd.price),
       stock: parseInt(newProd.stock) || 0,
-      image: newProd.emoji
+      image: newProd.emoji,
+      ...(isPhone ? {
+        phone_model: newProd.phoneModel,
+        phone_memory: newProd.phoneMemory,
+        phone_color: newProd.phoneColor,
+        phone_imei1: newProd.phoneImei1,
+        phone_imei2: newProd.phoneImei2,
+        phone_serial: newProd.phoneSerial,
+        phone_condition: newProd.phoneCondition,
+      } : {})
     };
 
     const { data, error } = await supabase.from('products').insert(p).select().single();
 
     if (!error && data) {
-      setProducts(prev => [{ ...data, emoji: data.image || '📦' }, ...prev]);
-      const uniqueCats = ['Hammasi', ...new Set([...products, data].map(pr => pr.category || pr.cat).filter(Boolean))];
-      setCategories(uniqueCats.map(c => ({ name: c, icon: '📦' })));
-      showToast(`✅ "${newProd.name}" qo'shildi`);
+      setProducts(prev => [{ ...data, emoji: data.image || (isPhone ? '📱' : '📦') }, ...prev]);
+      showToast(`✅ "${p.name}" qo'shildi`);
       setShowAdd(false);
-      setNewProd({ name: '', barcode: '', cat: '', cost: '', price: '', stock: '', minStock: '', emoji: '📦' });
+      setNewProd({ ...emptyProd });
     } else {
       showToast(`❌ Xatolik: ${error?.message}`, 'danger');
     }
@@ -164,7 +194,7 @@ export default function Inventory() {
                 {/* Search */}
                 <div style={{ position: 'relative' }}>
                   <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: 'var(--t2)' }}>🔍</span>
-                  <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Qidirish..."
+                  <input value={search} onChange={e => setSearch(e.target.value)} placeholder={isPhone ? "IMEI, S/N, model qidirish..." : "Qidirish..."}
                     className="fast-transition"
                     style={{ padding: '8px 12px 8px 30px', background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 9, color: 'var(--t1)', fontSize: 13, fontFamily: 'Outfit,sans-serif', outline: 'none', width: 180, backdropFilter: 'blur(4px)' }}
                     onFocus={e => e.target.style.borderColor = 'rgba(59,130,246,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.05)'} />
@@ -189,7 +219,10 @@ export default function Inventory() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
-                    {['Barcode', 'Mahsulot', 'Kategoriya', 'Tan Narxi', 'Sotillish Narxi', 'Qoldiq', 'Min.Qoldiq', 'Holat', 'Amal'].map(h => (
+                    {(isPhone
+                      ? ['📱 Model', '💾 Xotira', '🎨 Rang', 'IMEI-1', 'IMEI-2', 'S/N', 'Holat', 'Tan Narxi', 'Sotuv Narxi', 'Qoldiq', 'Amal']
+                      : ['Barcode', 'Mahsulot', 'Kategoriya', 'Tan Narxi', 'Sotillish Narxi', 'Qoldiq', 'Min.Qoldiq', 'Holat', 'Amal']
+                    ).map(h => (
                       <th key={h} style={{ fontSize: 10, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: .8, padding: '0 10px 12px 0', textAlign: 'left', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -198,17 +231,30 @@ export default function Inventory() {
                   {filtered.map(p => {
                     const st = getStatus(p);
                     const pct = Math.min(100, Math.round((p.stock / (p.minStock * 2)) * 100));
+                    const tdS = { padding: '11px 10px 11px 0', fontSize: 12, borderBottom: '1px solid rgba(255,255,255,0.05)' };
                     return (
                       <tr key={p.id} className="fast-transition" style={{ cursor: 'pointer' }}
                         onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                       >
-                        <td style={{ padding: '11px 10px 11px 0', fontFamily: 'JetBrains Mono,monospace', fontSize: 11, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{p.barcode}</td>
-                        <td style={{ padding: '11px 10px 11px 0', fontSize: 13, fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'nowrap', filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))' }}>{p.emoji} {p.name}</td>
-                        <td style={{ padding: '11px 10px 11px 0', fontSize: 12, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{p.category || p.cat}</td>
-                        <td style={{ padding: '11px 10px 11px 0', fontSize: 12, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'nowrap' }}>{(p.cost_price || p.cost || 0).toLocaleString()}</td>
-                        <td style={{ padding: '11px 10px 11px 0', fontSize: 13, fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'nowrap', color: '#10B981' }}>{p.price.toLocaleString()}</td>
-                        <td style={{ padding: '11px 10px 11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                        {isPhone ? (<>
+                          <td style={{ ...tdS, fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>{p.emoji} {p.phone_model || p.name}</td>
+                          <td style={{ ...tdS, color: '#22D3EE', fontWeight: 700 }}>{p.phone_memory || '-'}</td>
+                          <td style={tdS}>{p.phone_color || '-'}</td>
+                          <td style={{ ...tdS, fontFamily: 'JetBrains Mono,monospace', fontSize: 10, color: 'var(--t2)' }}>{p.phone_imei1 || '-'}</td>
+                          <td style={{ ...tdS, fontFamily: 'JetBrains Mono,monospace', fontSize: 10, color: 'var(--t2)' }}>{p.phone_imei2 || '-'}</td>
+                          <td style={{ ...tdS, fontFamily: 'JetBrains Mono,monospace', fontSize: 10, color: 'var(--t2)' }}>{p.phone_serial || '-'}</td>
+                          <td style={tdS}><Badge type={p.phone_condition === 'Yangi' ? 'success' : p.phone_condition === 'B/U' ? 'warning' : 'info'}>{p.phone_condition || '-'}</Badge></td>
+                          <td style={{ ...tdS, color: 'var(--t2)', whiteSpace: 'nowrap' }}>{(p.cost_price || 0).toLocaleString()}</td>
+                          <td style={{ ...tdS, fontSize: 13, fontWeight: 600, color: '#10B981', whiteSpace: 'nowrap' }}>{p.price.toLocaleString()}</td>
+                        </>) : (<>
+                          <td style={{ ...tdS, fontFamily: 'JetBrains Mono,monospace', fontSize: 11, color: 'var(--t2)' }}>{p.barcode}</td>
+                          <td style={{ ...tdS, fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>{p.emoji} {p.name}</td>
+                          <td style={{ ...tdS, color: 'var(--t2)' }}>{p.category || p.cat}</td>
+                          <td style={{ ...tdS, color: 'var(--t2)', whiteSpace: 'nowrap' }}>{(p.cost_price || p.cost || 0).toLocaleString()}</td>
+                          <td style={{ ...tdS, fontSize: 13, fontWeight: 600, color: '#10B981', whiteSpace: 'nowrap' }}>{p.price.toLocaleString()}</td>
+                        </>)}
+                        <td style={tdS}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <div style={{ width: 50, height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, overflow: 'hidden', flexShrink: 0 }}>
                               <div style={{ height: '100%', width: `${pct}%`, background: st.type === 'danger' ? '#F43F5E' : st.type === 'warning' ? '#F59E0B' : '#10B981', borderRadius: 2, boxShadow: `0 0 8px ${st.type === 'danger' ? '#F43F5E' : st.type === 'warning' ? '#F59E0B' : '#10B981'}88` }} />
@@ -216,8 +262,8 @@ export default function Inventory() {
                             <span style={{ fontSize: 13, fontWeight: 700, color: st.type === 'danger' ? '#F43F5E' : st.type === 'warning' ? '#F59E0B' : '#10B981', minWidth: 24 }}>{p.stock}</span>
                           </div>
                         </td>
-                        <td style={{ padding: '11px 10px 11px 0', fontSize: 12, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{p.minStock}</td>
-                        <td style={{ padding: '11px 10px 11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}><Badge type={st.type}>{st.label}</Badge></td>
+                        {!isPhone && <td style={{ ...tdS, color: 'var(--t2)' }}>{p.minStock}</td>}
+                        {!isPhone && <td style={tdS}><Badge type={st.type}>{st.label}</Badge></td>}
                         <td style={{ padding: '11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                           <div style={{ display: 'flex', gap: 6 }}>
                             <Btn variant="primary" size="sm" onClick={() => { setShowKirim(p); setKirimQty(''); }}>+ Kirim</Btn>
@@ -403,53 +449,158 @@ export default function Inventory() {
       {/* ADD PRODUCT MODAL */}
       {showAdd && (
         <Modal onClose={() => setShowAdd(false)} wide>
-          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 24 }}>📦 Yangi Tovar Qo'shish</div>
+          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 24 }}>{isPhone ? '📱 Yangi Telefon/Aksesuar Qo\'shish' : '📦 Yangi Tovar Qo\'shish'}</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <FormField label="Mahsulot nomi *">
-              <input value={newProd.name} onChange={e => setNewProd({ ...newProd, name: e.target.value })} placeholder="Coca Cola 0.5L" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-            </FormField>
-            <FormField label="Barcode">
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input value={newProd.barcode} onChange={e => setNewProd({ ...newProd, barcode: e.target.value })} placeholder="8690637" style={{ ...inputStyle, flex: 1 }} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-                <Btn variant="subtle" onClick={generateBarcode}>🎲 Random</Btn>
+            {isPhone ? (<>
+              {/* PHONE MODE FORM */}
+              <FormField label="Brend (Kategoriya) *">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {PHONE_BRANDS.map(b => (
+                    <button key={b.name} onClick={() => setNewProd({ ...newProd, cat: b.name, emoji: b.icon })}
+                      style={{ padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: `1px solid ${newProd.cat === b.name ? '#A78BFA' : 'rgba(255,255,255,0.05)'}`, background: newProd.cat === b.name ? 'rgba(167,139,250,0.12)' : 'rgba(17,24,39,0.4)', color: newProd.cat === b.name ? '#A78BFA' : 'var(--t2)', fontFamily: 'Outfit,sans-serif', transition: 'all .15s' }}>
+                      {b.icon} {b.name}
+                    </button>
+                  ))}
+                </div>
+              </FormField>
+              <FormField label="Model nomi *">
+                <input value={newProd.phoneModel} onChange={e => setNewProd({ ...newProd, phoneModel: e.target.value, name: `${newProd.cat} ${e.target.value}` })} placeholder="Galaxy S24 Ultra" style={inputStyle} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+              </FormField>
+              <FormField label="Xotira hajmi">
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {PHONE_MEMORIES.map(m => (
+                    <button key={m} onClick={() => setNewProd({ ...newProd, phoneMemory: m })}
+                      style={{ flex: 1, padding: '8px 4px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: `1px solid ${newProd.phoneMemory === m ? '#22D3EE' : 'rgba(255,255,255,0.05)'}`, background: newProd.phoneMemory === m ? 'rgba(34,211,238,0.12)' : 'rgba(17,24,39,0.4)', color: newProd.phoneMemory === m ? '#22D3EE' : 'var(--t2)', fontFamily: 'Outfit,sans-serif' }}>
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </FormField>
+              <FormField label="Rang">
+                <input value={newProd.phoneColor} onChange={e => setNewProd({ ...newProd, phoneColor: e.target.value })} placeholder="Qora, Oq, Ko'k..." style={inputStyle} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+              </FormField>
+
+              {/* SMART SCANNER */}
+              <div style={{ gridColumn: '1 / -1', background: 'linear-gradient(135deg, rgba(16,185,129,0.06), rgba(34,211,238,0.06))', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 14, padding: '16px 18px', marginBottom: 4 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, color: '#10B981' }}>📷 Smart Scanner — Skanerlang!</div>
+                <div style={{ fontSize: 11, color: 'var(--t2)', marginBottom: 10 }}>Telefon qutisidagi barcode ni skanerlang. 15 raqam = IMEI, boshqasi = S/N. Avval IMEI1, keyin IMEI2, keyin S/N avtomatik to'ladi.</div>
+                <input
+                  id="phone-scanner-input"
+                  autoFocus
+                  placeholder="📷 Shu yerga skanerlang..."
+                  style={{ ...inputStyle, background: 'rgba(0,0,0,0.3)', border: '2px solid rgba(16,185,129,0.3)', fontSize: 15, fontFamily: 'JetBrains Mono,monospace', letterSpacing: 1.5, textAlign: 'center', padding: '14px' }}
+                  onFocus={e => e.target.style.borderColor = '#10B981'}
+                  onBlur={e => e.target.style.borderColor = 'rgba(16,185,129,0.3)'}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && e.target.value.trim()) {
+                      const val = e.target.value.trim();
+                      const digits = val.replace(/\D/g, '');
+                      if (digits.length === 15) {
+                        // It's an IMEI
+                        if (!newProd.phoneImei1) {
+                          setNewProd(prev => ({ ...prev, phoneImei1: digits }));
+                          showToast('✅ IMEI 1 skanerlandi!');
+                        } else if (!newProd.phoneImei2) {
+                          setNewProd(prev => ({ ...prev, phoneImei2: digits }));
+                          showToast('✅ IMEI 2 skanerlandi!');
+                        } else {
+                          showToast('⚠️ Barcha IMEI maydonlari to\'ldirilgan', 'danger');
+                        }
+                      } else {
+                        // It's a S/N
+                        setNewProd(prev => ({ ...prev, phoneSerial: val }));
+                        showToast('✅ S/N skanerlandi!');
+                      }
+                      e.target.value = '';
+                      setTimeout(() => e.target.focus(), 100);
+                    }
+                  }}
+                />
+                {/* Scan status */}
+                <div style={{ display: 'flex', gap: 10, marginTop: 10, fontSize: 11 }}>
+                  <span style={{ color: newProd.phoneImei1 ? '#10B981' : 'var(--t3)' }}>{newProd.phoneImei1 ? '✅' : '⬜'} IMEI1: {newProd.phoneImei1 || '—'}</span>
+                  <span style={{ color: newProd.phoneImei2 ? '#10B981' : 'var(--t3)' }}>{newProd.phoneImei2 ? '✅' : '⬜'} IMEI2: {newProd.phoneImei2 || '—'}</span>
+                  <span style={{ color: newProd.phoneSerial ? '#10B981' : 'var(--t3)' }}>{newProd.phoneSerial ? '✅' : '⬜'} S/N: {newProd.phoneSerial || '—'}</span>
+                  {(newProd.phoneImei1 || newProd.phoneImei2 || newProd.phoneSerial) && (
+                    <button onClick={() => setNewProd(prev => ({ ...prev, phoneImei1: '', phoneImei2: '', phoneSerial: '' }))} style={{ background: 'none', border: 'none', color: '#F43F5E', cursor: 'pointer', fontSize: 11, fontWeight: 700, fontFamily: 'Outfit,sans-serif' }}>🔄 Tozalash</button>
+                  )}
+                </div>
               </div>
-            </FormField>
-            <FormField label="Kategoriya">
-              {showAddCat ? (
+
+              {/* Manual IMEI/SN fields (readonly, auto-filled by scanner) */}
+              <FormField label="IMEI 1">
+                <input value={newProd.phoneImei1} onChange={e => setNewProd({ ...newProd, phoneImei1: e.target.value.replace(/\D/g, '').slice(0, 15) })} placeholder="Skaner yoki qo'lda" maxLength={15} style={{ ...inputStyle, fontFamily: 'JetBrains Mono,monospace', letterSpacing: 1.5, background: newProd.phoneImei1 ? 'rgba(16,185,129,0.08)' : undefined, borderColor: newProd.phoneImei1 ? 'rgba(16,185,129,0.3)' : undefined }} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+              </FormField>
+              <FormField label="IMEI 2 (ixtiyoriy)">
+                <input value={newProd.phoneImei2} onChange={e => setNewProd({ ...newProd, phoneImei2: e.target.value.replace(/\D/g, '').slice(0, 15) })} placeholder="Skaner yoki qo'lda" maxLength={15} style={{ ...inputStyle, fontFamily: 'JetBrains Mono,monospace', letterSpacing: 1.5, background: newProd.phoneImei2 ? 'rgba(16,185,129,0.08)' : undefined, borderColor: newProd.phoneImei2 ? 'rgba(16,185,129,0.3)' : undefined }} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+              </FormField>
+              <FormField label="Seriya raqami (S/N)">
+                <input value={newProd.phoneSerial} onChange={e => setNewProd({ ...newProd, phoneSerial: e.target.value })} placeholder="Skaner yoki qo'lda" style={{ ...inputStyle, fontFamily: 'JetBrains Mono,monospace', background: newProd.phoneSerial ? 'rgba(16,185,129,0.08)' : undefined, borderColor: newProd.phoneSerial ? 'rgba(16,185,129,0.3)' : undefined }} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+              </FormField>
+              <FormField label="Holati">
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <input value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="Yangi kategoriya" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} autoFocus />
-                  <Btn variant="primary" onClick={handleAddCategory}>+</Btn>
-                  <Btn variant="subtle" onClick={() => setShowAddCat(false)}>✕</Btn>
+                  {PHONE_CONDITIONS.map(c => (
+                    <button key={c} onClick={() => setNewProd({ ...newProd, phoneCondition: c })}
+                      style={{ flex: 1, padding: '10px 8px', borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: `1px solid ${newProd.phoneCondition === c ? (c === 'Yangi' ? '#10B981' : c === 'B/U' ? '#F59E0B' : '#3B82F6') : 'rgba(255,255,255,0.05)'}`, background: newProd.phoneCondition === c ? (c === 'Yangi' ? 'rgba(16,185,129,0.12)' : c === 'B/U' ? 'rgba(245,158,11,0.12)' : 'rgba(59,130,246,0.12)') : 'rgba(17,24,39,0.4)', color: newProd.phoneCondition === c ? (c === 'Yangi' ? '#10B981' : c === 'B/U' ? '#F59E0B' : '#3B82F6') : 'var(--t2)', fontFamily: 'Outfit,sans-serif', textAlign: 'center' }}>
+                      {c === 'Yangi' ? '✨' : c === 'B/U' ? '♻️' : '🔧'} {c}
+                    </button>
+                  ))}
                 </div>
-              ) : (
+              </FormField>
+              <FormField label="Tan narxi (so'm) *">
+                <input type="number" value={newProd.cost} onChange={e => setNewProd({ ...newProd, cost: e.target.value })} placeholder="2500000" style={inputStyle} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+              </FormField>
+              <FormField label="Sotuv narxi (so'm) *">
+                <input type="number" value={newProd.price} onChange={e => setNewProd({ ...newProd, price: e.target.value })} placeholder="3000000" style={inputStyle} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+              </FormField>
+            </>) : (<>
+              {/* GENERAL MODE FORM (original) */}
+              <FormField label="Mahsulot nomi *">
+                <input value={newProd.name} onChange={e => setNewProd({ ...newProd, name: e.target.value })} placeholder="Coca Cola 0.5L" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+              </FormField>
+              <FormField label="Barcode">
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <select value={newProd.cat} onChange={e => setNewProd({ ...newProd, cat: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}>
-                    {categories.filter(c => c.name !== 'Hammasi').map(c => <option key={c.name} value={c.name}>{c.icon} {c.name}</option>)}
-                  </select>
-                  <Btn variant="subtle" onClick={() => setShowAddCat(true)}>+ Yangi</Btn>
+                  <input value={newProd.barcode} onChange={e => setNewProd({ ...newProd, barcode: e.target.value })} placeholder="8690637" style={{ ...inputStyle, flex: 1 }} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+                  <Btn variant="subtle" onClick={generateBarcode}>🎲 Random</Btn>
                 </div>
-              )}
-            </FormField>
-            <FormField label="Emoji">
-              <select value={newProd.emoji} onChange={e => setNewProd({ ...newProd, emoji: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}>
-                {EMOJIS.map(e => <option key={e} value={e}>{e}</option>)}
-              </select>
-            </FormField>
-            <FormField label="Tan narxi (so'm) *">
-              <input type="number" value={newProd.cost} onChange={e => setNewProd({ ...newProd, cost: e.target.value })} placeholder="6000" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-            </FormField>
-            <FormField label="Sotuv narxi (so'm) *">
-              <input type="number" value={newProd.price} onChange={e => setNewProd({ ...newProd, price: e.target.value })} placeholder="8000" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-            </FormField>
-            <FormField label="Boshlang'ich qoldiq">
-              <input type="number" value={newProd.stock} onChange={e => setNewProd({ ...newProd, stock: e.target.value })} placeholder="0" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-            </FormField>
-            <FormField label="Minimal qoldiq (ogohlantirish)">
-              <input type="number" value={newProd.minStock} onChange={e => setNewProd({ ...newProd, minStock: e.target.value })} placeholder="50" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-            </FormField>
+              </FormField>
+              <FormField label="Kategoriya">
+                {showAddCat ? (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="Yangi kategoriya" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} autoFocus />
+                    <Btn variant="primary" onClick={handleAddCategory}>+</Btn>
+                    <Btn variant="subtle" onClick={() => setShowAddCat(false)}>✕</Btn>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <select value={newProd.cat} onChange={e => setNewProd({ ...newProd, cat: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}>
+                      {categories.filter(c => c.name !== 'Hammasi').map(c => <option key={c.name} value={c.name}>{c.icon} {c.name}</option>)}
+                    </select>
+                    <Btn variant="subtle" onClick={() => setShowAddCat(true)}>+ Yangi</Btn>
+                  </div>
+                )}
+              </FormField>
+              <FormField label="Emoji">
+                <select value={newProd.emoji} onChange={e => setNewProd({ ...newProd, emoji: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}>
+                  {EMOJIS.map(e => <option key={e} value={e}>{e}</option>)}
+                </select>
+              </FormField>
+              <FormField label="Tan narxi (so'm) *">
+                <input type="number" value={newProd.cost} onChange={e => setNewProd({ ...newProd, cost: e.target.value })} placeholder="6000" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+              </FormField>
+              <FormField label="Sotuv narxi (so'm) *">
+                <input type="number" value={newProd.price} onChange={e => setNewProd({ ...newProd, price: e.target.value })} placeholder="8000" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+              </FormField>
+              <FormField label="Boshlang'ich qoldiq">
+                <input type="number" value={newProd.stock} onChange={e => setNewProd({ ...newProd, stock: e.target.value })} placeholder="0" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+              </FormField>
+              <FormField label="Minimal qoldiq (ogohlantirish)">
+                <input type="number" value={newProd.minStock} onChange={e => setNewProd({ ...newProd, minStock: e.target.value })} placeholder="50" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+              </FormField>
+            </>)}
           </div>
           <div style={{ marginTop: 8 }}>
-            <ModalActions onCancel={() => setShowAdd(false)} onConfirm={handleAddProduct} confirmLabel="✅ Tovar Qo'shish" disabled={!newProd.name || !newProd.price || !newProd.cost} />
+            <ModalActions onCancel={() => setShowAdd(false)} onConfirm={handleAddProduct} confirmLabel={isPhone ? "📱 Telefon Qo'shish" : "✅ Tovar Qo'shish"} disabled={isPhone ? (!newProd.phoneModel || !newProd.price || !newProd.cost) : (!newProd.name || !newProd.price || !newProd.cost)} />
           </div>
         </Modal>
       )}
