@@ -49,7 +49,7 @@ export default function Inventory() {
 
   // New product form
   const emptyProd = isPhone
-    ? { name: '', barcode: '', cat: 'Samsung', cost: '', price: '', stock: '1', minStock: '1', emoji: '📱', phoneModel: '', phoneMemory: '128GB', phoneColor: '', phoneImei1: '', phoneImei2: '', phoneSerial: '', phoneCondition: 'Yangi' }
+    ? { name: '', barcode: '', cat: 'Samsung', cost: '', price: '', stock: '1', minStock: '', emoji: '📱', phoneModel: '', phoneMemory: '128GB', phoneColor: '', phoneImei1: '', phoneImei2: '', phoneSerial: '', phoneCondition: 'Yangi' }
     : { name: '', barcode: '', cat: '', cost: '', price: '', stock: '', minStock: '', emoji: '📦' };
   const [newProd, setNewProd] = useState(emptyProd);
 
@@ -127,7 +127,8 @@ export default function Inventory() {
       category: newProd.cat || 'Boshqa',
       cost_price: parseInt(newProd.cost),
       price: parseInt(newProd.price),
-      stock: parseInt(newProd.stock) || 0,
+      stock: parseInt(newProd.stock) || (isPhone && newProd.cat !== 'Aksesuar' && newProd.cat !== 'Boshqa' ? 1 : 0),
+      minStock: parseInt(newProd.minStock) || 0,
       image: newProd.emoji,
       ...(isPhone ? {
         phone_model: newProd.phoneModel,
@@ -266,7 +267,10 @@ export default function Inventory() {
                         {!isPhone && <td style={tdS}><Badge type={st.type}>{st.label}</Badge></td>}
                         <td style={{ padding: '11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                           <div style={{ display: 'flex', gap: 6 }}>
-                            <Btn variant="primary" size="sm" onClick={() => { setShowKirim(p); setKirimQty(''); }}>+ Kirim</Btn>
+                            {/* Telefon uchun Kirim yo'q (har biri alohida IMEI), faqat aksesuar/boshqa/oddiy uchun */}
+                            {(!isPhone || (p.category === 'Aksesuar' || p.category === 'Boshqa')) && (
+                              <Btn variant="primary" size="sm" onClick={() => { setShowKirim(p); setKirimQty(''); }}>+ Kirim</Btn>
+                            )}
                             <Btn variant="subtle" size="sm" onClick={() => setPrintProd(p)}>🖨️</Btn>
                           </div>
                         </td>
@@ -547,12 +551,21 @@ export default function Inventory() {
                 </FormField>
               </>)}
 
-              {/* Aksesuar/Boshqa uchun qoldiq maydon */}
-              {(newProd.cat === 'Aksesuar' || newProd.cat === 'Boshqa') && (
-                <FormField label="Boshlang'ich qoldiq">
-                  <input type="number" value={newProd.stock} onChange={e => setNewProd({ ...newProd, stock: e.target.value })} placeholder="1" style={inputStyle} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+              {/* Aksesuar/Boshqa uchun qo'shimcha maydonlar */}
+              {(newProd.cat === 'Aksesuar' || newProd.cat === 'Boshqa') && (<>
+                <FormField label="Barcode">
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input value={newProd.barcode} onChange={e => setNewProd({ ...newProd, barcode: e.target.value })} placeholder="Barcode skanerlang yoki kiriting" style={{ ...inputStyle, flex: 1, fontFamily: 'JetBrains Mono,monospace' }} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+                    <Btn variant="subtle" onClick={generateBarcode}>🎲</Btn>
+                  </div>
                 </FormField>
-              )}
+                <FormField label="Boshlang'ich qoldiq">
+                  <input type="number" value={newProd.stock} onChange={e => setNewProd({ ...newProd, stock: e.target.value })} placeholder="10" style={inputStyle} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+                </FormField>
+                <FormField label="Minimal qoldiq (eslatma)">
+                  <input type="number" value={newProd.minStock} onChange={e => setNewProd({ ...newProd, minStock: e.target.value })} placeholder="5" style={inputStyle} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+                </FormField>
+              </>)}
 
               <FormField label="Tan narxi (so'm) *">
                 <input type="number" value={newProd.cost} onChange={e => setNewProd({ ...newProd, cost: e.target.value })} placeholder="2500000" style={inputStyle} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
