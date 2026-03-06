@@ -72,24 +72,32 @@ CREATE TABLE transactions (
   status TEXT DEFAULT 'completed'
 );
 
--- 5. Customers Table (Mijozlar/CRM)
+-- 5. Customers Table (Mijozlar/CRM — 2 xil tur)
 CREATE TABLE customers (
   id SERIAL PRIMARY KEY,
   store_id UUID REFERENCES stores(id) ON DELETE CASCADE NOT NULL,
+  type TEXT NOT NULL DEFAULT 'regular', -- 'regular' (oddiy), 'dealer' (do'kondor)
   name TEXT NOT NULL,
   phone TEXT NOT NULL,
+  shop_name TEXT,         -- Do'kondor uchun: do'kon nomi
+  address TEXT,           -- Manzil
+  login TEXT,             -- Do'kondor login (platformaga kirish)
+  password TEXT,          -- Do'kondor parol
   purchases INTEGER DEFAULT 0,
   total_spent NUMERIC DEFAULT 0,
   last_visit TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 6. Debts Table (Nasiya)
+-- 6. Debts Table (Nasiya — mijozga bog'langan)
 CREATE TABLE debts (
   id SERIAL PRIMARY KEY,
   store_id UUID REFERENCES stores(id) ON DELETE CASCADE NOT NULL,
+  customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE,
   client TEXT NOT NULL,
   amount NUMERIC NOT NULL,
+  paid_amount NUMERIC DEFAULT 0,
   phone TEXT NOT NULL,
+  due_date TIMESTAMP WITH TIME ZONE,
   date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   status TEXT DEFAULT 'To''lanmagan'
 );

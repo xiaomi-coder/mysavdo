@@ -10,163 +10,152 @@ export function CRM() {
   const [selected, setSelected] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [filter, setFilter] = useState('all');
+  const [custType, setCustType] = useState('regular');
 
-  const [form, setForm] = useState({ name: '', phone: '', address: '' });
+  const [form, setForm] = useState({ name: '', phone: '', shopName: '', address: '', login: '', password: '' });
 
   useEffect(() => {
     if (user?.store_id) loadCustomers(user.store_id);
   }, [user]);
 
   const loadCustomers = async (storeId) => {
-    // We will compute 'debt' based on debts table eventually, but for now we look at customers table
     const { data: cData } = await supabase.from('customers').select('*').eq('store_id', storeId).order('last_visit', { ascending: false });
     const { data: dData } = await supabase.from('debts').select('*').eq('store_id', storeId).eq('status', 'To\'lanmagan');
-
     if (cData) {
       setCustomers(cData.map(c => {
-        const activeDebts = dData ? dData.filter(d => d.client === c.name || d.phone === c.phone) : [];
-        const totalDebtAmount = activeDebts.reduce((sum, d) => sum + Number(d.amount), 0);
-        return {
-          ...c,
-          debt: totalDebtAmount,
-          avatar: c.name?.substring(0, 2)?.toUpperCase() || 'C',
-          color: '#3B82F6',
-          purchasesHistory: [], // To fully populate, we'd pull from transactions
-        };
+        const activeDebts = dData ? dData.filter(d => d.customer_id === c.id || d.client === c.name || d.phone === c.phone) : [];
+        const totalDebtAmount = activeDebts.reduce((sum, d) => sum + (Number(d.amount) - Number(d.paid_amount || 0)), 0);
+        return { ...c, debt: totalDebtAmount, avatar: c.name?.substring(0, 2)?.toUpperCase() || 'C', color: c.type === 'dealer' ? '#F59E0B' : '#3B82F6' };
       }));
     }
   };
 
   const handleAddCustomer = async () => {
     if (!form.name || !form.phone || !user?.store_id) return;
-
-    const { error } = await supabase.from('customers').insert({
-      store_id: user.store_id,
-      name: form.name,
-      phone: form.phone,
-      total_spent: 0,
-      purchases: 0
-    });
-
+    const ins = { store_id: user.store_id, type: custType, name: form.name, phone: form.phone, total_spent: 0, purchases: 0 };
+    if (custType === 'dealer') {
+      ins.shop_name = form.shopName;
+      ins.address = form.address;
+      ins.login = form.login || form.phone.replace(/\D/g, '').slice(-9);
+      ins.password = form.password || Math.random().toString(36).slice(-6);
+    }
+    const { error } = await supabase.from('customers').insert(ins);
     if (!error) {
       loadCustomers(user.store_id);
       setShowAdd(false);
-      setForm({ name: '', phone: '', address: '' });
+      setForm({ name: '', phone: '', shopName: '', address: '', login: '', password: '' });
+      setCustType('regular');
     }
   };
 
   const filtered = customers.filter(c => {
-    const matchQ = c.name?.toLowerCase().includes(search.toLowerCase()) || c.phone?.includes(search);
-    const matchF = filter === 'all' ? true : filter === 'debt' ? c.debt > 0 : c.purchases >= 10;
+    const matchQ = c.name?.toLowerCase().includes(search.toLowerCase()) || c.phone?.includes(search) || c.shop_name?.toLowerCase().includes(search.toLowerCase());
+    const matchF = filter === 'all' ? true : filter === 'debt' ? c.debt > 0 : filter === 'dealer' ? c.type === 'dealer' : c.purchases >= 10;
     return matchQ && matchF;
   });
 
   const totalDebt = customers.reduce((s, c) => s + (c.debt || 0), 0);
   const totalRevenue = customers.reduce((s, c) => s + (Number(c.total_spent) || 0), 0);
+  const dealers = customers.filter(c => c.type === 'dealer').length;
   const debtors = customers.filter(c => c.debt > 0).length;
+
+  const inpS = { width: '100%', padding: '11px 14px', background: 'rgba(17,24,39,0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, color: 'var(--t1)', fontSize: 14, fontFamily: 'Outfit,sans-serif', outline: 'none', backdropFilter: 'blur(4px)' };
+  const lbS = { fontSize: 11, fontWeight: 700, color: 'var(--t2)', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: .8 };
 
   return (
     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-      {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
         <StatCard icon="👥" value={customers.length} label="Jami mijozlar" accent="#3B82F6" />
-        <StatCard icon="💰" value={`${(totalRevenue / 1000000).toFixed(1)}M`} label="Jami daromad (so'm)" accent="#10B981" />
+        <StatCard icon="🏪" value={dealers} label="Do'kondorlar" accent="#F59E0B" />
         <StatCard icon="💸" value={debtors} label="Nasiyadorlar" accent="#F43F5E" change={`${(totalDebt / 1000000).toFixed(2)}M qarz`} changeType="down" />
-        <StatCard icon="⭐" value={customers[0]?.name || '-'} label="Eng yangi mijoz" accent="#F59E0B" />
+        <StatCard icon="💰" value={`${(totalRevenue / 1000000).toFixed(1)}M`} label="Jami daromad" accent="#10B981" />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 380px' : '1fr', gap: 16 }}>
-
-        {/* Left: list */}
         <div className="glass-card" style={{ borderRadius: 16, padding: 22 }}>
           <SectionHeader title="Mijozlar Bazasi">
-            <input
-              value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="🔍 Ism yoki telefon..."
-              className="fast-transition"
-              style={{ padding: '8px 14px', background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, color: 'var(--t1)', fontSize: 13, fontFamily: 'Outfit,sans-serif', outline: 'none', width: 200, backdropFilter: 'blur(4px)' }}
-              onFocus={e => e.target.style.borderColor = 'rgba(59,130,246,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.05)'}
-            />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Ism, telefon, do'kon..." className="fast-transition" style={{ padding: '8px 14px', background: 'rgba(17,24,39,0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, color: 'var(--t1)', fontSize: 13, fontFamily: 'Outfit,sans-serif', outline: 'none', width: 220, backdropFilter: 'blur(4px)' }} onFocus={e => e.target.style.borderColor = 'rgba(59,130,246,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.05)'} />
             <Btn variant="primary" size="sm" onClick={() => setShowAdd(true)}>+ Yangi Mijoz</Btn>
           </SectionHeader>
 
-          {/* Filter tabs */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-            {[['all', 'Hammasi'], ['debt', 'Nasiyadorlar'], ['loyal', 'Doimiy']].map(([k, l]) => (
-              <button key={k} onClick={() => setFilter(k)} style={{
-                padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700,
-                fontFamily: 'Outfit,sans-serif', cursor: 'pointer', border: `1px solid ${filter === k ? 'rgba(59,130,246,0.4)' : 'var(--border)'}`,
-                background: filter === k ? 'rgba(59,130,246,0.1)' : 'var(--s2)',
-                color: filter === k ? '#3B82F6' : 'var(--t2)',
-              }}>{l}</button>
+            {[['all', 'Hammasi'], ['dealer', '🏪 Do\'kondorlar'], ['debt', '💸 Nasiyadorlar'], ['loyal', '⭐ Doimiy']].map(([k, l]) => (
+              <button key={k} onClick={() => setFilter(k)} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700, fontFamily: 'Outfit,sans-serif', cursor: 'pointer', border: `1px solid ${filter === k ? 'rgba(59,130,246,0.4)' : 'var(--border)'}`, background: filter === k ? 'rgba(59,130,246,0.1)' : 'var(--s2)', color: filter === k ? '#3B82F6' : 'var(--t2)' }}>{l}</button>
             ))}
           </div>
 
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                {['Mijoz', 'Telefon', 'Xaridlar', 'Jami Summa', 'Qarz', 'Oxirgi Tashrif', ''].map(h => (
-                  <th key={h} style={{ fontSize: 11, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: .8, padding: '0 10px 12px 0', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
+            <thead><tr>
+              {['Mijoz', 'Turi', 'Telefon', 'Xaridlar', 'Jami', 'Qarz', 'Oxirgi', ''].map(h => (
+                <th key={h} style={{ fontSize: 11, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: .8, padding: '0 8px 12px 0', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>{h}</th>
+              ))}
+            </tr></thead>
             <tbody>
               {filtered.map(c => (
-                <tr key={c.id}
-                  className="fast-transition"
-                  onClick={() => setSelected(selected?.id === c.id ? null : c)}
-                  style={{ cursor: 'pointer', background: selected?.id === c.id ? 'rgba(59,130,246,0.1)' : 'transparent' }}
-                  onMouseEnter={e => e.currentTarget.style.background = selected?.id === c.id ? 'rgba(59,130,246,0.1)' : 'rgba(255,255,255,0.02)'}
-                  onMouseLeave={e => e.currentTarget.style.background = selected?.id === c.id ? 'rgba(59,130,246,0.1)' : 'transparent'}
-                >
-                  <td style={{ padding: '11px 10px 11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <tr key={c.id} className="fast-transition" onClick={() => setSelected(selected?.id === c.id ? null : c)} style={{ cursor: 'pointer', background: selected?.id === c.id ? 'rgba(59,130,246,0.1)' : 'transparent' }} onMouseEnter={e => { if (selected?.id !== c.id) e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }} onMouseLeave={e => { if (selected?.id !== c.id) e.currentTarget.style.background = 'transparent'; }}>
+                  <td style={{ padding: '11px 8px 11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <Avatar initials={c.avatar} color={c.color} size={32} />
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>{c.name}</span>
+                      {c.type === 'dealer'
+                        ? <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>🏪</div>
+                        : <Avatar initials={c.avatar} color={c.color} size={32} />}
+                      <div>
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>{c.name}</span>
+                        {c.shop_name && <div style={{ fontSize: 11, color: '#F59E0B' }}>{c.shop_name}</div>}
+                      </div>
                     </div>
                   </td>
-                  <td style={{ padding: '11px 10px 11px 0', fontSize: 12, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)', fontFamily: 'JetBrains Mono,monospace' }}>{c.phone}</td>
-                  <td style={{ padding: '11px 10px 11px 0', fontSize: 13, borderBottom: '1px solid rgba(255,255,255,0.05)', textAlign: 'center' }}>{c.purchases}</td>
-                  <td style={{ padding: '11px 10px 11px 0', fontSize: 13, fontWeight: 700, color: '#10B981', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{Number(c.total_spent).toLocaleString()}</td>
-                  <td style={{ padding: '11px 10px 11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                    {c.debt > 0
-                      ? <Badge type="danger">{c.debt.toLocaleString()} so'm</Badge>
-                      : <Badge type="success">✓ Toza</Badge>
-                    }
+                  <td style={{ padding: '11px 8px 11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                    <Badge type={c.type === 'dealer' ? 'warning' : 'info'}>{c.type === 'dealer' ? '🏪' : '👤'}</Badge>
                   </td>
-                  <td style={{ padding: '11px 10px 11px 0', fontSize: 11, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{new Date(c.last_visit).toLocaleDateString()}</td>
-                  <td style={{ padding: '11px 0 11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                    <Btn variant="subtle" size="sm">Ko'rish</Btn>
+                  <td style={{ padding: '11px 8px 11px 0', fontSize: 12, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)', fontFamily: 'JetBrains Mono,monospace' }}>{c.phone}</td>
+                  <td style={{ padding: '11px 8px 11px 0', fontSize: 13, borderBottom: '1px solid rgba(255,255,255,0.05)', textAlign: 'center' }}>{c.purchases}</td>
+                  <td style={{ padding: '11px 8px 11px 0', fontSize: 13, fontWeight: 700, color: '#10B981', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{Number(c.total_spent).toLocaleString()}</td>
+                  <td style={{ padding: '11px 8px 11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                    {c.debt > 0 ? <Badge type="danger">{c.debt.toLocaleString()}</Badge> : <Badge type="success">✓</Badge>}
                   </td>
+                  <td style={{ padding: '11px 8px 11px 0', fontSize: 11, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{new Date(c.last_visit).toLocaleDateString()}</td>
+                  <td style={{ padding: '11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}><Btn variant="subtle" size="sm">→</Btn></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
-        {/* Right: detail */}
+        {/* Detail card */}
         {selected && (
           <div className="glass-card" style={{ borderRadius: 16, padding: 22, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ fontSize: 15, fontWeight: 800 }}>Mijoz Kartochkasi</div>
               <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', color: 'var(--t2)', fontSize: 18, cursor: 'pointer' }}>✕</button>
             </div>
-
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 16, background: 'var(--s2)', borderRadius: 12 }}>
-              <Avatar initials={selected.avatar} color={selected.color} size={52} />
+              {selected.type === 'dealer'
+                ? <div style={{ width: 52, height: 52, borderRadius: 12, background: 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>🏪</div>
+                : <Avatar initials={selected.avatar} color={selected.color} size={52} />}
               <div>
                 <div style={{ fontSize: 17, fontWeight: 800 }}>{selected.name}</div>
+                {selected.shop_name && <div style={{ fontSize: 13, color: '#F59E0B', fontWeight: 600 }}>{selected.shop_name}</div>}
                 <div style={{ fontSize: 13, color: 'var(--t2)', fontFamily: 'JetBrains Mono,monospace' }}>{selected.phone}</div>
                 {selected.debt > 0 && <Badge type="danger" style={{ marginTop: 6 }}>Nasiya: {selected.debt.toLocaleString()} so'm</Badge>}
               </div>
             </div>
 
+            {selected.type === 'dealer' && (
+              <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 12, padding: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#F59E0B', marginBottom: 10 }}>🔐 Diler kirish</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12 }}>
+                  <div><span style={{ color: 'var(--t3)' }}>Login:</span> <span style={{ fontFamily: 'JetBrains Mono,monospace', color: '#22D3EE' }}>{selected.login}</span></div>
+                  <div><span style={{ color: 'var(--t3)' }}>Parol:</span> <span style={{ fontFamily: 'JetBrains Mono,monospace', color: '#22D3EE' }}>{selected.password}</span></div>
+                  {selected.address && <div style={{ gridColumn: '1/-1' }}><span style={{ color: 'var(--t3)' }}>Manzil:</span> {selected.address}</div>}
+                </div>
+              </div>
+            )}
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               {[
-                { l: 'Jami xaridlar', v: selected.purchases + ' ta' },
+                { l: 'Turi', v: selected.type === 'dealer' ? '🏪 Do\'kondor' : '👤 Oddiy' },
+                { l: 'Xaridlar', v: selected.purchases + ' ta' },
                 { l: 'Jami summa', v: Number(selected.total_spent).toLocaleString() + " so'm" },
-                { l: 'Oxirgi tashrif', v: new Date(selected.last_visit).toLocaleDateString() },
                 { l: 'Holat', v: selected.debt > 0 ? '⚠️ Nasiyador' : '✅ Toza' },
               ].map(s => (
                 <div key={s.l} style={{ background: 'var(--s2)', borderRadius: 10, padding: '12px 14px' }}>
@@ -176,50 +165,78 @@ export function CRM() {
               ))}
             </div>
 
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Xaridlar Tarixi</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {selected.purchasesHistory?.map((p, i) => (
-                  <div key={i} style={{ padding: '12px 14px', background: 'var(--s2)', borderRadius: 10 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ fontSize: 12, fontWeight: 700 }}>{p.items}</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: '#10B981' }}>{p.total.toLocaleString()} so'm</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: 11, color: 'var(--t2)' }}>{p.date}</span>
-                      <Badge type={p.method === 'Nasiya' ? 'warning' : 'info'}>{p.method}</Badge>
-                    </div>
-                    {p.debt > 0 && <div style={{ fontSize: 11, color: '#F43F5E', marginTop: 6 }}>⚠️ Qolgan qarz: {p.debt.toLocaleString()} so'm</div>}
-                  </div>
-                ))}
-                {(!selected.purchasesHistory || selected.purchasesHistory.length === 0) && <div style={{ fontSize: 12, color: 'var(--t3)', fontStyle: 'italic' }}>Tarix topilmadi</div>}
-              </div>
-            </div>
-
             <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
-              <Btn variant="primary" style={{ flex: 1 }} size="sm">📱 SMS Yuborish</Btn>
-              <Btn variant="ghost" style={{ flex: 1 }} size="sm">✏️ Tahrirlash</Btn>
+              <Btn variant="primary" style={{ flex: 1 }} size="sm">📱 SMS</Btn>
+              <Btn variant="ghost" style={{ flex: 1 }} size="sm">✏️ Tahrir</Btn>
             </div>
           </div>
         )}
       </div>
 
-      {/* Add modal */}
+      {/* ADD MODAL - 2 type */}
       {showAdd && (
         <div className="modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, backdropFilter: 'blur(8px)' }}>
-          <div className="modal-content" style={{ background: 'linear-gradient(145deg, rgba(26, 35, 50, 0.95) 0%, rgba(13, 17, 23, 0.98) 100%)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: 36, width: 400, maxWidth: '90vw', boxShadow: '0 24px 60px rgba(0,0,0,0.4)' }}>
-            <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 24 }}>👥 Yangi Mijoz Qo'shish</div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--t2)', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: .8 }}>Ism Familiya</label>
-              <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Sardor Toshmatov" className="fast-transition" style={{ width: '100%', padding: '11px 14px', background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, color: 'var(--t1)', fontSize: 14, fontFamily: 'Outfit,sans-serif', outline: 'none', backdropFilter: 'blur(4px)' }} onFocus={e => e.target.style.borderColor = 'rgba(59,130,246,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.05)'} />
+          <div className="modal-content" style={{ background: 'linear-gradient(145deg, rgba(26,35,50,0.95) 0%, rgba(13,17,23,0.98) 100%)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: 36, width: 480, maxWidth: '90vw', boxShadow: '0 24px 60px rgba(0,0,0,0.4)' }}>
+            <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 20 }}>👥 Yangi Mijoz Qo'shish</div>
+
+            {/* Type tabs */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+              {[{ key: 'regular', icon: '👤', label: 'Oddiy mijoz' }, { key: 'dealer', icon: '🏪', label: 'Do\'kondor' }].map(t => (
+                <button key={t.key} onClick={() => setCustType(t.key)} style={{
+                  flex: 1, padding: '14px 12px', borderRadius: 12, fontSize: 14, fontWeight: 700, fontFamily: 'Outfit,sans-serif', cursor: 'pointer', textAlign: 'center', transition: 'all .2s',
+                  border: `2px solid ${custType === t.key ? (t.key === 'dealer' ? '#F59E0B' : '#3B82F6') : 'rgba(255,255,255,0.05)'}`,
+                  background: custType === t.key ? (t.key === 'dealer' ? 'rgba(245,158,11,0.1)' : 'rgba(59,130,246,0.1)') : 'rgba(17,24,39,0.4)',
+                  color: custType === t.key ? (t.key === 'dealer' ? '#F59E0B' : '#3B82F6') : 'var(--t2)',
+                }}>
+                  <div style={{ fontSize: 24, marginBottom: 4 }}>{t.icon}</div>{t.label}
+                </button>
+              ))}
             </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--t2)', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: .8 }}>Telefon</label>
-              <input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+998 90 123 45 67" className="fast-transition" style={{ width: '100%', padding: '11px 14px', background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, color: 'var(--t1)', fontSize: 14, fontFamily: 'Outfit,sans-serif', outline: 'none', backdropFilter: 'blur(4px)' }} onFocus={e => e.target.style.borderColor = 'rgba(59,130,246,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.05)'} />
+
+            {custType === 'dealer' && (
+              <div style={{ marginBottom: 14 }}>
+                <label style={lbS}>Do'kon nomi *</label>
+                <input type="text" value={form.shopName} onChange={e => setForm({ ...form, shopName: e.target.value })} placeholder="Sardor Mobile" className="fast-transition" style={inpS} onFocus={e => e.target.style.borderColor = 'rgba(245,158,11,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.05)'} />
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+              <div>
+                <label style={lbS}>Ism Familiya *</label>
+                <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Sardor Toshmatov" className="fast-transition" style={inpS} onFocus={e => e.target.style.borderColor = 'rgba(59,130,246,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.05)'} />
+              </div>
+              <div>
+                <label style={lbS}>Telefon *</label>
+                <input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+998 90 123 45 67" className="fast-transition" style={inpS} onFocus={e => e.target.style.borderColor = 'rgba(59,130,246,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.05)'} />
+              </div>
             </div>
+
+            {custType === 'dealer' && (<>
+              <div style={{ marginBottom: 14 }}>
+                <label style={lbS}>Manzil</label>
+                <input type="text" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} placeholder="Toshkent, Chilonzor..." className="fast-transition" style={inpS} onFocus={e => e.target.style.borderColor = 'rgba(245,158,11,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.05)'} />
+              </div>
+              <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 12, padding: 16, marginBottom: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#F59E0B', marginBottom: 12 }}>🔐 Platformaga kirish</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label style={lbS}>Login</label>
+                    <input type="text" value={form.login} onChange={e => setForm({ ...form, login: e.target.value })} placeholder="Avtomatik" className="fast-transition" style={{ ...inpS, fontFamily: 'JetBrains Mono,monospace' }} onFocus={e => e.target.style.borderColor = 'rgba(245,158,11,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.05)'} />
+                  </div>
+                  <div>
+                    <label style={lbS}>Parol</label>
+                    <input type="text" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} placeholder="Avtomatik" className="fast-transition" style={{ ...inpS, fontFamily: 'JetBrains Mono,monospace' }} onFocus={e => e.target.style.borderColor = 'rgba(245,158,11,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.05)'} />
+                  </div>
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 8 }}>Bo'sh qolsa avtomatik yaratiladi. Diler shu login/parol bilan kirib xaridlari va qarzini ko'radi.</div>
+              </div>
+            </>)}
+
             <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-              <button className="fast-transition" onClick={() => setShowAdd(false)} style={{ flex: 1, padding: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 11, color: 'var(--t2)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'} onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}>Bekor</button>
-              <Btn variant="primary" onClick={handleAddCustomer} style={{ flex: 1 }} disabled={!form.name || !form.phone}>Saqlash</Btn>
+              <button className="fast-transition" onClick={() => { setShowAdd(false); setCustType('regular'); setForm({ name: '', phone: '', shopName: '', address: '', login: '', password: '' }); }} style={{ flex: 1, padding: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 11, color: 'var(--t2)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'} onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}>Bekor</button>
+              <Btn variant="primary" onClick={handleAddCustomer} style={{ flex: 1 }} disabled={!form.name || !form.phone || (custType === 'dealer' && !form.shopName)}>
+                {custType === 'dealer' ? '🏪 Do\'kondor Qo\'shish' : '👤 Mijoz Qo\'shish'}
+              </Btn>
             </div>
           </div>
         </div>
