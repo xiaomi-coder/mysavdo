@@ -43,6 +43,12 @@ export const ROLES = {
     color: '#A78BFA',
     permissions: ['pos', 'chek'],
   },
+  dealer: {
+    label: "Do'kondor (Diler)",
+    icon: '🤝',
+    color: '#F59E0B',
+    permissions: ['dealer_dashboard'],
+  },
 };
 
 export const ROLE_NAV = {
@@ -78,6 +84,9 @@ export const ROLE_NAV = {
   cashier: [
     { to: '/pos', icon: '🛒', label: 'pos' },
     { to: '/chek', icon: '🖨️', label: 'printer' },
+  ],
+  dealer: [
+    { to: '/dealer', icon: '📊', label: 'Mening Profilim' },
   ],
 };
 
@@ -136,13 +145,41 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     try {
-      const { data, error } = await supabase
+      // Birinchi users dan qidiramiz
+      let { data, error } = await supabase
         .from('users')
         .select('*, stores(name, store_type)')
         .eq('email', email)
         .single();
 
       if (error || !data) {
+        // Agar users dan topilmasa, customers (diler) dan login orqali qidiramiz
+        const { data: dData, error: dErr } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('login', email)
+          .eq('type', 'dealer')
+          .single();
+
+        if (!dErr && dData) {
+          // Bu diler! Parolini tekshiramiz
+          if (dData.password !== password) return { error: "Parol noto'g'ri" };
+
+          // Diler do'koni nomlarini to'g'ridan to'g'ri o'zida saqlaydi (shop_name) 
+          // yoki unga ulangan do'konni o'qib olishi mumkin. Vaqtincha general nomi
+          setUser({
+            ...dData,
+            role: 'dealer',
+            store_id: dData.store_id, // Bu muhim, shu orqali u katta do'kon hamma tovarini ko'radi
+            storeType: 'general',
+            icon: ROLES['dealer'].icon,
+            color: ROLES['dealer'].color,
+            label: dData.shop_name || dData.name,
+            permissions: ROLES['dealer'].permissions
+          });
+          return { success: true };
+        }
+
         // Fallback for demo accounts if DB is empty
         if (email === 'owner@mybazzar.uz' && password === 'owner123') {
           setUser({ id: 'demo1', email, role: 'owner', name: 'Demo Egasi', storeName: "Demo Do'kon", icon: '🏪', color: '#3B82F6', label: "Do'kon Egasi", permissions: ROLES['owner'].permissions, store_id: 'demo-store-1' });
@@ -156,7 +193,7 @@ export function AuthProvider({ children }) {
           setUser({ id: 'demo3', email, role: 'cashier', name: 'Demo Kassir', storeName: "Demo Do'kon", icon: '💳', color: '#A78BFA', label: 'Kassir', permissions: ROLES['cashier'].permissions, store_id: 'demo-store-1' });
           return { success: true };
         }
-        return { error: "Foydalanuvchi topilmadi" };
+        return { error: "Login yoki Email topilmadi" };
       }
       if (data.password !== password) return { error: "Parol noto'g'ri" };
 

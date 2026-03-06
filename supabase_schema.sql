@@ -1,117 +1,30 @@
 -- MyBazzar Supabase Schema (Multi-Tenant & Creator Logic)
 
--- Tizim toza holatda o'rnatilishi uchun avvalgi jadvallarni o'chiramiz:
-DROP TABLE IF EXISTS expenses CASCADE;
-DROP TABLE IF EXISTS debts CASCADE;
-DROP TABLE IF EXISTS customers CASCADE;
-DROP TABLE IF EXISTS transactions CASCADE;
-DROP TABLE IF EXISTS products CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
-DROP TABLE IF EXISTS stores CASCADE;
+-- MyBazzar Supabase Schema Update
 
--- 1. Stores Table (Do'konlar)
-CREATE TABLE stores (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name TEXT NOT NULL,
-  owner_email TEXT NOT NULL,
-  store_type TEXT NOT NULL DEFAULT 'general', -- 'general', 'phone'
-  is_active BOOLEAN DEFAULT true,
-  max_branches INTEGER DEFAULT 1,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+-- DIQQAT: Agar bazada jadvallar allaqachon mavjud bo'lsa ("relation already exists" xatosi chiqsa), 
+-- to'liq CREATE TABLE yozish shart emas! Shunchaki quyidagi qatorlarni o'zini ishga tushiring:
 
--- 2. Users Table (Barcha xodimlar va adminlar)
-CREATE TABLE users (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  email TEXT UNIQUE NOT NULL,
-  password TEXT NOT NULL,
-  role TEXT NOT NULL, -- 'creator', 'owner', 'manager', 'cashier'
-  name TEXT NOT NULL,
-  store_id UUID REFERENCES stores(id) ON DELETE CASCADE,
-  permissions JSONB DEFAULT '[]'::jsonb,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'regular';
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS shop_name TEXT;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS login TEXT;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS password TEXT;
 
--- Insert Creator User
-INSERT INTO users (email, password, role, name, permissions) VALUES
-('creator', 'xiaomicoder', 'creator', 'Tizim Yaratuvchisi (Creator)', '["dashboard_creator", "stores", "all_stats", "create_owner"]');
+ALTER TABLE debts ADD COLUMN IF NOT EXISTS customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE;
+ALTER TABLE debts ADD COLUMN IF NOT EXISTS paid_amount NUMERIC DEFAULT 0;
+ALTER TABLE debts ADD COLUMN IF NOT EXISTS due_date TIMESTAMP WITH TIME ZONE;
 
--- 3. Products Table (Ombor — Oddiy + Telefon)
-CREATE TABLE products (
-  id SERIAL PRIMARY KEY,
-  store_id UUID REFERENCES stores(id) ON DELETE CASCADE NOT NULL,
-  name TEXT NOT NULL,
-  price NUMERIC NOT NULL,
-  cost_price NUMERIC DEFAULT 0,
-  stock INTEGER NOT NULL DEFAULT 0,
-  category TEXT NOT NULL,
-  image TEXT,
-  barcode TEXT,
-  -- Telefon do'koni uchun maxsus maydonlar
-  phone_model TEXT,       -- Model: Samsung Galaxy S24, iPhone 16...
-  phone_memory TEXT,      -- Xotira: 128GB, 256GB...
-  phone_color TEXT,       -- Rang: Qora, Oq, Ko'k...
-  phone_imei1 TEXT,       -- IMEI 1
-  phone_imei2 TEXT,       -- IMEI 2
-  phone_serial TEXT,      -- Seriya raqami (S/N)
-  phone_condition TEXT,   -- Holat: Yangi, B/U, Refurbished
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS "minStock" INTEGER DEFAULT 0;
 
--- 4. Transactions Table (POS Sotuvlar)
-CREATE TABLE transactions (
-  id SERIAL PRIMARY KEY,
-  store_id UUID REFERENCES stores(id) ON DELETE CASCADE NOT NULL,
-  receipt_no TEXT NOT NULL,
-  cashier TEXT NOT NULL,
-  items JSONB NOT NULL,
-  total NUMERIC NOT NULL,
-  discount NUMERIC DEFAULT 0,
-  payment_method TEXT NOT NULL,
-  date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  status TEXT DEFAULT 'completed'
-);
-
--- 5. Customers Table (Mijozlar/CRM — 2 xil tur)
-CREATE TABLE customers (
-  id SERIAL PRIMARY KEY,
-  store_id UUID REFERENCES stores(id) ON DELETE CASCADE NOT NULL,
-  type TEXT NOT NULL DEFAULT 'regular', -- 'regular' (oddiy), 'dealer' (do'kondor)
-  name TEXT NOT NULL,
-  phone TEXT NOT NULL,
-  shop_name TEXT,         -- Do'kondor uchun: do'kon nomi
-  address TEXT,           -- Manzil
-  login TEXT,             -- Do'kondor login (platformaga kirish)
-  password TEXT,          -- Do'kondor parol
-  purchases INTEGER DEFAULT 0,
-  total_spent NUMERIC DEFAULT 0,
-  last_visit TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- 6. Debts Table (Nasiya — mijozga bog'langan)
-CREATE TABLE debts (
-  id SERIAL PRIMARY KEY,
-  store_id UUID REFERENCES stores(id) ON DELETE CASCADE NOT NULL,
-  customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE,
-  client TEXT NOT NULL,
-  amount NUMERIC NOT NULL,
-  paid_amount NUMERIC DEFAULT 0,
-  phone TEXT NOT NULL,
-  due_date TIMESTAMP WITH TIME ZONE,
-  date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  status TEXT DEFAULT 'To''lanmagan'
-);
-
--- 7. Expenses Table (Moliya - Kassa Xarajatlari)
-CREATE TABLE expenses (
-  id SERIAL PRIMARY KEY,
-  store_id UUID REFERENCES stores(id) ON DELETE CASCADE NOT NULL,
-  category TEXT NOT NULL,
-  amount NUMERIC NOT NULL,
-  date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  note TEXT,
-  cashier TEXT NOT NULL
-);
-
--- Note: No mock data is inserted for standard tables to keep the database completely clean upon deployment.
--- Only the 'creator' login is provided by default.
+-- Quyidagi funksiya Nasiya qilinganda Mijozning xaridlar sonini va Jami summasini oshiradi
+CREATE OR REPLACE FUNCTION increment_customer_spent(cid INTEGER, amnt NUMERIC)
+RETURNS void AS $$
+BEGIN
+  UPDATE customers 
+  SET purchases = purchases + 1, 
+      total_spent = total_spent + amnt 
+  WHERE id = cid;
+END;
+$$ LANGUAGE plpgsql;
+ALTER TABLE transactions Add COLUMN IF NOT EXISTS customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL;

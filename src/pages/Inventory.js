@@ -38,7 +38,9 @@ export default function Inventory() {
     if (data) {
       setProducts(data.map(p => ({ ...p, emoji: p.image || (isPhone ? '📱' : '📦') })));
       if (isPhone) {
-        const allCats = ['Hammasi', ...PHONE_BRANDS.map(b => b.name)];
+        // Find custom categories users added previously
+        const customCats = data.map(p => p.category || p.cat).filter(c => c && !PHONE_BRANDS.some(b => b.name === c));
+        const allCats = ['Hammasi', ...PHONE_BRANDS.map(b => b.name), ...new Set(customCats)];
         setCategories(allCats.map(c => ({ name: c, icon: (PHONE_BRANDS.find(b => b.name === c)?.icon || '📦') })));
       } else {
         const uniqueCats = ['Hammasi', ...new Set(data.map(p => p.category || p.cat).filter(Boolean))];
@@ -122,9 +124,9 @@ export default function Inventory() {
     if (!newProd.name || !newProd.price || !newProd.cost) return;
     const p = {
       store_id: user.store_id,
-      name: isPhone ? `${newProd.cat} ${newProd.phoneModel}`.trim() : newProd.name,
+      name: isPhone ? `${newProd.cat === 'Boshqa' ? '' : newProd.cat} ${newProd.phoneModel}`.trim() : newProd.name,
       barcode: newProd.barcode || '',
-      category: newProd.cat || 'Boshqa',
+      category: isPhone && newProd.cat === 'Boshqa' && newProd.customCat ? newProd.customCat : (newProd.cat || 'Boshqa'),
       cost_price: parseInt(newProd.cost),
       price: parseInt(newProd.price),
       stock: parseInt(newProd.stock) || (isPhone && newProd.cat !== 'Aksesuar' && newProd.cat !== 'Boshqa' ? 1 : 0),
@@ -467,9 +469,15 @@ export default function Inventory() {
                   ))}
                 </div>
               </FormField>
-              <FormField label="Model nomi *">
-                <input value={newProd.phoneModel} onChange={e => setNewProd({ ...newProd, phoneModel: e.target.value, name: `${newProd.cat} ${e.target.value}` })} placeholder={newProd.cat === 'Aksesuar' || newProd.cat === 'Boshqa' ? "Aksesuar nomi (Chexol, Zaryadka...)" : "Galaxy S24 Ultra"} style={inputStyle} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+              <FormField label="Model yoki Nomi *">
+                <input value={newProd.phoneModel} onChange={e => setNewProd({ ...newProd, phoneModel: e.target.value, name: `${newProd.cat === 'Boshqa' ? '' : newProd.cat} ${e.target.value}`.trim() })} placeholder={newProd.cat === 'Aksesuar' || newProd.cat === 'Boshqa' ? "Masalan: Naushnik, Zaryadka, Chexol..." : "Galaxy S24 Ultra"} style={inputStyle} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
               </FormField>
+
+              {newProd.cat === 'Boshqa' && (
+                <FormField label="Yangi Kategoriya nomi">
+                  <input placeholder="Masalan: Soat, Simsiz quloqchin..." onChange={e => setNewProd({ ...newProd, customCat: e.target.value })} style={inputStyle} />
+                </FormField>
+              )}
 
               {newProd.cat !== 'Aksesuar' && newProd.cat !== 'Boshqa' && (<>
                 <FormField label="Xotira hajmi">

@@ -11,6 +11,7 @@ import { CRM, Nasiya, ChekPrinter } from './pages/NewModules';
 import Finance from './pages/Finance';
 import CreatorPanel from './pages/CreatorPanel';
 import LandingPage from './pages/LandingPage';
+import DealerPortal from './pages/DealerPortal';
 
 function PrivateRoute({ children, permission }) {
   const { user, hasPermission } = useAuth();
@@ -24,6 +25,7 @@ function RoleRedirect() {
   if (!user) return <Navigate to="/" replace />;
   if (user.role === 'creator') return <Navigate to="/creator" replace />;
   if (user.role === 'cashier') return <Navigate to="/pos" replace />;
+  if (user.role === 'dealer') return <Navigate to="/dealer" replace />;
   return <Navigate to="/dashboard" replace />;
 }
 
@@ -56,6 +58,7 @@ function AppRoutes() {
         <Route path="pos" element={<POS />} />
         <Route path="inventory" element={<PrivateRoute permission="inventory"><Inventory /></PrivateRoute>} />
         <Route path="customers" element={<PrivateRoute permission="dashboard_owner"><CRM /></PrivateRoute>} />
+        <Route path="dealer" element={<PrivateRoute permission="dealer_dashboard"><DealerPortal /></PrivateRoute>} />
         <Route path="nasiya" element={<PrivateRoute permission="nasiya"><Nasiya /></PrivateRoute>} />
         <Route path="finance" element={<PrivateRoute permission="finance"><Finance /></PrivateRoute>} />
         <Route path="employees" element={<PrivateRoute permission="employees"><Employees /></PrivateRoute>} />

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Btn, Badge, EmptyState } from '../components/UI';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../utils/supabaseClient';
@@ -10,17 +11,29 @@ export default function POS() {
   const [cat, setCat] = useState('Hammasi');
   const [cart, setCart] = useState({});
   const [payMethod, setMethod] = useState('cash');
+  const [paidAmount, setPaidAmount] = useState('');
+  const [dueDays, setDueDays] = useState('30');
   const [discount, setDiscount] = useState(0);
   const [success, setSuccess] = useState(false);
   const [receiptNo, setReceiptNo] = useState(1);
   const [products, setProducts] = useState([]);
+  const location = useLocation();
+  const [customers, setCustomers] = useState([]);
+  const [selectedCustomer, setSelectedCustomer] = useState(location.state?.selectedCustomer || null);
+  const [showCustModal, setShowCustModal] = useState(false);
 
   useEffect(() => {
     if (user?.store_id) {
       loadProducts(user.store_id);
       loadReceiptCount(user.store_id);
+      loadCustomers(user.store_id);
     }
   }, [user]);
+
+  const loadCustomers = async (storeId) => {
+    const { data } = await supabase.from('customers').select('*').eq('store_id', storeId);
+    if (data) setCustomers(data);
+  };
 
   const loadProducts = async (storeId) => {
     const { data } = await supabase.from('products').select('*').eq('store_id', storeId);
@@ -72,11 +85,14 @@ export default function POS() {
   const discountAmt = Math.round(subtotal * discount / 100);
   const total = subtotal - discountAmt;
 
-  const PAY_METHODS = [
-    { id: 'cash', label: '💵 Naqd' },
-    { id: 'card', label: '💳 Plastik' },
-    { id: 'transfer', label: '📱 Transfer' },
-  ];
+  const PAY_METHODS = user?.role === 'dealer'
+    ? [{ id: 'nasiya', label: '💸 Nasiya (Qarz)' }] // Diler faqat nasiya orqali oladi (hisobdan yechiladi)
+    : [
+      { id: 'cash', label: '💵 Naqd' },
+      { id: 'card', label: '💳 Plastik' },
+      { id: 'transfer', label: '📱 Transfer' },
+      { id: 'nasiya', label: '💸 Nasiya' }
+    ];
 
   const checkout = async () => {
     if (!settings.isOnline && settings.offline) {
@@ -85,6 +101,7 @@ export default function POS() {
       // Create transaction in Supabase
       const { error } = await supabase.from('transactions').insert({
         store_id: user.store_id,
+        customer_id: selectedCustomer?.id || null,
         receipt_no: `#${receiptNo}`,
         cashier: user.name,
         items: cartItems,
@@ -93,7 +110,46 @@ export default function POS() {
         payment_method: payMethod,
         status: 'completed'
       });
-      if (error) console.error("Checkout db error:", error);
+      if (error) {
+        console.error("Checkout db error:", error);
+        alert("Sotuvni saqlashda baza xatosi yuz berdi! Xato: " + error.message);
+        return;
+      }
+
+      // Enforce selecting a customer if Nasiya is chosen. 
+      // We will actually do UI validation down below, but keep this safety check here.
+      if (payMethod === 'nasiya') {
+        if (!selectedCustomer) {
+           alert("Nasiya qarz yozish uchun Mijoz tanlash shart!");
+           return;
+        }
+
+        const initialPay = Number(paidAmount) || 0;
+        if (initialPay > total) {
+          alert("Boshlang'ich to'lov jami summadan katta bo'lishi mumkin emas!");
+          return;
+        }
+
+        const dDate = new Date();
+        dDate.setDate(dDate.getDate() + parseInt(dueDays || 30));
+
+        const debtData = {
+          store_id: user.store_id,
+          customer_id: selectedCustomer.id,
+          client: selectedCustomer.name,
+          phone: selectedCustomer.phone || '',
+          amount: total,
+          paid_amount: initialPay,
+          due_date: dDate.toISOString(),
+          status: initialPay >= total ? 'To\'langan' : 'To\'lanmagan'
+        };
+        await supabase.from('debts').insert(debtData);
+      }
+
+      if (selectedCustomer) {
+        // Increment purchases count & amount for the selected customer regardless of payment method
+        await supabase.rpc('increment_customer_spent', { cid: selectedCustomer.id, amnt: total });
+      }
 
       // Reduce stock locally and in DB
       cartItems.forEach(async (item) => {
@@ -150,11 +206,19 @@ export default function POS() {
         </body>
       </html>
     `;
-    printWin.document.write(receiptHtml);
-    printWin.document.close();
+
+    if (printWin) {
+      printWin.document.write(receiptHtml);
+      printWin.document.close();
+    } else {
+      console.warn("Pop-up blocker prevented receipt printing.");
+      // Optional: alert asking user to allow popups
+      alert("Chekni chop etish uchun brauzeringizda pop-uplarga (ochiluvchi oynalarga) ruxsat bering!");
+    }
 
     setSuccess(true);
     setReceiptNo(n => n + 1);
+    setPaidAmount('');
     setTimeout(() => { setSuccess(false); clearCart(); }, 2600);
   };
   const catBtnStyle = {
@@ -306,6 +370,19 @@ export default function POS() {
 
         {/* Footer */}
         <div style={{ padding: '14px 18px', borderTop: '1px solid var(--border)' }}>
+          {/* Customer Selector */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, padding: '10px 14px', background: 'rgba(59,130,246,0.06)', borderRadius: 12, border: '1px solid rgba(59,130,246,0.2)' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--t1)' }}>
+              👥 Xaridor: <span style={{ color: selectedCustomer ? '#3B82F6' : 'var(--t3)' }}>{selectedCustomer ? selectedCustomer.name : 'Tanlanmagan'}</span>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {selectedCustomer && (
+                <button onClick={() => setSelectedCustomer(null)} style={{ background: 'none', border: '1px solid rgba(244,63,94,0.3)', borderRadius: 6, color: '#F43F5E', fontSize: 11, padding: '4px 8px', cursor: 'pointer' }}>✕</button>
+              )}
+              <button onClick={() => setShowCustModal(true)} style={{ background: '#3B82F6', border: 'none', borderRadius: 6, color: '#fff', fontSize: 11, fontWeight: 700, padding: '4px 12px', cursor: 'pointer' }}>Tanlash</button>
+            </div>
+          </div>
+
           {/* Discount */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
             <span style={{ fontSize: 12, color: 'var(--t2)', whiteSpace: 'nowrap' }}>Chegirma:</span>
@@ -338,10 +415,9 @@ export default function POS() {
             <span style={{ fontSize: 22, fontWeight: 900, color: '#22D3EE' }}>{total.toLocaleString()} so'm</span>
           </div>
 
-          {/* Pay methods */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, marginBottom: 12 }}>
             {PAY_METHODS.map(m => (
-              <button key={m.id} onClick={() => setMethod(m.id)} style={{
+              <button key={m.id} onClick={() => { setMethod(m.id); setPaidAmount(''); }} style={{
                 padding: '8px 4px', borderRadius: 8, fontSize: 11, fontWeight: 700,
                 fontFamily: 'Outfit,sans-serif', cursor: 'pointer', textAlign: 'center',
                 border: `1px solid ${payMethod === m.id ? '#10B981' : 'var(--border)'}`,
@@ -352,9 +428,56 @@ export default function POS() {
             ))}
           </div>
 
+          {/* Partial Payment for Nasiya */}
+          {payMethod === 'nasiya' && (
+            <div style={{ marginBottom: 16, background: 'rgba(244,63,94,0.05)', border: '1px solid rgba(244,63,94,0.2)', borderRadius: 12, padding: '12px 14px' }}>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#F43F5E', marginBottom: 8 }}>💵 Boshlang'ich to'lov (Naqd/Plastik)</div>
+                <input 
+                  type="number" 
+                  value={paidAmount} 
+                  onChange={(e) => setPaidAmount(e.target.value)}
+                  placeholder="0 so'm" 
+                  style={{ 
+                    width: '100%', padding: '10px 12px', background: 'var(--s1)', border: '1px solid rgba(255,255,255,0.1)', 
+                    borderRadius: 8, color: 'var(--t1)', fontSize: 16, fontWeight: 800, fontFamily: 'Outfit,sans-serif' 
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: 8 }}>
+                 <div style={{ fontSize: 12, fontWeight: 700, color: '#F43F5E', marginBottom: 8 }}>⏳ Nasiya muddati (kun)</div>
+                 <input 
+                  type="number" 
+                  value={dueDays} 
+                  onChange={(e) => setDueDays(e.target.value)}
+                  placeholder="Masalan: 30" 
+                  style={{ 
+                    width: '100%', padding: '10px 12px', background: 'var(--s1)', border: '1px solid rgba(255,255,255,0.1)', 
+                    borderRadius: 8, color: 'var(--t1)', fontSize: 16, fontWeight: 800, fontFamily: 'Outfit,sans-serif' 
+                  }}
+                 />
+              </div>
+
+              {Number(paidAmount) > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, borderTop: '1px solid rgba(244,63,94,0.2)', paddingTop: 8, color: 'var(--t2)' }}>
+                  <span>Qolgan qarz:</span>
+                  <span style={{ color: '#F43F5E', fontWeight: 800 }}>{Math.max(0, total - Number(paidAmount)).toLocaleString()} so'm</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Checkout btn */}
           <button
-            onClick={checkout}
+            onClick={() => {
+              if (payMethod === 'nasiya' && !selectedCustomer) {
+                alert("Iltimos, Nasiyaga (Qarzga) sotish uchun avval Xaridorni tanlang!");
+                setShowCustModal(true);
+                return;
+              }
+              checkout();
+            }}
             disabled={cartItems.length === 0}
             className="btn-primary"
             style={{
@@ -394,6 +517,47 @@ export default function POS() {
             </div>
             <div style={{ fontSize: 24, fontWeight: 800, color: '#10B981', marginTop: 12 }}>
               {total.toLocaleString()} so'm
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── CUSTOMER MODAL ── */}
+      {showCustModal && (
+        <div className="modal-overlay" style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 9999, backdropFilter: 'blur(8px)',
+        }} onClick={e => e.target === e.currentTarget && setShowCustModal(false)}>
+          <div className="modal-content" style={{
+            background: 'linear-gradient(145deg, rgba(26, 35, 50, 0.95) 0%, rgba(13, 17, 23, 0.98) 100%)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 20, padding: '30px', width: 440, maxWidth: '90vw',
+            boxShadow: '0 24px 60px rgba(0,0,0,0.4)',
+            display: 'flex', flexDirection: 'column', maxHeight: '80vh'
+          }}>
+            <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
+              <span>👥 Xaridorni tanlang</span>
+              <button onClick={() => setShowCustModal(false)} style={{ background: 'none', border: 'none', color: 'var(--t2)', fontSize: 18, cursor: 'pointer' }}>✕</button>
+            </div>
+            
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, paddingRight: 6 }}>
+              {customers.map(c => (
+                <div key={c.id} onClick={() => { setSelectedCustomer(c); setShowCustModal(false); }} className="fast-transition" style={{
+                  display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
+                  background: 'var(--s2)', borderRadius: 12, border: `1px solid ${selectedCustomer?.id === c.id ? '#3B82F6' : 'rgba(255,255,255,0.05)'}`,
+                  cursor: 'pointer'
+                }}>
+                  <div style={{ fontSize: 24 }}>{c.type === 'dealer' ? '🏪' : '👤'}</div>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700 }}>{c.name} {c.shop_name ? `(${c.shop_name})` : ''}</div>
+                    <div style={{ fontSize: 12, color: 'var(--t2)' }}>{c.phone}</div>
+                  </div>
+                </div>
+              ))}
+              {customers.length === 0 && (
+                 <div style={{ textAlign: 'center', padding: 20, color: 'var(--t3)', fontSize: 13 }}>Mijozlar mavjud emas. CRM orqali qo'shing.</div>
+              )}
             </div>
           </div>
         </div>

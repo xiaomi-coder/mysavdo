@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { StatCard, Badge, SectionHeader, Btn, Avatar } from '../components/UI';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../utils/supabaseClient';
 
 export function CRM() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [customers, setCustomers] = useState([]);
   const [search, setSearch] = useState('');
@@ -11,6 +13,9 @@ export function CRM() {
   const [showAdd, setShowAdd] = useState(false);
   const [filter, setFilter] = useState('all');
   const [custType, setCustType] = useState('regular');
+  const [activeTab, setActiveTab] = useState('info'); // info | history
+  const [custTxns, setCustTxns] = useState([]);
+  const [loadingTxns, setLoadingTxns] = useState(false);
 
   const [form, setForm] = useState({ name: '', phone: '', shopName: '', address: '', login: '', password: '' });
 
@@ -71,7 +76,7 @@ export function CRM() {
         <StatCard icon="💰" value={`${(totalRevenue / 1000000).toFixed(1)}M`} label="Jami daromad" accent="#10B981" />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 380px' : '1fr', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
         <div className="glass-card" style={{ borderRadius: 16, padding: 22 }}>
           <SectionHeader title="Mijozlar Bazasi">
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Ism, telefon, do'kon..." className="fast-transition" style={{ padding: '8px 14px', background: 'rgba(17,24,39,0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, color: 'var(--t1)', fontSize: 13, fontFamily: 'Outfit,sans-serif', outline: 'none', width: 220, backdropFilter: 'blur(4px)' }} onFocus={e => e.target.style.borderColor = 'rgba(59,130,246,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.05)'} />
@@ -122,56 +127,122 @@ export function CRM() {
         </div>
 
         {/* Detail card */}
-        {selected && (
-          <div className="glass-card" style={{ borderRadius: 16, padding: 22, display: 'flex', flexDirection: 'column', gap: 16 }}>
+      </div>
+
+      {selected && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, backdropFilter: 'blur(8px)' }} onClick={e => e.target === e.currentTarget && setSelected(null)}>
+          <div className="modal-content" style={{ background: 'linear-gradient(145deg, rgba(26,35,50,0.95) 0%, rgba(13,17,23,0.98) 100%)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: 36, width: 700, maxWidth: '90vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 60px rgba(0,0,0,0.4)', display: 'flex', flexDirection: 'column', gap: 20 }}>
+            
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ fontSize: 15, fontWeight: 800 }}>Mijoz Kartochkasi</div>
-              <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', color: 'var(--t2)', fontSize: 18, cursor: 'pointer' }}>✕</button>
+              <div style={{ fontSize: 20, fontWeight: 800 }}>Mijoz Kartochkasi</div>
+              <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', color: 'var(--t2)', fontSize: 22, cursor: 'pointer' }}>✕</button>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: 16, background: 'var(--s2)', borderRadius: 12 }}>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: 18, padding: 20, background: 'var(--s2)', borderRadius: 16 }}>
               {selected.type === 'dealer'
-                ? <div style={{ width: 52, height: 52, borderRadius: 12, background: 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>🏪</div>
-                : <Avatar initials={selected.avatar} color={selected.color} size={52} />}
+                ? <div style={{ width: 64, height: 64, borderRadius: 16, background: 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32 }}>🏪</div>
+                : <Avatar initials={selected.avatar} color={selected.color} size={64} style={{fontSize: 24}}/>}
               <div>
-                <div style={{ fontSize: 17, fontWeight: 800 }}>{selected.name}</div>
-                {selected.shop_name && <div style={{ fontSize: 13, color: '#F59E0B', fontWeight: 600 }}>{selected.shop_name}</div>}
-                <div style={{ fontSize: 13, color: 'var(--t2)', fontFamily: 'JetBrains Mono,monospace' }}>{selected.phone}</div>
-                {selected.debt > 0 && <Badge type="danger" style={{ marginTop: 6 }}>Nasiya: {selected.debt.toLocaleString()} so'm</Badge>}
+                <div style={{ fontSize: 22, fontWeight: 800 }}>{selected.name}</div>
+                {selected.shop_name && <div style={{ fontSize: 15, color: '#F59E0B', fontWeight: 600 }}>{selected.shop_name}</div>}
+                <div style={{ fontSize: 15, color: 'var(--t2)', fontFamily: 'JetBrains Mono,monospace', marginTop: 4 }}>{selected.phone}</div>
+                {selected.debt > 0 && <Badge type="danger" style={{ marginTop: 8, fontSize: 13, padding: '6px 10px' }}>Nasiya: {selected.debt.toLocaleString()} so'm</Badge>}
               </div>
             </div>
 
-            {selected.type === 'dealer' && (
-              <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 12, padding: 14 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#F59E0B', marginBottom: 10 }}>🔐 Diler kirish</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12 }}>
-                  <div><span style={{ color: 'var(--t3)' }}>Login:</span> <span style={{ fontFamily: 'JetBrains Mono,monospace', color: '#22D3EE' }}>{selected.login}</span></div>
-                  <div><span style={{ color: 'var(--t3)' }}>Parol:</span> <span style={{ fontFamily: 'JetBrains Mono,monospace', color: '#22D3EE' }}>{selected.password}</span></div>
-                  {selected.address && <div style={{ gridColumn: '1/-1' }}><span style={{ color: 'var(--t3)' }}>Manzil:</span> {selected.address}</div>}
+            <div style={{ display: 'flex', gap: 10, marginBottom: 20, borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 10 }}>
+              <button onClick={() => setActiveTab('info')} style={{ background: 'none', border: 'none', color: activeTab === 'info' ? '#3B82F6' : 'var(--t2)', fontWeight: 800, fontSize: 15, cursor: 'pointer', borderBottom: activeTab === 'info' ? '2px solid #3B82F6' : '2px solid transparent', paddingBottom: 4 }}>Asosiy ma'lumotlar</button>
+              <button 
+                onClick={async () => {
+                  setActiveTab('history');
+                  setLoadingTxns(true);
+                  const { data } = await supabase.from('transactions').select('*').eq('customer_id', selected.id).order('date', { ascending: false });
+                  setCustTxns(data || []);
+                  setLoadingTxns(false);
+                }} 
+                style={{ background: 'none', border: 'none', color: activeTab === 'history' ? '#3B82F6' : 'var(--t2)', fontWeight: 800, fontSize: 15, cursor: 'pointer', borderBottom: activeTab === 'history' ? '2px solid #3B82F6' : '2px solid transparent', paddingBottom: 4 }}
+              >
+                Xaridlar tarixi
+              </button>
+            </div>
+
+            {activeTab === 'info' && (
+              <>
+                {selected.type === 'dealer' && (
+                  <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 16, padding: 20, marginBottom: 14 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#F59E0B', marginBottom: 12 }}>🔐 Diler kirish profil ma'lumotlari</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, fontSize: 14 }}>
+                      <div><span style={{ color: 'var(--t3)' }}>Login:</span> <span style={{ fontFamily: 'JetBrains Mono,monospace', color: '#22D3EE', fontWeight: 700, marginLeft: 6 }}>{selected.login}</span></div>
+                      <div><span style={{ color: 'var(--t3)' }}>Parol:</span> <span style={{ fontFamily: 'JetBrains Mono,monospace', color: '#22D3EE', fontWeight: 700, marginLeft: 6 }}>{selected.password}</span></div>
+                      {selected.address && <div style={{ gridColumn: '1/-1' }}><span style={{ color: 'var(--t3)' }}>Manzil:</span> {selected.address}</div>}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  {[
+                    { l: 'Turi', v: selected.type === 'dealer' ? '🏪 Do\'kondor' : '👤 Oddiy' },
+                    { l: 'Xaridlar summasi', v: Number(selected.total_spent).toLocaleString() + " so'm" },
+                    { l: 'Tranzaksiyalar soni', v: selected.purchases + ' ta' },
+                    { l: 'Holat', v: selected.debt > 0 ? '⚠️ Nasiyador' : '✅ Toza' },
+                  ].map((s, i) => (
+                    <div key={i} style={{ background: 'var(--s2)', borderRadius: 14, padding: '16px 20px' }}>
+                      <div style={{ fontSize: 11, color: 'var(--t2)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 }}>{s.l}</div>
+                      <div style={{ fontSize: 17, fontWeight: 700 }}>{s.v}</div>
+                    </div>
+                  ))}
                 </div>
+              </>
+            )}
+
+            {activeTab === 'history' && (
+              <div style={{ flex: 1, overflowY: 'auto' }}>
+                {loadingTxns ? (
+                  <div style={{ padding: 20, textAlign: 'center', color: 'var(--t3)' }}>Tarix yuklanmoqda...</div>
+                ) : custTxns.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingRight: 4 }}>
+                    {custTxns.map(t => (
+                      <div key={t.id} style={{ background: 'var(--s2)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                          <div>
+                            <div style={{ fontSize: 15, fontWeight: 800 }}>Sotuv {t.receipt_no}</div>
+                            <div style={{ fontSize: 11, color: 'var(--t2)' }}>{new Date(t.date).toLocaleString('uz-UZ')}</div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: 16, fontWeight: 800, color: t.payment_method === 'nasiya' ? '#F43F5E' : '#10B981' }}>{Number(t.total).toLocaleString()} so'm</div>
+                            <Badge type={t.payment_method === 'nasiya' ? 'warning' : 'success'} style={{ fontSize: 10 }}>{t.payment_method === 'nasiya' ? 'Nasiya' : 'Naqd/Plastik'}</Badge>
+                          </div>
+                        </div>
+                        <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: 8, padding: 12 }}>
+                          {t.items?.map((item, idx) => (
+                            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8, color: 'var(--t2)' }}>
+                              <span>{item.qty}x {item.n || item.name} {item.phone_imei1 ? `(IMEI: ${item.phone_imei1})` : ''}</span>
+                              <span style={{ fontWeight: 700, color: 'var(--t1)' }}>{(item.price * item.qty).toLocaleString()} so'm</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ padding: 40, textAlign: 'center', color: 'var(--t3)' }}>
+                    <div style={{ fontSize: 40, marginBottom: 10 }}>📦</div>
+                    <div>Bu xaridor hali hech qanday xarid amalga oshirmagan</div>
+                  </div>
+                )}
               </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              {[
-                { l: 'Turi', v: selected.type === 'dealer' ? '🏪 Do\'kondor' : '👤 Oddiy' },
-                { l: 'Xaridlar', v: selected.purchases + ' ta' },
-                { l: 'Jami summa', v: Number(selected.total_spent).toLocaleString() + " so'm" },
-                { l: 'Holat', v: selected.debt > 0 ? '⚠️ Nasiyador' : '✅ Toza' },
-              ].map(s => (
-                <div key={s.l} style={{ background: 'var(--s2)', borderRadius: 10, padding: '12px 14px' }}>
-                  <div style={{ fontSize: 10, color: 'var(--t2)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: .8 }}>{s.l}</div>
-                  <div style={{ fontSize: 14, fontWeight: 700 }}>{s.v}</div>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
-              <Btn variant="primary" style={{ flex: 1 }} size="sm">📱 SMS</Btn>
-              <Btn variant="ghost" style={{ flex: 1 }} size="sm">✏️ Tahrir</Btn>
+            <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
+              <Btn variant="primary" style={{ flex: 2, padding: 14, background: 'linear-gradient(135deg, #10B981, #059669)', border: 'none', borderRadius: 12, color: '#fff', fontSize: 15, fontWeight: 800, cursor: 'pointer', boxShadow: '0 6px 20px rgba(16,185,129,0.3)' }} onClick={() => {
+                   navigate('/pos', { state: { selectedCustomer: selected } });
+              }}>🛒 Sotuv (POS) oynasiga o'tish</Btn>
+              <Btn variant="primary" style={{ flex: 1, padding: 14, borderRadius: 12, fontSize: 15 }}>📱 SMS</Btn>
+              <Btn variant="ghost" style={{ flex: 1, padding: 14, borderRadius: 12, fontSize: 15 }}>✏️ Tahrir</Btn>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* ADD MODAL - 2 type */}
       {showAdd && (
@@ -250,7 +321,9 @@ export function Nasiya() {
   const { user } = useAuth();
   const [showPay, setShowPay] = useState(null);
   const [paidAmount, setPaidAmount] = useState('');
+  const [payMethod, setPayMethod] = useState('💵 Naqd');
   const [success, setSuccess] = useState(false);
+  const [allDebts, setAllDebts] = useState([]);
   const [debts, setDebts] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [newDebt, setNewDebt] = useState({ name: '', phone: '', debt: '', daysLeft: 30 });
@@ -261,16 +334,29 @@ export function Nasiya() {
   }, [user]);
 
   const loadDebts = async (storeId) => {
-    const { data } = await supabase.from('debts').select('*').eq('store_id', storeId).eq('status', 'To\'lanmagan');
+    const { data } = await supabase.from('debts').select('*').eq('store_id', storeId);
     if (data) {
-      setDebts(data.map(d => {
-        const dDate = new Date(d.date);
-        dDate.setDate(dDate.getDate() + 30); // simplistic assumption
+      setAllDebts(data);
+      setDebts(data.filter(d => d.status === 'To\'lanmagan').map(d => {
+        let dDate;
+        if (d.due_date) {
+           dDate = new Date(d.due_date);
+        } else {
+           dDate = new Date(d.date);
+           dDate.setDate(dDate.getDate() + 30);
+        }
         const diffTime = dDate.getTime() - new Date().getTime();
         const daysL = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        const paidNum = Number(d.paid_amount || 0);
+        const totalNum = Number(d.amount || 0);
+        const remDebt = totalNum - paidNum;
+        let pct = 0;
+        if (totalNum > 0) pct = Math.round((paidNum / totalNum) * 100);
+
         return {
-          id: d.id, name: d.client, phone: d.phone, debt: Number(d.amount),
-          daysLeft: daysL, paid: 0, dueDate: dDate.toLocaleDateString(),
+          id: d.id, name: d.client, phone: d.phone, debt: remDebt,
+          totalAmount: totalNum, paidAmount: paidNum,
+          daysLeft: daysL, paid: pct, dueDate: dDate.toLocaleDateString(),
           avatar: d.client?.substring(0, 2)?.toUpperCase(), color: '#3B82F6'
         }
       }));
@@ -283,11 +369,14 @@ export function Nasiya() {
   const handlePay = async () => {
     if (!paidAmount || isNaN(paidAmount) || !user?.store_id) return;
 
-    // We logically reduce or complete debt
-    const newAmt = Math.max(0, showPay.debt - parseInt(paidAmount));
-    const newStatus = newAmt === 0 ? "To'landi" : "To'lanmagan";
+    const payingNow = parseInt(paidAmount);
+    if (payingNow <= 0) return;
 
-    const { error } = await supabase.from('debts').update({ amount: newAmt, status: newStatus }).eq('id', showPay.id);
+    const newPaid = showPay.paidAmount + payingNow;
+    const isFullyPaid = newPaid >= showPay.totalAmount;
+    const newStatus = isFullyPaid ? "To'landi" : "To'lanmagan";
+
+    const { error } = await supabase.from('debts').update({ paid_amount: newPaid, status: newStatus }).eq('id', showPay.id);
     if (!error) {
       setSuccess(true);
       setTimeout(() => {
@@ -305,11 +394,16 @@ export function Nasiya() {
   const handleAddDebt = async () => {
     if (!newDebt.name || !newDebt.debt || !user?.store_id) return;
 
+    const dDate = new Date();
+    dDate.setDate(dDate.getDate() + parseInt(newDebt.daysLeft || 30));
+
     const { error } = await supabase.from('debts').insert({
       store_id: user.store_id,
       client: newDebt.name,
       amount: parseInt(newDebt.debt),
+      paid_amount: 0,
       phone: newDebt.phone || '+998',
+      due_date: dDate.toISOString(),
       status: "To'lanmagan"
     });
 
@@ -330,7 +424,7 @@ export function Nasiya() {
         <StatCard icon="💸" value={debts.length} label="Nasiyadorlar" accent="#F43F5E" />
         <StatCard icon="💰" value={`${(totalDebt / 1000000).toFixed(2)}M`} label="Jami qarz (so'm)" accent="#F59E0B" change="To'lanmagan" changeType="down" />
         <StatCard icon="⚠️" value={urgent} label="Muddati yaqin (7 kun)" accent="#F43F5E" />
-        <StatCard icon="✅" value="8" label="Bu oy to'lagan" accent="#10B981" />
+        <StatCard icon="✅" value={allDebts.filter(d => d.status === "To'langan" || d.paid_amount > 0).length} label="Tugallangan (To'langan)" accent="#10B981" />
       </div>
 
       {/* Urgent alert */}
@@ -432,7 +526,7 @@ export function Nasiya() {
                   <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--t2)', display: 'block', marginBottom: 8, textTransform: 'uppercase', letterSpacing: .8 }}>To'lov usuli</label>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
                     {['💵 Naqd', '💳 Plastik', '📱 Transfer'].map(m => (
-                      <button key={m} style={{ padding: '10px 4px', background: 'var(--s2)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--t2)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }}>{m}</button>
+                      <button key={m} onClick={() => setPayMethod(m)} style={{ padding: '10px 4px', background: payMethod === m ? 'rgba(59,130,246,0.1)' : 'var(--s2)', border: payMethod === m ? '1px solid #3B82F6' : '1px solid var(--border)', borderRadius: 8, color: payMethod === m ? '#3B82F6' : 'var(--t2)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }}>{m}</button>
                     ))}
                   </div>
                 </div>
