@@ -18,7 +18,7 @@ const ADVANTAGES = [
 ];
 
 const STATS = [
-    { num: '3+', label: "Faol do'konlar" },
+    { num: '19+', label: "Faol do'konlar" },
     { num: '24/7', label: 'Ishlash vaqti' },
     { num: '100%', label: "O'zbek tilida" },
     { num: '10 daq', label: "O'rganish vaqti" },
