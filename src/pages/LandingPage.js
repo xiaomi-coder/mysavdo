@@ -10,21 +10,6 @@ const FEATURES = [
     { icon: '💳', title: 'Nasiya Tizimi', desc: "Mijozlar nasiyasini boshqaring. Muddati kelganda avtomatik eslatma." },
 ];
 
-const PRICING = [
-    {
-        name: 'START', price: '100,000', period: "so'm/oy", color: '#3B82F6', popular: false,
-        features: ['1 ta kassa', 'Asosiy hisobotlar', 'Telegram bot', '100 ta tovar', 'Email yordam'],
-    },
-    {
-        name: 'BIZNES', price: '200,000', period: "so'm/oy", color: '#22D3EE', popular: true,
-        features: ['3 ta kassa', 'AI analitika', 'CRM tizimi', "Cheksiz tovar", "To'liq hisobotlar", 'Nasiya moduli'],
-    },
-    {
-        name: 'PRO', price: '400,000', period: "so'm/oy", color: '#F59E0B', popular: false,
-        features: ['Cheksiz kassa', 'Online do\'kon', 'Maxsus integratsiya', 'Soliq integratsiya', 'VIP qo\'llab-quvvatlash', 'API kirish'],
-    },
-];
-
 const ADVANTAGES = [
     { icon: '🇺🇿', title: "100% O'zbek tilida", desc: "To'liq o'zbek tilida interfeys — hech qanday tarjima muammosi yo'q." },
     { icon: '💰', title: 'Arzon narx', desc: "Boshqa tizimlar $50-100/oy. MyBazzar atigi 100,000 so'mdan boshlanadi." },
@@ -217,64 +202,6 @@ export default function LandingPage() {
                 </div>
             </section>
 
-            {/* ═══ PRICING ═══ */}
-            <section id="pricing" className="land-section" style={{ padding: '80px 24px', maxWidth: 1100, margin: '0 auto', transition: 'all 0.6s ease-out', ...anim('pricing') }}>
-                <div style={{ textAlign: 'center', marginBottom: 56 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#F59E0B', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 12 }}>Tariflar</div>
-                    <h2 style={{ fontSize: 'clamp(28px, 4vw, 42px)', fontWeight: 900 }}>Biznesingizga mos tarifni tanlang</h2>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, alignItems: 'stretch' }}>
-                    {PRICING.map((p, i) => (
-                        <div key={i} style={{
-                            padding: 32, borderRadius: 20, position: 'relative',
-                            background: p.popular
-                                ? 'linear-gradient(145deg, rgba(34,211,238,0.08), rgba(59,130,246,0.05))'
-                                : 'linear-gradient(145deg, rgba(26,35,50,0.7), rgba(13,17,23,0.8))',
-                            border: `1px solid ${p.popular ? 'rgba(34,211,238,0.3)' : 'rgba(255,255,255,0.05)'}`,
-                            transition: 'all 0.3s', display: 'flex', flexDirection: 'column',
-                            boxShadow: p.popular ? '0 0 40px rgba(34,211,238,0.1)' : 'none',
-                        }}
-                            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-6px)'; }}
-                            onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
-                        >
-                            {p.popular && (
-                                <div style={{
-                                    position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)',
-                                    background: 'linear-gradient(135deg, #22D3EE, #3B82F6)', padding: '5px 18px',
-                                    borderRadius: 20, fontSize: 11, fontWeight: 800, color: '#fff', letterSpacing: 1,
-                                }}>⭐ MASHHUR</div>
-                            )}
-                            <div style={{ fontSize: 14, fontWeight: 800, color: p.color, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 12 }}>{p.name}</div>
-                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 24 }}>
-                                <span style={{ fontSize: 40, fontWeight: 900 }}>{p.price}</span>
-                                <span style={{ fontSize: 14, color: '#64748B' }}>{p.period}</span>
-                            </div>
-                            <div style={{ flex: 1 }}>
-                                {p.features.map((f, j) => (
-                                    <div key={j} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                                        <span style={{ color: '#10B981', fontSize: 14 }}>✓</span>
-                                        <span style={{ fontSize: 14, color: '#CBD5E1' }}>{f}</span>
-                                    </div>
-                                ))}
-                            </div>
-                            <button onClick={() => navigate('/login')} style={{
-                                marginTop: 24, width: '100%', padding: 14,
-                                background: p.popular ? 'linear-gradient(135deg,#3B82F6,#2563EB)' : 'rgba(255,255,255,0.05)',
-                                border: p.popular ? 'none' : '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: 12, color: '#fff', fontSize: 15, fontWeight: 700,
-                                cursor: 'pointer', fontFamily: "'Outfit',sans-serif", transition: 'all 0.2s',
-                                boxShadow: p.popular ? '0 6px 24px rgba(59,130,246,0.3)' : 'none',
-                            }}
-                                onMouseEnter={e => e.target.style.transform = 'scale(1.02)'}
-                                onMouseLeave={e => e.target.style.transform = 'scale(1)'}
-                            >
-                                Boshlash →
-                            </button>
-                        </div>
-                    ))}
-                </div>
-            </section>
-
             {/* ═══ CTA ═══ */}
             <section style={{ padding: '80px 24px', textAlign: 'center', position: 'relative' }}>
                 <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at center, rgba(59,130,246,0.08) 0%, transparent 60%)', pointerEvents: 'none' }} />
@@ -314,7 +241,7 @@ export default function LandingPage() {
                     </div>
                     <div>
                         <div style={{ fontSize: 13, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 14 }}>Sahifalar</div>
-                        {['Imkoniyatlar', 'Tariflar', 'Afzalliklar'].map(l => (
+                        {['Imkoniyatlar', 'Afzalliklar'].map(l => (
                             <div key={l} style={{ fontSize: 14, color: '#64748B', marginBottom: 8, cursor: 'pointer', transition: 'color 0.2s' }}
                                 onMouseEnter={e => e.target.style.color = '#fff'} onMouseLeave={e => e.target.style.color = '#64748B'}
                             >{l}</div>
