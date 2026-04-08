@@ -12,7 +12,7 @@ const FEATURES = [
 
 const ADVANTAGES = [
     { icon: '🇺🇿', title: "100% O'zbek tilida", desc: "To'liq o'zbek tilida interfeys — hech qanday tarjima muammosi yo'q." },
-    { icon: '💰', title: 'Arzon narx', desc: "Boshqa tizimlar $50-100/oy. MyBazzar atigi 100,000 so'mdan boshlanadi." },
+    { icon: '💰', title: 'Hamyonbop yechim', desc: "Biznesingiz uchun ortiqcha xarajatlarsiz qulay va moslashuvchan platforma." },
     { icon: '📱', title: 'Telegram integratsiya', desc: "Kunlik hisobot Telegram ga keladi. O'zbeklar uchun juda qulay." },
     { icon: '⚡', title: 'Oddiy interfeys', desc: "10 daqiqada o'rganib, ishni boshlang. Texnik bilim kerak emas." },
 ];
