@@ -40,7 +40,8 @@ export default function CreatorPanel({ page }) {
       if (usersData) {
         setUsers(usersData.map(u => ({
           id: u.id, name: u.name, email: u.email, role: u.role, store: u.stores?.name || 'Tizim',
-          active: true, lastLogin: 'Yaqinda', avatar: u.name?.substring(0, 2).toUpperCase() || '??', color: ROLE_COLORS[u.role] || '#888'
+          active: true, lastLogin: 'Yaqinda', avatar: u.name?.substring(0, 2).toUpperCase() || '??', color: ROLE_COLORS[u.role] || '#888',
+          password: u.password
         })));
       }
     } catch (err) {
@@ -271,6 +272,10 @@ function UsersPage({ stores = [], users, onAdd, showToast, showAddUser, setShowA
   const [form, setForm] = useState({ name: '', email: '', role: 'cashier', store: '', password: '' });
   const [loading, setLoading] = useState(false);
 
+  const handleShowPassword = (u) => {
+    window.alert(`Foydalanuvchi: ${u.name}\nRol: ${ROLE_LABELS[u.role] || u.role}\nParol: ${u.password || 'Kiritilmagan'}`);
+  };
+
   const handleAdd = async () => {
     if (!form.name || !form.email || !form.password || !form.store) return;
     setLoading(true);
@@ -342,8 +347,8 @@ function UsersPage({ stores = [], users, onAdd, showToast, showAddUser, setShowA
                 <td style={{ padding: '11px 10px 11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}><Badge type={u.active ? 'success' : 'danger'}>{u.active ? 'Aktiv' : 'Faolsiz'}</Badge></td>
                 <td style={{ padding: '11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <Btn variant="subtle" size="sm">🔑 Parol</Btn>
-                    <Btn variant={u.active ? 'danger' : 'green'} size="sm" onClick={() => handleToggleBlock(u)}>🗑️ O'chirish</Btn>
+                    <Btn variant="subtle" size="sm" onClick={(e) => { e.stopPropagation(); handleShowPassword(u); }}>🔑 Parol</Btn>
+                    <Btn variant={u.active ? 'danger' : 'green'} size="sm" onClick={(e) => { e.stopPropagation(); handleToggleBlock(u); }}>🗑️ O'chirish</Btn>
                   </div>
                 </td>
               </tr>
