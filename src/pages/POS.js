@@ -77,12 +77,23 @@ export default function POS() {
     });
   };
 
+  const changeItemDiscount = (id, val) => {
+    setCart(prev => {
+      const cur = prev[id];
+      if (!cur) return prev;
+      return { ...prev, [id]: { ...cur, itemDiscount: val } };
+    });
+  };
+
   const clearCart = () => { setCart({}); setDiscount(0); };
 
   const cartItems = Object.values(cart);
   const itemCount = cartItems.reduce((s, i) => s + i.qty, 0);
   const subtotal = cartItems.reduce((s, i) => s + i.price * i.qty, 0);
-  const discountAmt = Math.round(subtotal * discount / 100);
+  const itemsDiscountSum = cartItems.reduce((s, i) => s + (Number(i.itemDiscount) || 0) * i.qty, 0);
+  const afterItemsDiscount = subtotal - itemsDiscountSum;
+  const globalDiscountAmt = Math.round(afterItemsDiscount * discount / 100);
+  const discountAmt = itemsDiscountSum + globalDiscountAmt;
   const total = subtotal - discountAmt;
 
   const PAY_METHODS = user?.role === 'dealer'
@@ -185,14 +196,18 @@ export default function POS() {
           <div class="line"></div>
           <div class="row bold"><span>Mahsulot</span><span>Summa</span></div>
           <div class="line"></div>
-          ${cartItems.map(item => `
+          ${cartItems.map(item => {
+            const itemDiscount = Number(item.itemDiscount) || 0;
+            const netPrice = item.price - itemDiscount;
+            return `
             <div>${isPhone ? (item.phone_model || item.name) : item.name}${isPhone && item.phone_memory ? ` (${item.phone_memory})` : ''}</div>
             <div class="row">
-              <span style="padding-left: 8px;">${item.qty} x ${item.price.toLocaleString()}</span>
-              <span>${(item.price * item.qty).toLocaleString()}</span>
+              <span style="padding-left: 8px;">${item.qty} x ${netPrice.toLocaleString()}${itemDiscount > 0 ? ` (Asl: ${item.price.toLocaleString()})` : ''}</span>
+              <span>${(netPrice * item.qty).toLocaleString()}</span>
             </div>
             ${isPhone && item.phone_imei1 ? `<div style="font-size:9px;color:#888;padding-left:8px;">IMEI1: ${item.phone_imei1}${item.phone_imei2 ? ` | IMEI2: ${item.phone_imei2}` : ''}${item.phone_serial ? ` | S/N: ${item.phone_serial}` : ''}</div>` : ''}
-          `).join('')}
+            `;
+          }).join('')}
           <div class="line"></div>
           <div class="row"><span>Jami:</span><span>${subtotal.toLocaleString()} so'm</span></div>
           ${discountAmt > 0 ? `<div class="row"><span>Chegirma:</span><span>-${discountAmt.toLocaleString()} so'm</span></div>` : ''}
@@ -356,7 +371,29 @@ export default function POS() {
                 <div style={{ flex: 1, overflow: 'hidden' }}>
                   <div style={{ fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{isPhone ? (item.phone_model || item.name) : item.name}</div>
                   {isPhone && item.phone_memory && <div style={{ fontSize: 9, color: '#22D3EE' }}>{item.phone_memory} {item.phone_color ? `· ${item.phone_color}` : ''}</div>}
-                  <div style={{ fontSize: 11, color: 'var(--t2)' }}>{(item.price * item.qty).toLocaleString()} so'm</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                     <div style={{ fontSize: 11, color: 'var(--t2)', textDecoration: item.itemDiscount ? 'line-through' : 'none' }}>
+                       {(item.price * item.qty).toLocaleString()} so'm
+                     </div>
+                     {Number(item.itemDiscount) > 0 && (
+                       <div style={{ fontSize: 11, color: '#10B981', fontWeight: 800 }}>
+                         {((item.price - Number(item.itemDiscount)) * item.qty).toLocaleString()} so'm
+                       </div>
+                     )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                    <input 
+                      type="number" 
+                      value={item.itemDiscount || ''} 
+                      onChange={e => changeItemDiscount(item.id, e.target.value)}
+                      placeholder="Chegirma qiymati..."
+                      style={{
+                        width: '100%', maxWidth: 110, padding: '4px 6px', fontSize: 10, borderRadius: 4, 
+                        border: '1px solid var(--border)', background: 'var(--s2)', color: 'var(--t1)',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                   <button onClick={() => changeQty(item.id, -1)} style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--s2)', border: '1px solid var(--border)', color: 'var(--t1)', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
