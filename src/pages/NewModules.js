@@ -583,7 +583,9 @@ export function ChekPrinter() {
   const [storeAddress, setStoreAddress] = useState('Toshkent, Yunusobod, 5');
   const [footer, setFooter] = useState('Xarid uchun rahmat! Qaytib keling!');
   const [showLogo, setShowLogo] = useState(true);
+  const [logoUrl, setLogoUrl] = useState('');
   const [showQr, setShowQr] = useState(false);
+  const [qrUrl, setQrUrl] = useState('https://t.me/mybazzar_uz');
   const [fontSize, setFontSize] = useState('normal');
   const [printing, setPrinting] = useState(false);
 
@@ -649,19 +651,33 @@ export function ChekPrinter() {
             ))}
           </div>
 
-          {/* Toggles */}
+          {/* Toggles & Extra Inputs */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
-            {[
-              { label: 'Logo va do\'kon nomi', val: showLogo, set: setShowLogo },
-              { label: 'QR kod (sayt/telegram)', val: showQr, set: setShowQr },
-            ].map(t => (
-              <div key={t.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: 'var(--s2)', borderRadius: 10 }}>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>{t.label}</span>
-                <div onClick={() => t.set(!t.val)} style={{ width: 40, height: 22, borderRadius: 11, cursor: 'pointer', background: t.val ? '#3B82F6' : 'var(--border)', position: 'relative', transition: 'background .25s' }}>
-                  <div style={{ position: 'absolute', top: 2, borderRadius: '50%', width: 18, height: 18, background: '#fff', left: t.val ? 20 : 2, transition: 'left .25s', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }} />
-                </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: 'var(--s2)', borderRadius: 10 }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Logo va do'kon nomi</span>
+              <div onClick={() => setShowLogo(!showLogo)} style={{ width: 40, height: 22, borderRadius: 11, cursor: 'pointer', background: showLogo ? '#3B82F6' : 'var(--border)', position: 'relative', transition: 'background .25s' }}>
+                <div style={{ position: 'absolute', top: 2, borderRadius: '50%', width: 18, height: 18, background: '#fff', left: showLogo ? 20 : 2, transition: 'left .25s', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }} />
               </div>
-            ))}
+            </div>
+            {showLogo && (
+              <div style={{ marginBottom: 8 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--t2)', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: .8 }}>Logotip manzili (URL) / Ixtiyoriy</label>
+                <input value={logoUrl} onChange={e => setLogoUrl(e.target.value)} placeholder="https://..." style={{ width: '100%', padding: '10px 12px', background: 'var(--s2)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--t1)', fontSize: 13, fontFamily: 'Outfit,sans-serif', outline: 'none' }} />
+              </div>
+            )}
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: 'var(--s2)', borderRadius: 10 }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>QR kod (sayt/telegram)</span>
+              <div onClick={() => setShowQr(!showQr)} style={{ width: 40, height: 22, borderRadius: 11, cursor: 'pointer', background: showQr ? '#3B82F6' : 'var(--border)', position: 'relative', transition: 'background .25s' }}>
+                <div style={{ position: 'absolute', top: 2, borderRadius: '50%', width: 18, height: 18, background: '#fff', left: showQr ? 20 : 2, transition: 'left .25s', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }} />
+              </div>
+            </div>
+            {showQr && (
+              <div style={{ marginBottom: 8 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--t2)', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: .8 }}>Telegram / Sayt havolasi</label>
+                <input value={qrUrl} onChange={e => setQrUrl(e.target.value)} placeholder="https://t.me/..." style={{ width: '100%', padding: '10px 12px', background: 'var(--s2)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--t1)', fontSize: 13, fontFamily: 'Outfit,sans-serif', outline: 'none' }} />
+              </div>
+            )}
           </div>
 
           {/* Font size */}

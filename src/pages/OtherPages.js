@@ -718,9 +718,9 @@ export function Reports() {
       </div>
       <div className="glass-card" style={{ borderRadius: 16, padding: 22 }}>
         <SectionHeader title={selected ? selected.name + " — Bu Oy" : "Sotuv Hisoboti — Bu Oy"}>
-          <Btn variant="subtle" size="sm">📅 Davr</Btn>
-          <Btn variant="primary" size="sm">📥 Excel</Btn>
-          <Btn variant="subtle" size="sm">🖨️ PDF</Btn>
+          <Btn variant="subtle" size="sm" onClick={() => alert("Tez kunda ishga tushadi! (Tanlangan davr bo'yicha hisobot o'qiydi)")}>📅 Davr</Btn>
+          <Btn variant="primary" size="sm" onClick={() => alert("Tez kunda! Excel formatida yuklab olish hozircha faqat administratorlar uchun yopiq testda.")}>📥 Excel</Btn>
+          <Btn variant="subtle" size="sm" onClick={() => alert("Tez kunda! PDF hisobot generatsiyasi ustida ishlamoqdamiz.")}>🖨️ PDF</Btn>
         </SectionHeader>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
           {currentData.map(s => (
