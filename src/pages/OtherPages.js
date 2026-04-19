@@ -791,6 +791,15 @@ export function Settings() {
             </div>
           ))}
         </div>
+        <div style={{ background: 'linear-gradient(135deg,rgba(16,185,129,0.08),rgba(34,211,238,0.04))', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 16, padding: 20, marginBottom: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: '#10B981', marginBottom: 8 }}>🌐 Sizning Onlayn Do'koningiz (Vitrina)</div>
+          <div style={{ fontSize: 13, color: 'var(--t2)', marginBottom: 12, lineHeight: 1.5 }}>Ushbu havolani mijozlarga yuboring. Ular tovarlaringizni ko'rib, onlayn buyurtma berishlari mumkin:</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <input readOnly value={`https://mybazzar.uz/shop/${user?.store_id}`} style={{ flex: 1, padding: '10px 14px', borderRadius: 8, background: 'var(--s1)', color: '#22D3EE', border: '1px solid var(--border)', fontSize: 13, outline: 'none', fontFamily: 'JetBrains Mono, monospace' }} />
+            <button onClick={(e) => { navigator.clipboard.writeText(`https://mybazzar.uz/shop/${user?.store_id}`); e.target.innerText = '✅ Nusxa'; setTimeout(() => e.target.innerText = '📋 Nusxa', 2000); }} style={{ padding: '10px 14px', background: 'var(--s2)', border: '1px solid var(--border)', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>📋 Nusxa</button>
+          </div>
+        </div>
+
         <div style={{ background: 'linear-gradient(135deg,rgba(59,130,246,0.08),rgba(34,211,238,0.04))', border: '1px solid rgba(59,130,246,0.2)', borderRadius: 16, padding: 20 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--t2)', marginBottom: 6 }}>Joriy Tarif</div>
           <div style={{ fontSize: 26, fontWeight: 900, background: 'linear-gradient(135deg,#3B82F6,#22D3EE)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Business</div>

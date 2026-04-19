@@ -12,6 +12,7 @@ import Finance from './pages/Finance';
 import CreatorPanel from './pages/CreatorPanel';
 import LandingPage from './pages/LandingPage';
 import DealerPortal from './pages/DealerPortal';
+import Storefront from './pages/Storefront';
 
 function PrivateRoute({ children, permission }) {
   const { user, hasPermission } = useAuth();
@@ -45,6 +46,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={user ? <RoleRedirect /> : <LandingPage />} />
       <Route path="/login" element={user ? <RoleRedirect /> : <Login />} />
+      <Route path="/shop/:storeId" element={<Storefront />} />
       <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
         <Route path="no-access" element={<NoAccess />} />
         {/* Creator */}
