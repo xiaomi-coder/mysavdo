@@ -577,7 +577,7 @@ export function Nasiya() {
 
 // ── CHEK PRINTER PAGE ──────────────────────────────────────────────────────
 export function ChekPrinter() {
-  const [template, setTemplate] = useState('standard');
+  const [template, setTemplate] = useState(() => localStorage.getItem('mybazzar_receipt_template') || 'detailed');
   const [storeName, setStoreName] = useState("Asosiy Do'kon");
   const [storePhone, setStorePhone] = useState('+998 90 123 45 67');
   const [storeAddress, setStoreAddress] = useState('Toshkent, Yunusobod, 5');
@@ -621,7 +621,7 @@ export function ChekPrinter() {
                 { id: 'compact', label: 'Ixcham', desc: 'Minimal matn' },
                 { id: 'detailed', label: "To'liq", desc: 'Batafsil ma\'lumot' },
               ].map(t => (
-                <div key={t.id} onClick={() => setTemplate(t.id)} style={{
+                <div key={t.id} onClick={() => { setTemplate(t.id); localStorage.setItem('mybazzar_receipt_template', t.id); }} style={{
                   padding: '12px', borderRadius: 10, cursor: 'pointer', textAlign: 'center',
                   border: `1px solid ${template === t.id ? '#3B82F6' : 'var(--border)'}`,
                   background: template === t.id ? 'rgba(59,130,246,0.08)' : 'var(--s2)',

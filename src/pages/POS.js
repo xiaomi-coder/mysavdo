@@ -179,7 +179,79 @@ export default function POS() {
     // Generate and open Receipt
     const printWin = window.open('', '_blank');
     const paymentLabel = PAY_METHODS.find(m => m.id === payMethod)?.label.substring(2) || 'Naqd';
-    const receiptHtml = `
+    const receiptTemplate = localStorage.getItem('mybazzar_receipt_template') || 'detailed';
+
+    let receiptHtml = '';
+
+    if (receiptTemplate === 'compact' || receiptTemplate === 'standard') {
+      receiptHtml = `
+      <html>
+        <head>
+          <title>Chek #${receiptNo}</title>
+          <style>
+            @page { margin: 0; }
+            body { font-family: monospace; width: 58mm; margin: 0 auto; color: #000; font-size: 12px; padding: 2mm; box-sizing: border-box; }
+            .center { text-align: center; }
+            .bold { font-weight: bold; }
+            .right { text-align: right; }
+            .divider { border-bottom: 1px dashed #000; margin: 8px 0; }
+            @media print { body { width: 100%; margin: 0; padding: 0; } }
+          </style>
+        </head>
+        <body>
+          <div class="center bold" style="font-size: 16px; margin-bottom: 4px; text-transform: uppercase;">${user?.storeName || 'MyBazzar'}</div>
+          <div class="center" style="margin-bottom: 6px;">Chek: ${(receiptNo).toString().padStart(6, '0')}</div>
+          <div class="center" style="margin-bottom: 6px; font-size: 10px;">${new Date().toLocaleString('uz-UZ')}</div>
+          
+          <div>Kassir: ${user?.name || 'Kassir'}</div>
+          ${selectedCustomer ? `<div>Mijoz: ${selectedCustomer.name}</div>` : ''}
+          ${selectedCustomer?.phone ? `<div>Telefon: ${selectedCustomer.phone}</div>` : ''}
+          <div>To'lov: ${paymentLabel.trim()}</div>
+          <div class="divider"></div>
+
+          ${cartItems.map((item, index) => {
+            const itemDiscount = Number(item.itemDiscount) || 0;
+            const netPrice = item.price - itemDiscount;
+            return \`
+              <div style="margin-bottom: 4px;">
+                <div class="bold">${isPhone ? (item.phone_model || item.name) : item.name} ${isPhone && item.phone_memory ? item.phone_memory : ''}</div>
+                ${isPhone && item.phone_imei1 ? \`<div style="font-size:9px;">IMEI:\${item.phone_imei1}</div>\` : ''}
+                <div style="display: flex; justify-content: space-between; font-size: 11px;">
+                  <span>\${item.qty} x \${netPrice.toLocaleString()}</span>
+                  <span class="bold">\${(netPrice * item.qty).toLocaleString()}</span>
+                </div>
+              </div>
+            \`;
+          }).join('')}
+          <div class="divider"></div>
+
+          ${discountAmt > 0 ? \`
+          <div style="display: flex; justify-content: space-between;">
+            <span>Chegirma:</span>
+            <span>-\${discountAmt.toLocaleString()}</span>
+          </div>
+          \` : ''}
+          <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 14px; margin-top: 4px;">
+            <span>JAMI:</span>
+            <span>${total.toLocaleString()} so'm</span>
+          </div>
+
+          ${payMethod === 'nasiya' ? \`
+            <div style="margin-top: 8px; font-size: 12px; font-weight: bold;">
+              Qarz: \${Math.max(0, total - Number(paidAmount)).toLocaleString()} so'm
+            </div>
+          \` : ''}
+
+          <div class="divider"></div>
+          <div class="center" style="font-size: 11px;">Xaridingiz uchun rahmat!</div>
+          <div class="center" style="font-size: 10px; margin-top: 2px;">*** mybazzar.uz ***</div>
+          
+          <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
+        </body>
+      </html>
+      `;
+    } else {
+      receiptHtml = `
       <html>
         <head>
           <title>Chek #${receiptNo}</title>
@@ -227,19 +299,19 @@ export default function POS() {
                 const itemDiscount = Number(item.itemDiscount) || 0;
                 const netPrice = item.price - itemDiscount;
                 const rowTotal = netPrice * item.qty;
-                return `
+                return \`
                   <tr>
-                    <td class="center">${index + 1}</td>
+                    <td class="center">\${index + 1}</td>
                     <td>
-                      ${isPhone ? (item.phone_model || item.name) : item.name} ${isPhone && item.phone_memory ? item.phone_memory : ''}
-                      ${isPhone && item.phone_imei1 ? `<br><span style="font-size:8px;">IMEI:${item.phone_imei1}</span>` : ''}
+                      \${isPhone ? (item.phone_model || item.name) : item.name} \${isPhone && item.phone_memory ? item.phone_memory : ''}
+                      \${isPhone && item.phone_imei1 ? \`<br><span style="font-size:8px;">IMEI:\${item.phone_imei1}</span>\` : ''}
                     </td>
                     <td class="center">шт</td>
-                    <td class="center">${item.qty}</td>
-                    <td class="right">${netPrice.toLocaleString()}</td>
-                    <td class="right">${rowTotal.toLocaleString()}</td>
+                    <td class="center">\${item.qty}</td>
+                    <td class="right">\${netPrice.toLocaleString()}</td>
+                    <td class="right">\${rowTotal.toLocaleString()}</td>
                   </tr>
-                `;
+                \`;
               }).join('')}
             </tbody>
           </table>
@@ -263,11 +335,11 @@ export default function POS() {
             Всего наименований ${itemCount} на сумму ${total.toLocaleString()}
           </div>
           
-          ${payMethod === 'nasiya' ? `
+          ${payMethod === 'nasiya' ? \`
             <div style="margin-top: 10px; font-size: 13px; font-weight: bold; color: #000;">
-              Долг: ${Math.max(0, total - Number(paidAmount)).toLocaleString()} сум
+              Долг: \${Math.max(0, total - Number(paidAmount)).toLocaleString()} сум
             </div>
-          ` : ''}
+          \` : ''}
 
           <div class="divider"></div>
           <div class="center info-text">Xaridingiz uchun rahmat!</div>
@@ -276,7 +348,8 @@ export default function POS() {
           <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
         </body>
       </html>
-    `;
+      `;
+    }
 
     if (printWin) {
       printWin.document.write(receiptHtml);
