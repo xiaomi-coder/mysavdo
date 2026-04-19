@@ -763,34 +763,57 @@ export function ChekPrinter() {
               </div>
             )}
 
-            <div style={{ borderTop: '1px dashed #ccc', paddingTop: 6, marginTop: 4 }}>
-              {sampleItems.map((item, i) => (
-                <div key={i} style={{ marginBottom: 6 }}>
-                  <div style={{ fontWeight: 700, fontSize: 11 }}>{item.name}</div>
-                  {template !== 'compact' && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#555' }}>
-                      <span>{item.qty} x {item.price.toLocaleString()}</span>
-                      <span>{(item.qty * item.price).toLocaleString()}</span>
-                    </div>
-                  )}
-                  {template === 'compact' && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10 }}>
-                      <span>{item.qty}x</span>
-                      <span style={{ fontWeight: 700 }}>{(item.qty * item.price).toLocaleString()}</span>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+            {template === 'detailed' ? (
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 8, marginBottom: 8, fontSize: 9, textAlign: 'left', color: '#000' }}>
+                <thead>
+                  <tr>
+                    <th style={{ border: '1px solid #ccc', padding: 3, textAlign: 'center' }}>№</th>
+                    <th style={{ border: '1px solid #ccc', padding: 3 }}>Наименование</th>
+                    <th style={{ border: '1px solid #ccc', padding: 3, textAlign: 'center' }}>Кол-во</th>
+                    <th style={{ border: '1px solid #ccc', padding: 3, textAlign: 'right' }}>Сумма</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sampleItems.map((item, i) => (
+                    <tr key={i}>
+                      <td style={{ border: '1px solid #ccc', padding: 3, textAlign: 'center' }}>{i + 1}</td>
+                      <td style={{ border: '1px solid #ccc', padding: 3 }}>{item.name}</td>
+                      <td style={{ border: '1px solid #ccc', padding: 3, textAlign: 'center' }}>{item.qty}</td>
+                      <td style={{ border: '1px solid #ccc', padding: 3, textAlign: 'right' }}>{(item.price * item.qty).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div style={{ borderTop: '1px dashed #ccc', paddingTop: 6, marginTop: 4 }}>
+                {sampleItems.map((item, i) => (
+                  <div key={i} style={{ marginBottom: 6 }}>
+                    <div style={{ fontWeight: 700, fontSize: 11 }}>{item.name}</div>
+                    {template !== 'compact' && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#555' }}>
+                        <span>{item.qty} x {item.price.toLocaleString()}</span>
+                        <span>{(item.qty * item.price).toLocaleString()}</span>
+                      </div>
+                    )}
+                    {template === 'compact' && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10 }}>
+                        <span>{item.qty}x</span>
+                        <span style={{ fontWeight: 700 }}>{(item.qty * item.price).toLocaleString()}</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div style={{ borderTop: '1px dashed #ccc', paddingTop: 6, marginTop: 4 }}>
               {template === 'detailed' && (
                 <>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10 }}>
-                    <span>Jami:</span><span>{subtotal.toLocaleString()}</span>
+                    <span>Сумма чека:</span><span>{subtotal.toLocaleString()}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#d00' }}>
-                    <span>Chegirma:</span><span>-{discount.toLocaleString()}</span>
+                    <span>Скидка:</span><span>-{discount.toLocaleString()}</span>
                   </div>
                 </>
               )}
