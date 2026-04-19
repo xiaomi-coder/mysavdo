@@ -22,6 +22,13 @@ export default function POS() {
   const [selectedCustomer, setSelectedCustomer] = useState(location.state?.selectedCustomer || null);
   const [showCustModal, setShowCustModal] = useState(false);
 
+  const formatMoney = (val) => {
+    if (!val) return '';
+    const num = String(val).replace(/\D/g, '');
+    if (!num) return '';
+    return Number(num).toLocaleString('de-DE'); // dot separation
+  };
+
   useEffect(() => {
     if (user?.store_id) {
       loadProducts(user.store_id);
@@ -383,9 +390,10 @@ export default function POS() {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
                     <input 
-                      type="number" 
-                      value={item.itemDiscount || ''} 
-                      onChange={e => changeItemDiscount(item.id, e.target.value)}
+                      type="text" 
+                      inputMode="numeric"
+                      value={formatMoney(item.itemDiscount)} 
+                      onChange={e => changeItemDiscount(item.id, e.target.value.replace(/\D/g, ''))}
                       placeholder="Chegirma qiymati..."
                       style={{
                         width: '100%', maxWidth: 110, padding: '4px 6px', fontSize: 10, borderRadius: 4, 
@@ -471,9 +479,10 @@ export default function POS() {
               <div style={{ marginBottom: 12 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#F43F5E', marginBottom: 8 }}>💵 Boshlang'ich to'lov (Naqd/Plastik)</div>
                 <input 
-                  type="number" 
-                  value={paidAmount} 
-                  onChange={(e) => setPaidAmount(e.target.value)}
+                  type="text" 
+                  inputMode="numeric"
+                  value={formatMoney(paidAmount)} 
+                  onChange={(e) => setPaidAmount(e.target.value.replace(/\D/g, ''))}
                   placeholder="0 so'm" 
                   style={{ 
                     width: '100%', padding: '10px 12px', background: 'var(--s1)', border: '1px solid rgba(255,255,255,0.1)', 

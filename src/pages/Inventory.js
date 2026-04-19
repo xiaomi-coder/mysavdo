@@ -62,6 +62,17 @@ export default function Inventory() {
   const [newCat, setNewCat] = useState('');
   const [showAddCat, setShowAddCat] = useState(false);
 
+  const formatMoney = (val) => {
+    if (!val) return '';
+    const num = String(val).replace(/\D/g, '');
+    if (!num) return '';
+    return Number(num).toLocaleString('de-DE'); // dot separation
+  };
+
+  const handlePriceChange = (key, val) => {
+    setNewProd(prev => ({ ...prev, [key]: String(val).replace(/\D/g, '') }));
+  };
+
   const [printProd, setPrintProd] = useState(null);
 
   // Tabs: list, transfer, audit
@@ -576,10 +587,10 @@ export default function Inventory() {
               </>)}
 
               <FormField label="Tan narxi (so'm) *">
-                <input type="number" value={newProd.cost} onChange={e => setNewProd({ ...newProd, cost: e.target.value })} placeholder="2500000" style={inputStyle} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+                <input type="text" inputMode="numeric" value={formatMoney(newProd.cost)} onChange={e => handlePriceChange('cost', e.target.value)} placeholder="2.500.000" style={inputStyle} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
               </FormField>
               <FormField label="Sotuv narxi (so'm) *">
-                <input type="number" value={newProd.price} onChange={e => setNewProd({ ...newProd, price: e.target.value })} placeholder="3000000" style={inputStyle} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+                <input type="text" inputMode="numeric" value={formatMoney(newProd.price)} onChange={e => handlePriceChange('price', e.target.value)} placeholder="3.000.000" style={inputStyle} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
               </FormField>
             </>) : (<>
               {/* GENERAL MODE FORM (original) */}
@@ -614,10 +625,10 @@ export default function Inventory() {
                 </select>
               </FormField>
               <FormField label="Tan narxi (so'm) *">
-                <input type="number" value={newProd.cost} onChange={e => setNewProd({ ...newProd, cost: e.target.value })} placeholder="6000" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+                <input type="text" inputMode="numeric" value={formatMoney(newProd.cost)} onChange={e => handlePriceChange('cost', e.target.value)} placeholder="6.000" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
               </FormField>
               <FormField label="Sotuv narxi (so'm) *">
-                <input type="number" value={newProd.price} onChange={e => setNewProd({ ...newProd, price: e.target.value })} placeholder="8000" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+                <input type="text" inputMode="numeric" value={formatMoney(newProd.price)} onChange={e => handlePriceChange('price', e.target.value)} placeholder="8.000" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
               </FormField>
               <FormField label="Boshlang'ich qoldiq">
                 <input type="number" value={newProd.stock} onChange={e => setNewProd({ ...newProd, stock: e.target.value })} placeholder="0" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
