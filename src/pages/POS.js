@@ -184,46 +184,95 @@ export default function POS() {
         <head>
           <title>Chek #${receiptNo}</title>
           <style>
-            body { font-family: monospace; width: 58mm; margin: 0 auto; color: #000; font-size: 12px; }
+            @page { margin: 0; }
+            body { font-family: 'Arial', sans-serif; width: 80mm; margin: 0 auto; color: #000; font-size: 11px; padding: 2mm; box-sizing: border-box; }
             .center { text-align: center; }
             .bold { font-weight: bold; }
-            .line { border-bottom: 1px dashed #000; margin: 6px 0; }
-            .row { display: flex; justify-content: space-between; margin-bottom: 3px; }
-            @media print { body { width: 100%; margin: 0; } }
+            .bordered-table { width: 100%; border-collapse: collapse; margin-top: 8px; margin-bottom: 8px; }
+            .bordered-table th, .bordered-table td { border: 1px solid #000; padding: 4px; font-size: 10px; }
+            .bordered-table th { font-weight: bold; text-align: center; }
+            .right { text-align: right; }
+            .info-text { font-size: 11px; margin-bottom: 3px; }
+            .total-table { width: 100%; font-size: 11px; margin-top: 5px; border-collapse: collapse; }
+            .total-table td { padding: 3px; }
+            .divider { border-bottom: 1px dashed #000; margin: 10px 0; }
+            @media print { body { width: 100%; margin: 0; padding: 0; } }
           </style>
         </head>
         <body>
-          <div class="center bold" style="font-size: 16px; margin-bottom: 4px;">MyBazzar</div>
-          <div class="center">"${user?.storeName || 'Do\'kon'}"</div>
-          <div class="center" style="font-size: 10px; margin-bottom: 6px;">Manzil kiritilmagan</div>
-          <div class="line"></div>
-          <div>Sana: ${new Date().toLocaleString('uz-UZ')}</div>
-          <div>Chek RAQAMI: #${receiptNo}</div>
-          <div>Kassir: ${user?.name || 'Kassir'}</div>
-          <div class="line"></div>
-          <div class="row bold"><span>Mahsulot</span><span>Summa</span></div>
-          <div class="line"></div>
-          ${cartItems.map(item => {
-            const itemDiscount = Number(item.itemDiscount) || 0;
-            const netPrice = item.price - itemDiscount;
-            return `
-            <div>${isPhone ? (item.phone_model || item.name) : item.name}${isPhone && item.phone_memory ? ` (${item.phone_memory})` : ''}</div>
-            <div class="row">
-              <span style="padding-left: 8px;">${item.qty} x ${netPrice.toLocaleString()}${itemDiscount > 0 ? ` (Asl: ${item.price.toLocaleString()})` : ''}</span>
-              <span>${(netPrice * item.qty).toLocaleString()}</span>
+          <div class="center bold" style="font-size: 16px; margin-bottom: 4px; text-transform: uppercase;">${user?.storeName || 'MyBazzar'}</div>
+          <div class="center bold" style="font-size: 12px; margin-bottom: 6px;">Mahsulot chek bilan qaytarib olinadi 30 KUN ICHIDA</div>
+          
+          <div class="center bold" style="font-size: 13px; margin-bottom: 4px;">Товарный чек № ${(receiptNo).toString().padStart(6, '0')}</div>
+          <div class="center info-text" style="margin-bottom: 8px;">от ${new Date().toLocaleDateString('ru-RU')}</div>
+          
+          <div class="info-text">Продавец: ${user?.name || 'Kassir'}</div>
+          ${selectedCustomer ? `<div class="info-text">Покупатель: ${selectedCustomer.name}</div>` : ''}
+          ${selectedCustomer?.phone ? `<div class="info-text">Телефон: ${selectedCustomer.phone}</div>` : ''}
+          <div class="info-text">Оплата: ${paymentLabel.trim()}</div>
+
+          <table class="bordered-table">
+            <thead>
+              <tr>
+                <th style="width: 5%;">№</th>
+                <th style="width: 40%;">Наименование</th>
+                <th style="width: 10%;">Ед.</th>
+                <th style="width: 10%;">Кол-во</th>
+                <th style="width: 15%;">Цена</th>
+                <th style="width: 20%;">Сумма</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${cartItems.map((item, index) => {
+                const itemDiscount = Number(item.itemDiscount) || 0;
+                const netPrice = item.price - itemDiscount;
+                const rowTotal = netPrice * item.qty;
+                return `
+                  <tr>
+                    <td class="center">${index + 1}</td>
+                    <td>
+                      ${isPhone ? (item.phone_model || item.name) : item.name} ${isPhone && item.phone_memory ? item.phone_memory : ''}
+                      ${isPhone && item.phone_imei1 ? `<br><span style="font-size:8px;">IMEI:${item.phone_imei1}</span>` : ''}
+                    </td>
+                    <td class="center">шт</td>
+                    <td class="center">${item.qty}</td>
+                    <td class="right">${netPrice.toLocaleString()}</td>
+                    <td class="right">${rowTotal.toLocaleString()}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+
+          <table class="total-table">
+            <tr>
+              <td class="right">Сумма чека:</td>
+              <td class="right bold" style="width: 35%;">${subtotal.toLocaleString()}</td>
+            </tr>
+            <tr>
+              <td class="right">Скидка:</td>
+              <td class="right bold">${discountAmt > 0 ? discountAmt.toLocaleString() : '0,00'}</td>
+            </tr>
+            <tr>
+              <td class="right">Итого:</td>
+              <td class="right bold" style="font-size: 13px;">${total.toLocaleString()}</td>
+            </tr>
+          </table>
+
+          <div style="margin-top: 8px; font-size: 11px;">
+            Всего наименований ${itemCount} на сумму ${total.toLocaleString()}
+          </div>
+          
+          ${payMethod === 'nasiya' ? `
+            <div style="margin-top: 10px; font-size: 13px; font-weight: bold; color: #000;">
+              Долг: ${Math.max(0, total - Number(paidAmount)).toLocaleString()} сум
             </div>
-            ${isPhone && item.phone_imei1 ? `<div style="font-size:9px;color:#888;padding-left:8px;">IMEI1: ${item.phone_imei1}${item.phone_imei2 ? ` | IMEI2: ${item.phone_imei2}` : ''}${item.phone_serial ? ` | S/N: ${item.phone_serial}` : ''}</div>` : ''}
-            `;
-          }).join('')}
-          <div class="line"></div>
-          <div class="row"><span>Jami:</span><span>${subtotal.toLocaleString()} so'm</span></div>
-          ${discountAmt > 0 ? `<div class="row"><span>Chegirma:</span><span>-${discountAmt.toLocaleString()} so'm</span></div>` : ''}
-          <div class="line"></div>
-          <div class="row bold" style="font-size: 14px;"><span>TOLASH:</span><span>${total.toLocaleString()} so'm</span></div>
-          <div class="row" style="margin-top: 4px;"><span>To'lov turi:</span><span>${paymentLabel.trim()}</span></div>
-          <div class="line"></div>
-          <div class="center" style="margin-top: 10px;">Xaridingiz uchun rahmat!</div>
-          <div class="center" style="margin-top: 2px;">*** mybazzar.uz ***</div>
+          ` : ''}
+
+          <div class="divider"></div>
+          <div class="center info-text">Xaridingiz uchun rahmat!</div>
+          <div class="center info-text" style="font-size: 9px; margin-top: 2px;">*** mybazzar.uz ***</div>
+          
           <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
         </body>
       </html>
