@@ -1,414 +1,397 @@
-import React from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { StatCard, Badge, SectionHeader, Btn } from '../components/UI';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import {
+  Page, PageHeader, Card, SectionHeader, StatCard, Btn, Tag, Seg,
+  RankBadge, RowLink, Icon, EmptyState, SkeletonRows,
+} from '../components/UI';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../utils/supabaseClient';
 
-const CustomTooltip = ({ active, payload, label }) => {
-  if (!active || !payload?.length) return null;
-  return (
-    <div style={{ background: 'var(--s1)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', fontSize: 12 }}>
-      <div style={{ fontWeight: 700, marginBottom: 6 }}>{label}</div>
-      {payload.map((p, i) => (
-        <div key={i} style={{ color: p.color }}>
-          {p.name}: {p.value.toLocaleString()} so'm
-        </div>
-      ))}
-    </div>
-  );
-};
+/* ── yordamchilar ──────────────────────────────────────────────────────── */
 
-// Calculate real profit from transaction items
-function calcProfit(txns) {
+const money = n => Math.round(Number(n) || 0).toLocaleString('ru-RU');
+
+// Foyda tranzaksiya ichidagi tan narxlardan hisoblanadi
+function calcTotals(txns) {
   let sotuv = 0, foyda = 0;
   (txns || []).forEach(t => {
     sotuv += Number(t.total) || 0;
-    if (t.items && Array.isArray(t.items)) {
-      t.items.forEach(item => {
-        const qty = item.qty || item.q || 1;
-        const price = Number(item.price) || 0;
-        const cost = Number(item.cost_price) || Number(item.cost) || 0;
-        foyda += (price - cost) * qty;
-      });
-    }
+    (Array.isArray(t.items) ? t.items : []).forEach(item => {
+      const qty = item.qty || item.q || 1;
+      const price = Number(item.price) || 0;
+      const cost = Number(item.cost_price) || Number(item.cost) || 0;
+      foyda += (price - cost) * qty;
+    });
   });
-  return { sotuv, foyda };
+  return { sotuv, foyda, count: (txns || []).length };
 }
 
-function pctChange(current, previous) {
-  if (!previous || previous === 0) return current > 0 ? 100 : 0;
-  return Math.round(((current - previous) / previous) * 100);
+function trendOf(current, previous, suffix = '%') {
+  if (!previous) {
+    if (!current) return null;
+    return { value: `+100${suffix}`, dir: 'up' };
+  }
+  const pct = Math.round(((current - previous) / previous) * 100);
+  return { value: `${pct >= 0 ? '+' : '−'}${Math.abs(pct)}${suffix}`, dir: pct >= 0 ? 'up' : 'down' };
 }
+
+const PAY_TAGS = {
+  cash: { label: 'Naqd', icon: 'money' },
+  card: { label: 'Plastik', icon: 'credit-card' },
+  transfer: { label: 'Transfer', icon: 'device-mobile' },
+  nasiya: { label: 'Nasiya', icon: 'hand-coins' },
+};
+
+const WEEK_LABELS = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh'];
+
+const PERIODS = [
+  { value: 'today', label: 'Bugun' },
+  { value: 'week', label: 'Hafta' },
+  { value: 'month', label: 'Oy' },
+];
+
+/* Tanlangan davr va u bilan solishtiriladigan oldingi davr chegaralari */
+function rangeFor(period) {
+  const now = new Date();
+  const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
+
+  if (period === 'today') {
+    const prev = new Date(dayStart); prev.setDate(prev.getDate() - 1);
+    return { from: dayStart, to: now, prevFrom: prev, prevTo: dayStart, hint: 'kechaga nisbatan' };
+  }
+  if (period === 'week') {
+    const from = new Date(dayStart); from.setDate(from.getDate() - 6);
+    const prevFrom = new Date(from); prevFrom.setDate(prevFrom.getDate() - 7);
+    return { from, to: now, prevFrom, prevTo: from, hint: 'oldingi haftaga nisbatan' };
+  }
+  const from = new Date(now.getFullYear(), now.getMonth(), 1);
+  const prevFrom = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return { from, to: now, prevFrom, prevTo: from, hint: 'oldingi oyga nisbatan' };
+}
+
+/* ── sahifa ────────────────────────────────────────────────────────────── */
 
 export default function Dashboard() {
-  const { user, sendTgAlert } = useAuth();
-  const [loadingTg, setLoadingTg] = React.useState(false);
-  const [recentSales, setRecentSales] = React.useState([]);
-  // Today
-  const [todaySales, setTodaySales] = React.useState(0);
-  const [todayProfit, setTodayProfit] = React.useState(0);
-  const [todayItems, setTodayItems] = React.useState(0);
-  const [todayReceipts, setTodayReceipts] = React.useState(0);
-  const [activeCashiers, setActiveCashiers] = React.useState(0);
-  // Yesterday (for comparison)
-  const [yesterdaySales, setYesterdaySales] = React.useState(0);
-  const [yesterdayProfit, setYesterdayProfit] = React.useState(0);
-  const [yesterdayReceipts, setYesterdayReceipts] = React.useState(0);
-  // Monthly
-  const [monthSales, setMonthSales] = React.useState(0);
-  const [monthProfit, setMonthProfit] = React.useState(0);
-  const [lastMonthSales, setLastMonthSales] = React.useState(0);
-  const [lastMonthProfit, setLastMonthProfit] = React.useState(0);
-  // Other
-  const [totalExpenses, setTotalExpenses] = React.useState(0);
-  const [lowStockProducts, setLowStockProducts] = React.useState([]);
-  const [topProducts, setTopProducts] = React.useState([]);
-  const [weeklyData, setWeeklyData] = React.useState([]);
-  const [productCount, setProductCount] = React.useState(0);
-  const [outOfStock, setOutOfStock] = React.useState(0);
-  const [lowCount, setLowCount] = React.useState(0);
+  const { user, sendTgAlert, alerts, refreshAlerts, pendingTxns } = useAuth();
+  const navigate = useNavigate();
 
-  React.useEffect(() => {
-    if (user?.store_id) loadAll(user.store_id);
-  }, [user]);
+  const [period, setPeriod] = useState('today');
+  const [loading, setLoading] = useState(true);
+  const [sendingTg, setSendingTg] = useState(false);
+  const [txns, setTxns] = useState([]);
+  const [customers, setCustomers] = useState({});
+  const [expenses, setExpenses] = useState(0);
 
-  const loadAll = async (storeId) => {
-    // === Dates ===
+  const load = useCallback(async (storeId) => {
+    setLoading(true);
     const now = new Date();
-    const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
-    const yesterdayStart = new Date(todayStart); yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+    // Oldingi oy boshidan beri — bu bitta so'rov bugun/hafta/oy va ularning
+    // solishtirish davrlarini ham qoplaydi.
+    const since = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
-    // 1. Recent transactions
-    const { data: txns } = await supabase.from('transactions')
-      .select('*').eq('store_id', storeId).order('date', { ascending: false }).limit(6);
-    if (txns) setRecentSales(txns);
+    const [txnRes, custRes, expRes] = await Promise.all([
+      supabase.from('transactions').select('*').eq('store_id', storeId)
+        .gte('date', since.toISOString()).order('date', { ascending: false }),
+      supabase.from('customers').select('id, name').eq('store_id', storeId),
+      supabase.from('expenses').select('amount').eq('store_id', storeId)
+        .gte('date', monthStart.toISOString()),
+    ]);
 
-    // 2. Today's stats (real profit from items)
-    const { data: todayTxns } = await supabase.from('transactions')
-      .select('total, items, cashier').eq('store_id', storeId).eq('status', 'completed')
-      .gte('date', todayStart.toISOString());
+    setTxns(txnRes.data || []);
+    setCustomers(Object.fromEntries((custRes.data || []).map(c => [c.id, c.name])));
+    setExpenses((expRes.data || []).reduce((s, e) => s + (Number(e.amount) || 0), 0));
+    setLoading(false);
+  }, []);
 
-    if (todayTxns) {
-      const { sotuv, foyda } = calcProfit(todayTxns);
-      const items = todayTxns.reduce((s, t) => s + (t.items?.length || 0), 0);
-      setTodaySales(sotuv);
-      setTodayProfit(foyda);
-      setTodayItems(items);
-      setTodayReceipts(todayTxns.length);
-      setActiveCashiers(new Set(todayTxns.map(t => t.cashier)).size);
-    }
+  useEffect(() => {
+    if (user?.store_id) { load(user.store_id); refreshAlerts(); }
+  }, [user, load, refreshAlerts]);
 
-    // 3. Yesterday's stats (for comparison)
-    const { data: yTxns } = await supabase.from('transactions')
-      .select('total, items').eq('store_id', storeId).eq('status', 'completed')
-      .gte('date', yesterdayStart.toISOString()).lt('date', todayStart.toISOString());
+  const completed = useMemo(() => txns.filter(t => t.status === 'completed'), [txns]);
 
-    if (yTxns) {
-      const { sotuv, foyda } = calcProfit(yTxns);
-      setYesterdaySales(sotuv);
-      setYesterdayProfit(foyda);
-      setYesterdayReceipts(yTxns.length);
-    }
+  /* ── KPI ── */
+  const kpi = useMemo(() => {
+    const { from, to, prevFrom, prevTo, hint } = rangeFor(period);
+    const inRange = (a, b) => completed.filter(t => {
+      const d = new Date(t.date);
+      return d >= a && d < b;
+    });
 
-    // 4. This month stats
-    const { data: mTxns } = await supabase.from('transactions')
-      .select('total, items').eq('store_id', storeId).eq('status', 'completed')
-      .gte('date', monthStart.toISOString());
-    if (mTxns) {
-      const { sotuv, foyda } = calcProfit(mTxns);
-      setMonthSales(sotuv);
-      setMonthProfit(foyda);
-    }
+    const cur = calcTotals(inRange(from, new Date(to.getTime() + 1000)));
+    const prev = calcTotals(inRange(prevFrom, prevTo));
 
-    // 5. Last month stats
-    const { data: lmTxns } = await supabase.from('transactions')
-      .select('total, items').eq('store_id', storeId).eq('status', 'completed')
-      .gte('date', lastMonthStart.toISOString()).lt('date', monthStart.toISOString());
-    if (lmTxns) {
-      const { sotuv, foyda } = calcProfit(lmTxns);
-      setLastMonthSales(sotuv);
-      setLastMonthProfit(foyda);
-    }
+    const avg = cur.count ? Math.round(cur.sotuv / cur.count) : 0;
+    const prevAvg = prev.count ? Math.round(prev.sotuv / prev.count) : 0;
 
-    // 6. Expenses (this month)
-    const { data: expData } = await supabase.from('expenses').select('amount, date').eq('store_id', storeId)
-      .gte('date', monthStart.toISOString());
-    if (expData) setTotalExpenses(expData.reduce((s, e) => s + (Number(e.amount) || 0), 0));
+    return { cur, prev, avg, prevAvg, hint };
+  }, [completed, period]);
 
-    // 7. Products — low stock
-    const { data: prods } = await supabase.from('products').select('name, stock, price').eq('store_id', storeId);
-    if (prods) {
-      setProductCount(prods.length);
-      const low = prods.filter(p => p.stock > 0 && p.stock <= 10);
-      const out = prods.filter(p => p.stock <= 0);
-      setLowStockProducts([...out.map(p => `${p.name} (0 ta)`), ...low.map(p => `${p.name} (${p.stock} ta)`)]);
-      setOutOfStock(out.length);
-      setLowCount(low.length);
-    }
-
-    // 8. Top products
-    const { data: allTxns } = await supabase.from('transactions')
-      .select('items').eq('store_id', storeId).eq('status', 'completed');
-    if (allTxns) {
-      const productMap = {};
-      allTxns.forEach(t => {
-        if (t.items && Array.isArray(t.items)) {
-          t.items.forEach(item => {
-            const name = item.name || item.n || 'Noma\'lum';
-            const qty = item.qty || item.q || 1;
-            productMap[name] = (productMap[name] || 0) + qty;
-          });
-        }
-      });
-      const sorted = Object.entries(productMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
-      const maxQty = sorted[0]?.[1] || 1;
-      setTopProducts(sorted.map(([name, qty], i) => ({
-        rank: i + 1, name, qty, pct: Math.round((qty / maxQty) * 100),
-        rankColor: i === 0 ? '#F59E0B' : '#94A3B8'
-      })));
-    }
-
-    // 9. Weekly chart — real profit
-    const days = ['Yak', 'Du', 'Se', 'Chor', 'Pay', 'Ju', 'Sha'];
-    const weekData = [];
+  /* ── Haftalik grafik: oxirgi 7 kun ── */
+  const weekly = useMemo(() => {
+    const out = [];
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(); d.setDate(d.getDate() - i); d.setHours(0, 0, 0, 0);
-      const nextD = new Date(d); nextD.setDate(nextD.getDate() + 1);
-
-      const { data: dayTxns } = await supabase.from('transactions')
-        .select('total, items').eq('store_id', storeId).eq('status', 'completed')
-        .gte('date', d.toISOString()).lt('date', nextD.toISOString());
-
-      const { sotuv, foyda } = calcProfit(dayTxns);
-      weekData.push({ day: days[d.getDay()], sotuv, foyda });
+      const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - i);
+      const next = new Date(d); next.setDate(next.getDate() + 1);
+      const day = completed.filter(t => {
+        const td = new Date(t.date);
+        return td >= d && td < next;
+      });
+      const { sotuv } = calcTotals(day);
+      out.push({ label: i === 0 ? 'Bugun' : WEEK_LABELS[d.getDay()], sotuv, today: i === 0 });
     }
-    setWeeklyData(weekData);
-  };
+    return out;
+  }, [completed]);
 
-  const sofFoyda = monthProfit - totalExpenses;
-  const salesChange = pctChange(todaySales, yesterdaySales);
-  const profitChange = pctChange(todayProfit, yesterdayProfit);
-  const receiptsChange = pctChange(todayReceipts, yesterdayReceipts);
-  const monthSalesChange = pctChange(monthSales, lastMonthSales);
-  const monthProfitChange = pctChange(monthProfit, lastMonthProfit);
+  const weekRangeLabel = useMemo(() => {
+    const MONTHS = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'];
+    const to = new Date();
+    const from = new Date(); from.setDate(from.getDate() - 6);
+    return `${from.getDate()}–${to.getDate()} ${MONTHS[to.getMonth()]}`;
+  }, []);
 
-  const handleSendTgReport = () => {
-    setLoadingTg(true);
-    const topList = topProducts.map((p, i) => `${i + 1}. ${p.name} (${p.qty} ta)`).join('\n');
-    const lowList = lowStockProducts.join(', ') || 'Yo\'q';
+  /* ── Top mahsulotlar ── */
+  const topProducts = useMemo(() => {
+    const map = {};
+    completed.forEach(t => {
+      (Array.isArray(t.items) ? t.items : []).forEach(item => {
+        const name = item.name || item.n || 'Noma\'lum';
+        const qty = item.qty || item.q || 1;
+        const price = Number(item.price) || 0;
+        const disc = Number(item.itemDiscount) || 0;
+        if (!map[name]) map[name] = { name, qty: 0, sum: 0 };
+        map[name].qty += qty;
+        map[name].sum += (price - disc) * qty;
+      });
+    });
+    return Object.values(map).sort((a, b) => b.sum - a.sum).slice(0, 5);
+  }, [completed]);
+
+  /* ── So'nggi sotuvlar ── */
+  const recent = useMemo(() => txns.slice(0, 5).map(t => {
+    const items = Array.isArray(t.items) ? t.items : [];
+    const first = items[0];
+    const productLabel = !first ? '—'
+      : items.length > 1
+        ? `${first.phone_model || first.name} +${items.length - 1}`
+        : (first.phone_model || first.name);
+    const d = new Date(t.date);
+    const isToday = d.toDateString() === new Date().toDateString();
+    return {
+      id: t.id,
+      customer: customers[t.customer_id] || t.cashier || '—',
+      product: productLabel,
+      total: t.total,
+      pay: PAY_TAGS[t.payment_method] || PAY_TAGS.cash,
+      time: `${isToday ? 'Bugun' : d.toLocaleDateString('ru-RU')}, ${d.toTimeString().slice(0, 5)}`,
+      state: t.status !== 'completed'
+        ? { variant: 'info', label: 'Oflayn' }
+        : t.payment_method === 'nasiya'
+          ? { variant: 'warn', label: 'Nasiya' }
+          : { variant: 'ok', label: 'To‘landi' },
+    };
+  }), [txns, customers]);
+
+  /* ── Telegram hisobot ── */
+  const sendReport = () => {
+    setSendingTg(true);
+    const top = topProducts.map((p, i) => `${i + 1}. ${p.name} (${p.qty} ta)`).join('\n') || 'Yo‘q';
+    const low = [...alerts.outOfStockNames, ...alerts.lowStockNames].join(', ') || 'Yo‘q';
+    const periodLabel = PERIODS.find(p => p.value === period)?.label;
     setTimeout(() => {
-      setLoadingTg(false);
-      sendTgAlert(`📊 KUNLIK HISOBOT\n\n💸 BUGUNGI SAVDO\n💰 Sotuv: ${todaySales.toLocaleString()} so'm ${salesChange >= 0 ? '▲' : '▼'}${Math.abs(salesChange)}%\n📈 Foyda: ${todayProfit.toLocaleString()} so'm\n🧾 Cheklar: ${todayReceipts} ta\n\n📅 BU OY\n💰 Sotuv: ${monthSales.toLocaleString()} so'm\n📈 Foyda: ${monthProfit.toLocaleString()} so'm\n📉 Xarajat: ${totalExpenses.toLocaleString()} so'm\n💎 Sof foyda: ${sofFoyda.toLocaleString()} so'm\n\n🔝 Top ${topProducts.length}:\n${topList}\n\n⚠️ Kam qoldiq:\n${lowList}`);
-    }, 800);
+      setSendingTg(false);
+      sendTgAlert(
+        `📊 HISOBOT — ${periodLabel}\n\n` +
+        `💰 Sotuv: ${money(kpi.cur.sotuv)} so'm\n` +
+        `📈 Foyda: ${money(kpi.cur.foyda)} so'm\n` +
+        `🧾 Tranzaksiyalar: ${kpi.cur.count} ta\n` +
+        `🛒 O'rtacha chek: ${money(kpi.avg)} so'm\n\n` +
+        `📉 Bu oy xarajat: ${money(expenses)} so'm\n\n` +
+        `🔝 Top mahsulotlar:\n${top}\n\n` +
+        `⚠️ Kam qoldiq: ${low}`
+      );
+    }, 700);
   };
+
+  const hasData = completed.length > 0;
 
   return (
-    <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <div style={{ fontSize: 24, fontWeight: 800 }}>Dashboard</div>
-          <div style={{ fontSize: 13, color: 'var(--t2)' }}>Xush kelibsiz! Bugungi savdo statistikasi.</div>
-        </div>
-        <Btn variant="primary" onClick={handleSendTgReport} disabled={loadingTg} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#2AABEE', borderColor: '#2AABEE' }}>
-          <span>✈️</span> {loadingTg ? 'Yuborilmoqda...' : 'Telegram hisobot'}
+    <Page>
+      <PageHeader title="Dashboard" subtitle="Bugungi biznes faoliyatingiz">
+        <Seg options={PERIODS} value={period} onChange={setPeriod} style={{ fontSize: 12 }} />
+        <Btn variant="secondary" icon="paper-plane-tilt" onClick={sendReport} loading={sendingTg}>
+          Telegram hisobot
         </Btn>
-      </div>
+      </PageHeader>
 
-      {/* Today Stats with comparison */}
+      {/* ── KPI ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
-        <StatCard icon="💰" value={todaySales.toLocaleString()} label={<>Bugungi sotuv <ChangeBadge value={salesChange} /></>} accent="#3B82F6" />
-        <StatCard icon="📈" value={todayProfit.toLocaleString()} label={<>Bugungi foyda <ChangeBadge value={profitChange} /></>} accent="#10B981" />
-        <StatCard icon="🧾" value={todayReceipts} label={<>Cheklar soni <ChangeBadge value={receiptsChange} /></>} accent="#F59E0B" />
-        <StatCard icon="👤" value={activeCashiers} label="Aktiv kassirlar" accent="#A78BFA" />
+        <StatCard
+          icon="money" label="Jami sotuv" value={money(kpi.cur.sotuv)} unit="so‘m"
+          trend={trendOf(kpi.cur.sotuv, kpi.prev.sotuv)} hint={kpi.hint}
+        />
+        <StatCard
+          icon="chart-line-up" label="Jami foyda" value={money(kpi.cur.foyda)} unit="so‘m"
+          trend={trendOf(kpi.cur.foyda, kpi.prev.foyda)} hint={kpi.hint}
+        />
+        <StatCard
+          icon="receipt" label="Tranzaksiyalar" value={kpi.cur.count} unit="ta"
+          trend={kpi.prev.count ? { value: `${kpi.cur.count - kpi.prev.count >= 0 ? '+' : '−'}${Math.abs(kpi.cur.count - kpi.prev.count)} ta`, dir: kpi.cur.count >= kpi.prev.count ? 'up' : 'down' } : null}
+          hint={kpi.hint}
+        />
+        <StatCard
+          icon="shopping-cart" label="O‘rtacha chek" value={money(kpi.avg)} unit="so‘m"
+          trend={trendOf(kpi.avg, kpi.prevAvg)} hint={kpi.hint}
+        />
       </div>
 
-      {/* Alert */}
-      {lowStockProducts.length > 0 && (
-        <div style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#F59E0B' }}>
-          ⚠️ <strong>Diqqat:</strong>&nbsp;{lowStockProducts.length} ta mahsulot kam yoki tugagan — {lowStockProducts.slice(0, 5).join(', ')}
-        </div>
-      )}
-
-      {/* Monthly comparison cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14 }}>
-        <CompareCard icon="💰" title="Oylik sotuv" current={monthSales} previous={lastMonthSales} change={monthSalesChange} color="#3B82F6" />
-        <CompareCard icon="📈" title="Oylik foyda" current={monthProfit} previous={lastMonthProfit} change={monthProfitChange} color="#10B981" />
-        <CompareCard icon="💎" title="Sof foyda (bu oy)" current={sofFoyda} previous={null} change={null} color="#A78BFA" sub={`Foyda ${monthProfit.toLocaleString()} - Xarajat ${totalExpenses.toLocaleString()}`} />
-      </div>
-
-      {/* Charts row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14 }}>
-        {/* Bar chart */}
-        <div className="glass-card" style={{ borderRadius: 16, padding: 22 }}>
-          <SectionHeader title="Haftalik Sotuv va Foyda" />
-          {weeklyData.length > 0 ? (
+      {/* ── Grafik + Top mahsulotlar ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 14, alignItems: 'stretch' }}>
+        <Card padding="var(--space-6)" gap={14}>
+          <SectionHeader title="Haftalik sotuvlar" hint={`${weekRangeLabel} · so‘m`} />
+          {loading ? (
+            <div style={{ padding: 'var(--space-6) 0' }}><SkeletonRows count={4} widths={['100%']} /></div>
+          ) : !hasData ? (
+            <EmptyState icon="chart-bar" text="Hozircha sotuvlar yo‘q" sub="Birinchi sotuvni POS orqali qiling" />
+          ) : (
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={weeklyData} barGap={4}>
-                <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
-                <XAxis dataKey="day" tick={{ fill: 'var(--t2)', fontSize: 12 }} axisLine={false} tickLine={false} />
-                <YAxis hide />
-                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-                <Bar dataKey="sotuv" name="Sotuv" fill="#3B82F6" radius={[6, 6, 0, 0]} />
-                <Bar dataKey="foyda" name="Foyda" fill="#10B981" radius={[6, 6, 0, 0]} />
+              <BarChart data={weekly} margin={{ top: 16, right: 4, left: -18, bottom: 0 }}>
+                <CartesianGrid vertical={false} stroke="var(--color-divider)" strokeDasharray="3 4" opacity={0.5} />
+                <XAxis
+                  dataKey="label" axisLine={false} tickLine={false}
+                  tick={({ x, y, payload }) => (
+                    <text
+                      x={x} y={y + 14} textAnchor="middle" fontSize={11}
+                      fill={payload.value === 'Bugun' ? 'var(--color-accent-300)' : 'var(--color-neutral-600)'}
+                      fontWeight={payload.value === 'Bugun' ? 500 : 400}
+                    >
+                      {payload.value}
+                    </text>
+                  )}
+                />
+                <YAxis
+                  axisLine={false} tickLine={false} width={54}
+                  tick={{ fill: 'var(--color-neutral-600)', fontSize: 10 }}
+                  tickFormatter={v => v >= 1000000 ? `${(v / 1000000).toFixed(0)} mln` : v >= 1000 ? `${v / 1000}k` : v}
+                />
+                <Tooltip
+                  cursor={{ fill: 'color-mix(in srgb, var(--color-text) 4%, transparent)' }}
+                  content={({ active, payload, label }) => active && payload?.length ? (
+                    <div className="card elev-md" style={{ padding: '8px 12px', fontSize: 12, gap: 2 }}>
+                      <div style={{ color: 'var(--color-neutral-500)' }}>{label}</div>
+                      <div className="num" style={{ fontWeight: 500 }}>{money(payload[0].value)} so‘m</div>
+                    </div>
+                  ) : null}
+                />
+                <Bar dataKey="sotuv" radius={[4, 4, 0, 0]} maxBarSize={40}>
+                  {weekly.map((d, i) => (
+                    <Cell key={i} fill={d.today ? 'var(--color-accent-500)' : 'var(--color-accent-800)'} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
-          ) : (
-            <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--t3)', fontSize: 13 }}>Hozircha sotuvlar yo'q</div>
           )}
-          <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
-            <LegendDot color="#3B82F6" label="Sotuv" />
-            <LegendDot color="#10B981" label="Foyda" />
-          </div>
-        </div>
+        </Card>
 
-        {/* Top products */}
-        <div className="glass-card" style={{ borderRadius: 16, padding: 22 }}>
-          <SectionHeader title="Top Mahsulotlar" />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {topProducts.length > 0 ? topProducts.map(p => (
-              <div key={p.rank} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid rgba(30,45,61,0.5)' }}>
-                <div style={{ width: 24, height: 24, borderRadius: 7, background: p.rank === 1 ? 'rgba(245,158,11,0.15)' : 'var(--s2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: p.rankColor, flexShrink: 0 }}>{p.rank}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>{p.name}</div>
-                  <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${p.pct}%`, background: 'linear-gradient(90deg,#3B82F6,#22D3EE)', borderRadius: 2 }} />
+        <Card padding="var(--space-6)" gap={6}>
+          <SectionHeader title="Top mahsulotlar" style={{ marginBottom: 6 }}>
+            <Btn variant="ghost" size="sm" onClick={() => navigate('/reports')}>Barchasi</Btn>
+          </SectionHeader>
+          {loading ? <SkeletonRows count={5} />
+            : topProducts.length === 0
+              ? <EmptyState icon="package" text="Sotilgan mahsulot yo‘q" />
+              : topProducts.map((p, i) => (
+                <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '8px 0' }}>
+                  <RankBadge n={i + 1} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>{p.qty} dona</div>
                   </div>
+                  <div className="num" style={{ fontSize: 13 }}>{money(p.sum)}</div>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--t2)', flexShrink: 0 }}>{p.qty} ta</div>
+              ))}
+        </Card>
+      </div>
+
+      {/* ── So'nggi sotuvlar + E'tibor talab qiladi ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 14, alignItems: 'start' }}>
+        <Card padding="var(--space-6)" gap={10}>
+          <SectionHeader title="So‘nggi sotuvlar">
+            <Btn variant="ghost" size="sm" onClick={() => navigate('/reports')}>Barchasi</Btn>
+          </SectionHeader>
+          {loading ? <SkeletonRows count={5} widths={['100%']} />
+            : recent.length === 0
+              ? <EmptyState
+                  icon="receipt" text="Hozircha sotuvlar yo‘q" sub="Birinchi sotuvni qo‘shing"
+                  action={<Btn variant="primary" size="sm" icon="plus" onClick={() => navigate('/pos')}>Yangi sotuv</Btn>}
+                />
+              : (
+                <table className="table" style={{ fontSize: 13 }}>
+                  <thead>
+                    <tr>
+                      <th>Mijoz</th><th>Mahsulot</th>
+                      <th style={{ textAlign: 'right' }}>Summa</th>
+                      <th>To‘lov</th><th>Vaqt</th><th>Holat</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recent.map(r => (
+                      <tr key={r.id}>
+                        <td>{r.customer}</td>
+                        <td>{r.product}</td>
+                        <td className="num" style={{ textAlign: 'right' }}>{money(r.total)}</td>
+                        <td><Tag variant="neutral" icon={r.pay.icon}>{r.pay.label}</Tag></td>
+                        <td style={{ color: 'var(--color-neutral-500)', whiteSpace: 'nowrap' }}>{r.time}</td>
+                        <td><Tag variant={r.state.variant}>{r.state.label}</Tag></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+        </Card>
+
+        <Card padding="var(--space-6)" gap={10}>
+          <SectionHeader title="E’tibor talab qiladi" />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {alerts.lowStock > 0 && (
+              <RowLink
+                icon="warning" iconFill iconColor="var(--warn)"
+                title="Kam qoldiq" sub={`${alerts.lowStock} ta mahsulot minimumdan kam`}
+                onClick={() => navigate('/inventory')}
+              />
+            )}
+            {alerts.outOfStock > 0 && (
+              <RowLink
+                icon="warning-circle" iconFill iconColor="var(--dang)"
+                title="Tugagan mahsulot" sub={`${alerts.outOfStock} ta mahsulot omborda yo‘q`}
+                onClick={() => navigate('/inventory')}
+              />
+            )}
+            {alerts.overdueDebts > 0 && (
+              <RowLink
+                icon="clock-countdown" iconFill iconColor="var(--dang)"
+                title="Muddati o‘tgan nasiya"
+                sub={`${alerts.overdueDebts} mijoz · ${money(alerts.overdueAmount)} so‘m`}
+                onClick={() => navigate('/nasiya')}
+              />
+            )}
+            {pendingTxns?.length > 0 && (
+              <RowLink
+                icon="arrows-clockwise" iconColor="var(--info)"
+                title="Oflayn sinxronlash"
+                sub={`${pendingTxns.length} ta sotuv sinxronlashni kutmoqda`}
+              />
+            )}
+            {alerts.lowStock === 0 && alerts.outOfStock === 0 && alerts.overdueDebts === 0 && !pendingTxns?.length && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', fontSize: 13, color: 'var(--color-neutral-500)' }}>
+                <Icon name="check-circle" fill size={17} color="var(--ok)" />
+                Hammasi joyida — e’tibor talab qiladigan narsa yo‘q
               </div>
-            )) : (
-              <div style={{ padding: 20, textAlign: 'center', color: 'var(--t3)', fontSize: 12 }}>Hozircha sotuvlar yo'q</div>
             )}
           </div>
-        </div>
+        </Card>
       </div>
-
-      {/* Recent sales table */}
-      <div className="glass-card" style={{ borderRadius: 16, padding: 22 }}>
-        <SectionHeader title="So'nggi Sotuvlar">
-          <span className="fast-transition" style={{ fontSize: 13, color: '#3B82F6', cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.color = '#60A5FA'} onMouseLeave={e => e.currentTarget.style.color = '#3B82F6'}>Barchasini ko'rish →</span>
-        </SectionHeader>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                {['Chek #', 'Kassir', 'Mahsulotlar', "To'lov turi", 'Summa', 'Foyda', 'Vaqt', 'Status'].map(h => (
-                  <th key={h} style={{ fontSize: 11, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: .8, padding: '0 12px 12px 0', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {recentSales.map(s => {
-                // Calculate per-transaction profit
-                let txProfit = 0;
-                if (s.items && Array.isArray(s.items)) {
-                  s.items.forEach(item => {
-                    const qty = item.qty || item.q || 1;
-                    const price = Number(item.price) || 0;
-                    const cost = Number(item.cost_price) || Number(item.cost) || 0;
-                    txProfit += (price - cost) * qty;
-                  });
-                }
-                return (
-                  <tr key={s.id} className="fast-transition" style={{ cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                    <td style={{ padding: '12px 12px 12px 0', fontSize: 12, fontFamily: 'JetBrains Mono,monospace', color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{s.receipt_no}</td>
-                    <td style={{ padding: '12px 12px 12px 0', fontSize: 13, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{s.cashier}</td>
-                    <td style={{ padding: '12px 12px 12px 0', fontSize: 13, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{s.items?.length || 0} ta</td>
-                    <td style={{ padding: '12px 12px 12px 0', fontSize: 13, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                      {s.payment_method === 'card' ? '💳' : s.payment_method === 'cash' ? '💵' : '📱'} {s.payment_method}
-                    </td>
-                    <td style={{ padding: '12px 12px 12px 0', fontSize: 13, fontWeight: 700, color: s.status === 'cancelled' ? '#F43F5E' : '#3B82F6', borderBottom: '1px solid rgba(255,255,255,0.05)', textDecoration: s.status === 'cancelled' ? 'line-through' : 'none' }}>
-                      {s.total?.toLocaleString() || 0} so'm
-                    </td>
-                    <td style={{ padding: '12px 12px 12px 0', fontSize: 13, fontWeight: 700, color: '#10B981', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                      {txProfit.toLocaleString()} so'm
-                    </td>
-                    <td style={{ padding: '12px 12px 12px 0', fontSize: 12, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{new Date(s.date || s.created_at).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' })}</td>
-                    <td style={{ padding: '12px 0 12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                      <Badge type={s.status === 'completed' ? 'success' : 'danger'}>
-                        {s.status === 'completed' ? '✓ Yakunlandi' : '✗ Bekor'}
-                      </Badge>
-                    </td>
-                  </tr>
-                );
-              })}
-              {recentSales.length === 0 && (
-                <tr><td colSpan={8} style={{ textAlign: 'center', padding: 24, color: 'var(--t3)' }}>Hozircha sotuvlar yo'q</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Quick summary */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14 }}>
-        <SummaryCard icon="📦" title="Ombordagi tovarlar" val={productCount.toLocaleString()} sub={`${outOfStock} ta tugagan, ${lowCount} ta kam`} color="#F59E0B" />
-        <SummaryCard icon="💸" title="Oylik xarajatlar" val={totalExpenses.toLocaleString()} sub="Bu oydagi xarajatlar" color="#F43F5E" />
-        <SummaryCard icon="📊" title="Kechagi sotuv" val={yesterdaySales.toLocaleString()} sub={`Foyda: ${yesterdayProfit.toLocaleString()} so'm · ${yesterdayReceipts} ta chek`} color="#94A3B8" />
-      </div>
-    </div>
-  );
-}
-
-// ── Change badge (▲ +12% / ▼ -5%) ──
-function ChangeBadge({ value }) {
-  if (value === null || value === undefined) return null;
-  const isUp = value >= 0;
-  return (
-    <span style={{
-      fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 10, marginLeft: 6,
-      background: isUp ? 'rgba(16,185,129,0.1)' : 'rgba(244,63,94,0.1)',
-      color: isUp ? '#10B981' : '#F43F5E',
-    }}>
-      {isUp ? '▲' : '▼'} {Math.abs(value)}%
-    </span>
-  );
-}
-
-// ── Monthly comparison card ──
-function CompareCard({ icon, title, current, previous, change, color, sub }) {
-  return (
-    <div className="glass-card" style={{ borderRadius: 14, padding: '18px 18px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 20 }}>{icon}</span>
-          <span style={{ fontSize: 12, color: 'var(--t2)', fontWeight: 600 }}>{title}</span>
-        </div>
-        {change !== null && <ChangeBadge value={change} />}
-      </div>
-      <div style={{ fontSize: 22, fontWeight: 800, background: `linear-gradient(135deg, ${color}, #22D3EE)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: 4 }}>
-        {(current || 0).toLocaleString()} so'm
-      </div>
-      <div style={{ fontSize: 11, color: 'var(--t2)' }}>
-        {sub || (previous !== null ? `O'tgan oy: ${(previous || 0).toLocaleString()} so'm` : '')}
-      </div>
-    </div>
-  );
-}
-
-function LegendDot({ color, label }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--t2)' }}>
-      <div style={{ width: 8, height: 8, borderRadius: 2, background: color }} />
-      {label}
-    </div>
-  );
-}
-
-function SummaryCard({ icon, title, val, sub, color }) {
-  return (
-    <div className="glass-card" style={{ borderRadius: 14, padding: '18px 18px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-        <span style={{ fontSize: 20, filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))' }}>{icon}</span>
-        <span style={{ fontSize: 12, color: 'var(--t2)', fontWeight: 600 }}>{title}</span>
-      </div>
-      <div style={{ fontSize: 22, fontWeight: 800, background: `linear-gradient(135deg, ${color}, #22D3EE)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: 4 }}>
-        {val}
-      </div>
-      <div style={{ fontSize: 11, color: 'var(--t2)' }}>{sub}</div>
-    </div>
+    </Page>
   );
 }

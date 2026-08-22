@@ -1,735 +1,963 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { StatCard, Badge, SectionHeader, Btn } from '../components/UI';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Barcode from 'react-barcode';
+import {
+  Page, PageHeader, Card, Icon, Btn, Tag, Seg, Modal, Field,
+  EmptyState, SkeletonRows, Toast,
+} from '../components/UI';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../utils/supabaseClient';
 
-const PHONE_BRANDS = [
-  { name: 'Samsung', icon: '📱' }, { name: 'iPhone', icon: '🍎' },
-  { name: 'Xiaomi/Redmi', icon: '🔴' }, { name: 'Honor', icon: '💎' },
-  { name: 'Infinix', icon: '♾️' }, { name: 'Tecno', icon: '🔵' },
-  { name: 'ZTE', icon: '🟢' }, { name: 'Realme', icon: '🟡' },
-  { name: 'OPPO', icon: '🟣' }, { name: 'Vivo', icon: '🔷' },
-  { name: 'Aksesuar', icon: '🎧' }, { name: 'Boshqa', icon: '📦' },
+/* ── doimiylar ─────────────────────────────────────────────────────────── */
+
+const PHONE_BRANDS = ['Samsung', 'iPhone', 'Xiaomi/Redmi', 'Honor', 'Infinix',
+  'Tecno', 'ZTE', 'Realme', 'OPPO', 'Vivo', 'Aksesuar', 'Boshqa'];
+const MEMORIES = ['32GB', '64GB', '128GB', '256GB', '512GB', '1TB'];
+const CONDITIONS = [
+  { value: 'Yangi', label: '✨ Yangi' },
+  { value: 'B/U', label: '♻️ B/U' },
+  { value: 'Refurbished', label: '🔧 Refurbished' },
 ];
-const PHONE_MEMORIES = ['32GB', '64GB', '128GB', '256GB', '512GB', '1TB'];
-const PHONE_CONDITIONS = ['Yangi', 'B/U', 'Refurbished'];
+const BRANCHES = ['Chilonzor', 'Yunusobod', "Qo'yliq"];
+const EMOJIS = ['📦', '📱', '🎧', '🔌', '⌚', '💻', '🖥️', '⌨️', '🔗', '🥤', '🍪', '🧋'];
+
+const TABS = [
+  { id: 'list', label: 'Ombor', icon: 'package' },
+  { id: 'transfer', label: "Filiallarga Ko'chirish", icon: 'truck' },
+  { id: 'audit', label: 'Inventarizatsiya', icon: 'clipboard-text' },
+];
+
+const money = n => Math.round(Number(n) || 0).toLocaleString('ru-RU');
+const formatInput = v => {
+  const d = String(v ?? '').replace(/\D/g, '');
+  return d ? Number(d).toLocaleString('ru-RU') : '';
+};
+
+/** Qoldiq holati — minStock belgilanmagan bo'lsa 5 dona chegara */
+function statusOf(p) {
+  const min = p.minStock || 5;
+  if ((p.stock ?? 0) <= 0) return { key: 'out', label: 'Tugagan', variant: 'dang', icon: 'warning-circle' };
+  if (p.stock <= min) return { key: 'low', label: 'Kam qoldiq', variant: 'warn', icon: 'warning' };
+  return { key: 'ok', label: 'Normal', variant: 'ok', icon: 'check' };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Ombor
+   ══════════════════════════════════════════════════════════════════════ */
 
 export default function Inventory() {
-  const { user } = useAuth();
-  const isPhone = user?.storeType === 'phone';
-  const [search, setSearch] = useState('');
-  const [catFilter, setCat] = useState('Hammasi');
-  const [statusFilter, setStatus] = useState('all');
+  const { user, refreshAlerts } = useAuth();
+  const isPhoneStore = user?.storeType === 'phone';
+
+  const [tab, setTab] = useState('list');
+  const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState([]);
-  const [categories, setCategories] = useState([{ name: "Hammasi", icon: "📦" }]);
-  const [showAdd, setShowAdd] = useState(false);
-  const [showKirim, setShowKirim] = useState(null);
-  const [kirimQty, setKirimQty] = useState('');
-  const [kirimNote, setKirimNote] = useState('');
   const [toast, setToast] = useState(null);
 
-  useEffect(() => {
-    if (user?.store_id) loadProducts(user.store_id);
-  }, [user]);
+  const [search, setSearch] = useState('');
+  const [catFilter, setCatFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
 
-  const loadProducts = async (storeId) => {
-    const { data } = await supabase.from('products').select('*').eq('store_id', storeId);
-    if (data) {
-      setProducts(data.map(p => ({ ...p, emoji: p.image || (isPhone ? '📱' : '📦') })));
-      if (isPhone) {
-        // Find custom categories users added previously
-        const customCats = data.map(p => p.category || p.cat).filter(c => c && !PHONE_BRANDS.some(b => b.name === c));
-        const allCats = ['Hammasi', ...PHONE_BRANDS.map(b => b.name), ...new Set(customCats)];
-        setCategories(allCats.map(c => ({ name: c, icon: (PHONE_BRANDS.find(b => b.name === c)?.icon || '📦') })));
-      } else {
-        const uniqueCats = ['Hammasi', ...new Set(data.map(p => p.category || p.cat).filter(Boolean))];
-        setCategories(uniqueCats.map(c => ({ name: c, icon: '📦' })));
-      }
-    }
-  };
+  const [showAdd, setShowAdd] = useState(false);
+  const [kirimFor, setKirimFor] = useState(null);
+  const [printFor, setPrintFor] = useState(null);
 
-  // New product form
-  const emptyProd = isPhone
-    ? { name: '', barcode: '', cat: 'Samsung', cost: '', price: '', stock: '1', minStock: '', emoji: '📱', phoneModel: '', phoneMemory: '128GB', phoneColor: '', phoneImei1: '', phoneImei2: '', phoneSerial: '', phoneCondition: 'Yangi' }
-    : { name: '', barcode: '', cat: '', cost: '', price: '', stock: '', minStock: '', emoji: '📦' };
-  const [newProd, setNewProd] = useState(emptyProd);
+  const notify = (msg, variant = 'ok') => setToast({ msg, variant });
 
-  const generateBarcode = () => {
-    const bc = '200' + Math.floor(Math.random() * 9000000000 + 1000000000).toString();
-    setNewProd(prev => ({ ...prev, barcode: bc }));
-  };
-  const [newCat, setNewCat] = useState('');
-  const [showAddCat, setShowAddCat] = useState(false);
+  const load = useCallback(async (storeId) => {
+    setLoading(true);
+    const { data } = await supabase.from('products').select('*').eq('store_id', storeId).order('id', { ascending: false });
+    setProducts(data || []);
+    setLoading(false);
+  }, []);
 
-  const formatMoney = (val) => {
-    if (!val) return '';
-    const num = String(val).replace(/\D/g, '');
-    if (!num) return '';
-    return Number(num).toLocaleString('de-DE'); // dot separation
-  };
+  useEffect(() => { if (user?.store_id) load(user.store_id); }, [user, load]);
 
-  const handlePriceChange = (key, val) => {
-    setNewProd(prev => ({ ...prev, [key]: String(val).replace(/\D/g, '') }));
-  };
+  /* ── statistika va filtrlar ── */
+  const stats = useMemo(() => {
+    const s = { all: products.length, ok: 0, low: 0, out: 0 };
+    products.forEach(p => { s[statusOf(p).key]++; });
+    return s;
+  }, [products]);
 
-  const [printProd, setPrintProd] = useState(null);
+  const categories = useMemo(
+    () => [...new Set(products.map(p => p.category || p.cat).filter(Boolean))],
+    [products]
+  );
 
-  // Tabs: list, transfer, audit
-  const [activeTab, setActiveTab] = useState('list');
-
-  // Transfer State
-  const [transferStore, setTransferStore] = useState('');
-  const [transferItems, setTransferItems] = useState([]);
-  const [searchTransfer, setSearchTransfer] = useState('');
-
-  // Audit State
-  const [auditCounts, setAuditCounts] = useState({});
-  const [auditSearch, setAuditSearch] = useState('');
-
-  const showToast = (msg, type = 'success') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 2800);
-  };
-
-  const getStatus = (p) => {
-    if (p.stock === 0) return { label: 'Tugagan!', type: 'danger' };
-    if (p.stock < p.minStock * 0.3) return { label: 'Kritik!', type: 'danger' };
-    if (p.stock < p.minStock) return { label: 'Kam', type: 'warning' };
-    return { label: 'Normal', type: 'success' };
-  };
-
-  const filtered = products.filter(p => {
-    const q = search.toLowerCase();
-    const matchQ = (p.name || '').toLowerCase().includes(q) || (p.barcode || '').includes(search)
-      || (p.phone_imei1 || '').includes(search) || (p.phone_imei2 || '').includes(search)
-      || (p.phone_serial || '').toLowerCase().includes(q) || (p.phone_model || '').toLowerCase().includes(q);
-    const matchCat = catFilter === 'Hammasi' || (p.category || p.cat) === catFilter;
-    const st = getStatus(p);
-
-    let matchSt = true;
-    if (statusFilter === 'normal') matchSt = st.type === 'success';
-    else if (statusFilter === 'low') matchSt = st.type === 'warning' || st.type === 'danger';
-    else if (statusFilter === 'out') matchSt = p.stock === 0;
-
-    return matchQ && matchCat && matchSt;
-  });
-
-  const handleKirim = async () => {
-    if (!kirimQty || isNaN(kirimQty) || parseInt(kirimQty) <= 0) return;
-
-    const newStock = showKirim.stock + parseInt(kirimQty);
-    const { error } = await supabase.from('products').update({ stock: newStock }).eq('id', showKirim.id);
-
-    if (!error) {
-      setProducts(prev => prev.map(p => p.id === showKirim.id ? { ...p, stock: newStock } : p));
-      showToast(`✅ ${showKirim.name}: +${kirimQty} ta kirim qilindi`);
-    } else {
-      showToast(`❌ Xatolik: ${error.message}`, 'danger');
-    }
-
-    setShowKirim(null); setKirimQty(''); setKirimNote('');
-  };
-
-  const handleAddProduct = async () => {
-    if (!newProd.name || !newProd.price || !newProd.cost) return;
-    const p = {
-      store_id: user.store_id,
-      name: isPhone ? `${newProd.cat === 'Boshqa' ? '' : newProd.cat} ${newProd.phoneModel}`.trim() : newProd.name,
-      barcode: newProd.barcode || '',
-      category: isPhone && newProd.cat === 'Boshqa' && newProd.customCat ? newProd.customCat : (newProd.cat || 'Boshqa'),
-      cost_price: parseInt(newProd.cost),
-      price: parseInt(newProd.price),
-      stock: parseInt(newProd.stock) || (isPhone && newProd.cat !== 'Aksesuar' && newProd.cat !== 'Boshqa' ? 1 : 0),
-      minStock: parseInt(newProd.minStock) || 0,
-      image: newProd.emoji,
-      ...(isPhone ? {
-        phone_model: newProd.phoneModel,
-        phone_memory: newProd.phoneMemory,
-        phone_color: newProd.phoneColor,
-        phone_imei1: newProd.phoneImei1,
-        phone_imei2: newProd.phoneImei2,
-        phone_serial: newProd.phoneSerial,
-        phone_condition: newProd.phoneCondition,
-      } : {})
-    };
-
-    const { data, error } = await supabase.from('products').insert(p).select().single();
-
-    if (!error && data) {
-      setProducts(prev => [{ ...data, emoji: data.image || (isPhone ? '📱' : '📦') }, ...prev]);
-      showToast(`✅ "${p.name}" qo'shildi`);
-      setShowAdd(false);
-      setNewProd({ ...emptyProd });
-    } else {
-      showToast(`❌ Xatolik: ${error?.message}`, 'danger');
-    }
-  };
-
-  const handleAddCategory = () => {
-    if (!newCat.trim()) return;
-    setCategories(prev => [...prev, { name: newCat.trim(), icon: '📦' }]);
-    setNewProd(prev => ({ ...prev, cat: newCat.trim() }));
-    setNewCat('');
-    setShowAddCat(false);
-    showToast(`✅ "${newCat}" toifasi qo'shildi`);
-  };
-
-  const outCount = products.filter(p => p.stock === 0).length;
-  const lowCount = products.filter(p => p.stock > 0 && p.stock < p.minStock).length;
-  const normCount = products.filter(p => p.stock >= p.minStock).length;
-
-  const EMOJIS = ['📦', '🥤', '🍵', '⚡', '🥔', '🍪', '🫧', '🍊', '🍫', '🍭', '🧋', '🍘', '🫙', '📱', '🎧', '💻', '🖥️', '⌨️'];
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return products.filter(p => {
+      if (catFilter !== 'all' && (p.category || p.cat) !== catFilter) return false;
+      if (statusFilter !== 'all' && statusOf(p).key !== statusFilter) return false;
+      if (!q) return true;
+      return [p.name, p.barcode, p.phone_imei1, p.phone_imei2, p.phone_serial, p.phone_model]
+        .some(v => String(v || '').toLowerCase().includes(q));
+    });
+  }, [products, search, catFilter, statusFilter]);
 
   return (
-    <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <Page>
+      <PageHeader title="Ombor" subtitle="Tovarlar va qoldiq boshqaruvi">
+        <Btn variant="secondary" icon="file-xls" disabled title="Excel eksport — tez orada">Excel</Btn>
+        <Btn variant="primary" icon="plus" onClick={() => setShowAdd(true)}>Tovar Qo‘shish</Btn>
+      </PageHeader>
 
-      {/* TABS */}
-      <div style={{ display: 'flex', gap: 10, borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 16 }}>
-        <button onClick={() => setActiveTab('list')} style={{ padding: '8px 16px', borderRadius: 8, background: activeTab === 'list' ? 'rgba(59,130,246,0.1)' : 'transparent', color: activeTab === 'list' ? '#3B82F6' : 'var(--t2)', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit' }}>📦 Ombor</button>
-        <button onClick={() => setActiveTab('transfer')} style={{ padding: '8px 16px', borderRadius: 8, background: activeTab === 'transfer' ? 'rgba(16,185,129,0.1)' : 'transparent', color: activeTab === 'transfer' ? '#10B981' : 'var(--t2)', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit' }}>🚚 Filiallarga Ko'chirish</button>
-        <button onClick={() => setActiveTab('audit')} style={{ padding: '8px 16px', borderRadius: 8, background: activeTab === 'audit' ? 'rgba(245,158,11,0.1)' : 'transparent', color: activeTab === 'audit' ? '#F59E0B' : 'var(--t2)', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit' }}>📋 Inventarizatsiya (Taftish)</button>
+      {/* Tablar */}
+      <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--color-divider)' }}>
+        {TABS.map(t => {
+          const active = tab === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              style={{
+                padding: '10px 14px', border: 0, background: 'none', cursor: 'pointer',
+                font: 'inherit', fontSize: 13, fontWeight: active ? 500 : 400,
+                color: active ? 'var(--color-accent)' : 'var(--color-neutral-500)',
+                boxShadow: active ? 'inset 0 -2px 0 var(--color-accent)' : 'none',
+                display: 'flex', alignItems: 'center', gap: 7,
+              }}
+            >
+              <Icon name={t.icon} size={15} />
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
-      {activeTab === 'list' && (
+      {tab === 'list' && (
         <>
-          {/* Stats */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
-            <div onClick={() => setStatus('all')} style={{ cursor: 'pointer', filter: statusFilter === 'all' ? 'brightness(1.1) drop-shadow(0 0 10px rgba(59,130,246,0.3))' : 'none', transition: 'all .2s' }}><StatCard icon="📦" value={products.length} label="Jami mahsulotlar" accent="#3B82F6" /></div>
-            <div onClick={() => setStatus('normal')} style={{ cursor: 'pointer', filter: statusFilter === 'normal' ? 'brightness(1.1) drop-shadow(0 0 10px rgba(16,185,129,0.3))' : 'none', transition: 'all .2s' }}><StatCard icon="✅" value={normCount} label="Normal qoldiq" accent="#10B981" /></div>
-            <div onClick={() => setStatus('low')} style={{ cursor: 'pointer', filter: statusFilter === 'low' ? 'brightness(1.1) drop-shadow(0 0 10px rgba(245,158,11,0.3))' : 'none', transition: 'all .2s' }}><StatCard icon="⚠️" value={lowCount} label="Kam qoldiq" accent="#F59E0B" /></div>
-            <div onClick={() => setStatus('out')} style={{ cursor: 'pointer', filter: statusFilter === 'out' ? 'brightness(1.1) drop-shadow(0 0 10px rgba(244,63,94,0.3))' : 'none', transition: 'all .2s' }}><StatCard icon="❌" value={outCount} label="Tugagan" accent="#F43F5E" /></div>
+          {/* Statistika — bosilganda filtr bo'ladi */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12 }}>
+            <StatTile label="Jami" value={stats.all} unit="tovar" icon="squares-four" color="var(--color-accent)"
+              active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} />
+            <StatTile label="Normal" value={stats.ok} icon="check-circle" color="var(--ok)"
+              active={statusFilter === 'ok'} onClick={() => setStatusFilter('ok')} />
+            <StatTile label="Kam qoldiq" value={stats.low} icon="warning" color="var(--warn)" valueColor="var(--warn)"
+              active={statusFilter === 'low'} onClick={() => setStatusFilter('low')} />
+            <StatTile label="Tugagan" value={stats.out} icon="warning-circle" color="var(--dang)" valueColor="var(--dang)"
+              active={statusFilter === 'out'} onClick={() => setStatusFilter('out')} />
           </div>
 
-          {/* Table card */}
-          <div className="glass-card" style={{ borderRadius: 16, padding: 22 }}>
-            <SectionHeader title="Ombor Holati">
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {/* Search */}
-                <div style={{ position: 'relative' }}>
-                  <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: 'var(--t2)' }}>🔍</span>
-                  <input value={search} onChange={e => setSearch(e.target.value)} placeholder={isPhone ? "IMEI, S/N, model qidirish..." : "Qidirish..."}
-                    className="fast-transition"
-                    style={{ padding: '8px 12px 8px 30px', background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 9, color: 'var(--t1)', fontSize: 13, fontFamily: 'Outfit,sans-serif', outline: 'none', width: 180, backdropFilter: 'blur(4px)' }}
-                    onFocus={e => e.target.style.borderColor = 'rgba(59,130,246,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.05)'} />
-                </div>
-                {/* Category filter */}
-                <select value={catFilter} onChange={e => setCat(e.target.value)} className="fast-transition" style={{ padding: '8px 12px', background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 9, color: 'var(--t1)', fontSize: 12, fontFamily: 'Outfit,sans-serif', outline: 'none', cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'} onMouseLeave={e => e.currentTarget.style.background = 'rgba(17, 24, 39, 0.4)'}>
-                  {categories.map(c => <option key={c.name} value={c.name}>{c.icon} {c.name}</option>)}
-                </select>
-                {/* Status filter */}
-                <select value={statusFilter} onChange={e => setStatus(e.target.value)} className="fast-transition" style={{ padding: '8px 12px', background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 9, color: 'var(--t1)', fontSize: 12, fontFamily: 'Outfit,sans-serif', outline: 'none', cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'} onMouseLeave={e => e.currentTarget.style.background = 'rgba(17, 24, 39, 0.4)'}>
-                  <option value="all">Barcha holat</option>
-                  <option value="normal">Faqat normal</option>
-                  <option value="low">Kam/Tugagan</option>
-                  <option value="out">Faqat tugagan</option>
-                </select>
-                <Btn variant="subtle" size="sm">📥 Excel</Btn>
-                <Btn variant="primary" size="sm" onClick={() => setShowAdd(true)}>+ Tovar Qo'shish</Btn>
-              </div>
-            </SectionHeader>
-
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    {(isPhone
-                      ? ['📱 Model', '💾 Xotira', '🎨 Rang', 'IMEI-1', 'IMEI-2', 'S/N', 'Holat', 'Tan Narxi', 'Sotuv Narxi', 'Qoldiq', 'Amal']
-                      : ['Barcode', 'Mahsulot', 'Kategoriya', 'Tan Narxi', 'Sotillish Narxi', 'Qoldiq', 'Min.Qoldiq', 'Holat', 'Amal']
-                    ).map(h => (
-                      <th key={h} style={{ fontSize: 10, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: .8, padding: '0 10px 12px 0', textAlign: 'left', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map(p => {
-                    const st = getStatus(p);
-                    const pct = Math.min(100, Math.round((p.stock / (p.minStock * 2)) * 100));
-                    const tdS = { padding: '11px 10px 11px 0', fontSize: 12, borderBottom: '1px solid rgba(255,255,255,0.05)' };
-                    return (
-                      <tr key={p.id} className="fast-transition" style={{ cursor: 'pointer' }}
-                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                      >
-                        {isPhone ? (<>
-                          <td style={{ ...tdS, fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>{p.emoji} {p.phone_model || p.name}</td>
-                          <td style={{ ...tdS, color: '#22D3EE', fontWeight: 700 }}>{p.phone_memory || '-'}</td>
-                          <td style={tdS}>{p.phone_color || '-'}</td>
-                          <td style={{ ...tdS, fontFamily: 'JetBrains Mono,monospace', fontSize: 10, color: 'var(--t2)' }}>{p.phone_imei1 || '-'}</td>
-                          <td style={{ ...tdS, fontFamily: 'JetBrains Mono,monospace', fontSize: 10, color: 'var(--t2)' }}>{p.phone_imei2 || '-'}</td>
-                          <td style={{ ...tdS, fontFamily: 'JetBrains Mono,monospace', fontSize: 10, color: 'var(--t2)' }}>{p.phone_serial || '-'}</td>
-                          <td style={tdS}><Badge type={p.phone_condition === 'Yangi' ? 'success' : p.phone_condition === 'B/U' ? 'warning' : 'info'}>{p.phone_condition || '-'}</Badge></td>
-                          <td style={{ ...tdS, color: 'var(--t2)', whiteSpace: 'nowrap' }}>{(p.cost_price || 0).toLocaleString()}</td>
-                          <td style={{ ...tdS, fontSize: 13, fontWeight: 600, color: '#10B981', whiteSpace: 'nowrap' }}>{p.price.toLocaleString()}</td>
-                        </>) : (<>
-                          <td style={{ ...tdS, fontFamily: 'JetBrains Mono,monospace', fontSize: 11, color: 'var(--t2)' }}>{p.barcode}</td>
-                          <td style={{ ...tdS, fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>{p.emoji} {p.name}</td>
-                          <td style={{ ...tdS, color: 'var(--t2)' }}>{p.category || p.cat}</td>
-                          <td style={{ ...tdS, color: 'var(--t2)', whiteSpace: 'nowrap' }}>{(p.cost_price || p.cost || 0).toLocaleString()}</td>
-                          <td style={{ ...tdS, fontSize: 13, fontWeight: 600, color: '#10B981', whiteSpace: 'nowrap' }}>{p.price.toLocaleString()}</td>
-                        </>)}
-                        <td style={tdS}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <div style={{ width: 50, height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, overflow: 'hidden', flexShrink: 0 }}>
-                              <div style={{ height: '100%', width: `${pct}%`, background: st.type === 'danger' ? '#F43F5E' : st.type === 'warning' ? '#F59E0B' : '#10B981', borderRadius: 2, boxShadow: `0 0 8px ${st.type === 'danger' ? '#F43F5E' : st.type === 'warning' ? '#F59E0B' : '#10B981'}88` }} />
-                            </div>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: st.type === 'danger' ? '#F43F5E' : st.type === 'warning' ? '#F59E0B' : '#10B981', minWidth: 24 }}>{p.stock}</span>
-                          </div>
-                        </td>
-                        {!isPhone && <td style={{ ...tdS, color: 'var(--t2)' }}>{p.minStock}</td>}
-                        {!isPhone && <td style={tdS}><Badge type={st.type}>{st.label}</Badge></td>}
-                        <td style={{ padding: '11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                          <div style={{ display: 'flex', gap: 6 }}>
-                            {/* Telefon uchun Kirim yo'q (har biri alohida IMEI), faqat aksesuar/boshqa/oddiy uchun */}
-                            {(!isPhone || (p.category === 'Aksesuar' || p.category === 'Boshqa')) && (
-                              <Btn variant="primary" size="sm" onClick={() => { setShowKirim(p); setKirimQty(''); }}>+ Kirim</Btn>
-                            )}
-                            <Btn variant="subtle" size="sm" onClick={() => setPrintProd(p)}>🖨️</Btn>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              {filtered.length === 0 && (
-                <div style={{ textAlign: 'center', padding: '32px', color: 'var(--t2)', fontSize: 13 }}>🔍 Hech narsa topilmadi</div>
-              )}
+          {/* Qidiruv va filtrlar */}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <div className="input-icon" style={{ flex: 1 }}>
+              <Icon name="magnifying-glass" />
+              <input className="input" value={search} onChange={e => setSearch(e.target.value)}
+                placeholder={isPhoneStore ? 'Nom, barcode yoki IMEI…' : 'Nom yoki barcode…'} />
             </div>
+            <select className="input" style={{ width: 190 }} value={catFilter} onChange={e => setCatFilter(e.target.value)}>
+              <option value="all">Barcha kategoriyalar</option>
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <select className="input" style={{ width: 150 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+              <option value="all">Barcha holat</option>
+              <option value="ok">Normal</option>
+              <option value="low">Kam qoldiq</option>
+              <option value="out">Tugagan</option>
+            </select>
           </div>
+
+          {/* Jadval */}
+          <Card padding="var(--space-6)">
+            {loading ? <SkeletonRows count={6} widths={['100%']} />
+              : filtered.length === 0 ? (
+                <EmptyState
+                  icon="package"
+                  text={products.length === 0 ? 'Omborda tovar yo‘q' : 'Hech narsa topilmadi'}
+                  sub={products.length === 0 ? 'Birinchi tovarni qo‘shing' : 'Qidiruv yoki filtrlarni o‘zgartiring'}
+                  action={products.length === 0
+                    ? <Btn variant="primary" size="sm" icon="plus" onClick={() => setShowAdd(true)}>Tovar Qo‘shish</Btn>
+                    : null}
+                />
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="table" style={{ fontSize: 13 }}>
+                    <thead>
+                      <tr>
+                        <th>Tovar</th><th>Kategoriya</th><th>Barcode / IMEI</th>
+                        <th style={{ textAlign: 'right' }}>Sotuv narxi</th>
+                        <th style={{ textAlign: 'right' }}>Qoldiq</th>
+                        <th style={{ textAlign: 'right' }}>Min.</th>
+                        <th>Holat</th><th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map(p => {
+                        const st = statusOf(p);
+                        const code = p.phone_imei1
+                          ? `IMEI …${String(p.phone_imei1).slice(-8)}`
+                          : (p.barcode || p.phone_serial || '—');
+                        const sub = isPhoneStore && p.phone_condition
+                          ? CONDITIONS.find(c => c.value === p.phone_condition)?.label
+                          : [p.phone_memory, p.phone_color].filter(Boolean).join(' · ');
+                        return (
+                          <tr key={p.id}>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                                <span style={{ fontSize: 17, filter: st.key === 'out' ? 'grayscale(1)' : 'none' }}>
+                                  {p.image || '📦'}
+                                </span>
+                                <div>
+                                  <div style={{ fontWeight: 500, color: st.key === 'out' ? 'var(--color-neutral-400)' : undefined }}>
+                                    {p.name}
+                                  </div>
+                                  {sub && <div style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>{sub}</div>}
+                                </div>
+                              </div>
+                            </td>
+                            <td>{p.category || p.cat || '—'}</td>
+                            <td className="num" style={{ color: 'var(--color-neutral-400)' }}>{code}</td>
+                            <td className="num" style={{ textAlign: 'right' }}>{money(p.price)}</td>
+                            <td className="num" style={{
+                              textAlign: 'right', fontWeight: 600,
+                              color: st.key === 'out' ? 'var(--dang)' : st.key === 'low' ? 'var(--warn)' : undefined,
+                            }}>
+                              {p.stock}
+                            </td>
+                            <td className="num" style={{ textAlign: 'right', color: 'var(--color-neutral-500)' }}>
+                              {p.minStock || '—'}
+                            </td>
+                            <td><Tag variant={st.variant} icon={st.icon}>{st.label}</Tag></td>
+                            <td>
+                              <div style={{ display: 'flex', gap: 5, justifyContent: 'flex-end' }}>
+                                <Btn
+                                  variant={st.key === 'out' ? 'primary' : 'secondary'} size="sm" icon="plus"
+                                  onClick={() => setKirimFor(p)}
+                                >
+                                  Kirim
+                                </Btn>
+                                <Btn variant="ghost" iconOnly icon="printer" title="Barcode chop etish"
+                                  onClick={() => setPrintFor(p)} style={{ width: 28, height: 28 }} />
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+          </Card>
         </>
       )}
 
-      {/* TRANSFER TAB PLACEHOLDER */}
-      {activeTab === 'transfer' && (
-        <div className="glass-card" style={{ borderRadius: 16, padding: 22, minHeight: 400, display: 'flex', gap: 24 }}>
-          {/* Left: Select items */}
-          <div style={{ flex: 1, borderRight: '1px solid rgba(255,255,255,0.05)', paddingRight: 24 }}>
-            <SectionHeader title="Filiallarga Tovar Ko'chirish (Nakladnoy)" />
-
-            <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-              <select value={transferStore} onChange={e => setTransferStore(e.target.value)} style={{ padding: '10px 14px', background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 9, color: 'var(--t1)', fontSize: 13, flex: 1, outline: 'none' }}>
-                <option value="">Qabul qiluvchi filialni tanlang</option>
-                <option value="Chilonzor Filial">Chilonzor Filial</option>
-                <option value="Yunusobod Filial">Yunusobod Filial</option>
-                <option value="Qo'yliq Filial">Qo'yliq Filial</option>
-              </select>
-            </div>
-
-            <div style={{ position: 'relative', marginBottom: 16 }}>
-              <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 13 }}>🔍</span>
-              <input value={searchTransfer} onChange={e => setSearchTransfer(e.target.value)} placeholder="Tovar qidirish (shtrix kod yoki nom)..."
-                style={{ width: '100%', padding: '10px 14px 10px 34px', background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 9, color: 'var(--t1)', fontSize: 13, outline: 'none' }} />
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 300, overflowY: 'auto', paddingRight: 4 }}>
-              {products.filter(p => searchTransfer && (p.name.toLowerCase().includes(searchTransfer.toLowerCase()) || p.barcode.includes(searchTransfer))).slice(0, 10).map(p => (
-                <div key={p.id} onClick={() => {
-                  if (!transferItems.find(t => t.id === p.id)) setTransferItems([...transferItems, { ...p, transferQty: 1 }]);
-                }} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(255,255,255,0.02)', borderRadius: 8, cursor: 'pointer', border: '1px solid transparent' }} onMouseEnter={e => e.currentTarget.style.borderColor = '#3B82F6'} onMouseLeave={e => e.currentTarget.style.borderColor = 'transparent'}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{p.emoji} {p.name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--t2)' }}>Qoldiq: {p.stock} ta</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Right: Selected items */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>Ko'chirilayotgan tovarlar ({transferItems.length})</div>
-
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-              {transferItems.length === 0 ? (
-                <div style={{ textAlign: 'center', color: 'var(--t3)', fontSize: 13, marginTop: 40 }}>Chap tomondan tovar tanlang</div>
-              ) : transferItems.map(t => (
-                <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: 'var(--s1)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.03)' }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{t.emoji} {t.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--t2)', marginTop: 4 }}>Qoldiq: {t.stock} ta</div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <input type="number" min="1" max={t.stock} value={t.transferQty} onChange={e => {
-                      const val = Math.min(t.stock, Math.max(1, parseInt(e.target.value) || 1));
-                      setTransferItems(prev => prev.map(item => item.id === t.id ? { ...item, transferQty: val } : item));
-                    }} style={{ width: 60, padding: '6px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 6, color: 'var(--t1)', textAlign: 'center', outline: 'none' }} />
-                    <button onClick={() => setTransferItems(prev => prev.filter(item => item.id !== t.id))} style={{ background: 'transparent', border: 'none', color: '#F43F5E', cursor: 'pointer', fontSize: 16, padding: 4 }}>×</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <Btn variant="primary" disabled={!transferStore || transferItems.length === 0} onClick={() => {
-              // Simulate transfer
-              setProducts(prev => prev.map(p => {
-                const trItem = transferItems.find(t => t.id === p.id);
-                return trItem ? { ...p, stock: p.stock - trItem.transferQty } : p;
-              }));
-              showToast(`✅ ${transferStore}ga ${transferItems.length} xil tovar ko'chirildi!`);
-              setTransferItems([]);
-              setTransferStore('');
-              setSearchTransfer('');
-            }}>🚚 Ko'chirishni Tasdiqlash</Btn>
-          </div>
-        </div>
+      {tab === 'transfer' && (
+        <TransferTab products={products} onApply={(updated, msg) => { setProducts(updated); notify(msg); }} />
       )}
 
-      {/* AUDIT TAB PLACEHOLDER */}
-      {activeTab === 'audit' && (
-        <div className="glass-card" style={{ borderRadius: 16, padding: 22, minHeight: 400 }}>
-          <SectionHeader title="Inventarizatsiya (Taftish rejimi)">
-            <div style={{ position: 'relative' }}>
-              <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: 'var(--t2)' }}>🔍</span>
-              <input value={auditSearch} onChange={e => setAuditSearch(e.target.value)} placeholder="Tovar qidirish..." style={{ padding: '8px 12px 8px 30px', background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 9, color: 'var(--t1)', fontSize: 13, outline: 'none', width: 220 }} />
-            </div>
-            <Btn variant="primary" size="sm" onClick={() => {
-              // Apply audit changes
-              let changedCount = 0;
-              setProducts(prev => prev.map(p => {
-                if (auditCounts[p.id] !== undefined && auditCounts[p.id] !== '' && auditCounts[p.id] !== p.stock) {
-                  changedCount++;
-                  return { ...p, stock: auditCounts[p.id] };
-                }
-                return p;
-              }));
-              showToast(`✅ Taftish saqlandi: ${changedCount} ta mahsulot yangilandi`);
-              setAuditCounts({});
-            }}>💾 Saqlash</Btn>
-          </SectionHeader>
-
-          <div style={{ overflowX: 'auto', marginTop: 16 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  <th style={{ fontSize: 10, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', padding: '0 10px 12px 0', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>Mahsulot</th>
-                  <th style={{ fontSize: 10, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', padding: '0 10px 12px 0', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>Tizimda (Kutilgan)</th>
-                  <th style={{ fontSize: 10, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', padding: '0 10px 12px 0', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>Haqiqiy (Sanalgan)</th>
-                  <th style={{ fontSize: 10, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', padding: '0 10px 12px 0', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>Farqi (Kamomad/Ortiqcha)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {products.filter(p => !auditSearch || p.name.toLowerCase().includes(auditSearch.toLowerCase()) || p.barcode.includes(auditSearch)).map(p => {
-                  const actual = auditCounts[p.id] !== undefined ? auditCounts[p.id] : '';
-                  const diff = actual === '' ? 0 : parseInt(actual) - p.stock;
-                  return (
-                    <tr key={p.id} style={{ transition: 'all .2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <td style={{ padding: '12px 10px 12px 0', fontSize: 13, fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{p.emoji} {p.name} <span style={{ fontSize: 10, color: 'var(--t3)', marginLeft: 8 }}>{p.barcode}</span></td>
-                      <td style={{ padding: '12px 10px 12px 0', fontSize: 14, fontWeight: 700, color: '#3B82F6', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{p.stock} ta</td>
-                      <td style={{ padding: '8px 10px 8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                        <input type="number" placeholder={p.stock} value={actual} onChange={e => {
-                          const val = e.target.value === '' ? '' : parseInt(e.target.value);
-                          setAuditCounts(prev => ({ ...prev, [p.id]: val }));
-                        }} style={{ width: 100, padding: '8px 12px', background: 'rgba(0,0,0,0.2)', border: Object.keys(auditCounts).includes(p.id.toString()) ? '1px solid #3B82F6' : '1px solid rgba(255,255,255,0.1)', borderRadius: 6, color: 'white', fontSize: 14, outline: 'none', transition: 'all 0.2s' }} />
-                      </td>
-                      <td style={{ padding: '12px 10px 12px 0', fontSize: 13, fontWeight: 700, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                        {actual === '' ? <span style={{ color: 'var(--t3)' }}>-</span> : (
-                          diff === 0 ? <span style={{ color: '#10B981' }}>Teng ✅</span> :
-                            diff < 0 ? <span style={{ color: '#F43F5E' }}>Kamomad: {Math.abs(diff)} ta ({(Math.abs(diff) * p.cost).toLocaleString()} so'm)</span> :
-                              <span style={{ color: '#F59E0B' }}>Ortiqcha: {diff} ta</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      {tab === 'audit' && (
+        <AuditTab products={products} onApply={(updated, msg) => { setProducts(updated); notify(msg); }} />
       )}
 
-      {/* KIRIM MODAL */}
-      {showKirim && (
-        <Modal onClose={() => setShowKirim(null)}>
-          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 6 }}>📥 Tovar Kirim</div>
-          <div style={{ fontSize: 13, color: 'var(--t2)', marginBottom: 24 }}>{showKirim.emoji} {showKirim.name} · Hozir: {showKirim.stock} ta</div>
-          <FormField label="Kirim miqdori (ta)">
-            <input type="number" value={kirimQty} onChange={e => setKirimQty(e.target.value)} placeholder="Masalan: 100" autoFocus
-              style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-              {[10, 25, 50, 100].map(n => (
-                <button key={n} className="fast-transition" onClick={() => setKirimQty(n)} style={{ flex: 1, padding: '6px 4px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 7, color: 'var(--t2)', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'} onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}>+{n}</button>
-              ))}
-            </div>
-          </FormField>
-          <FormField label="Izoh (ixtiyoriy)">
-            <input type="text" value={kirimNote} onChange={e => setKirimNote(e.target.value)} placeholder="Yetkazib beruvchi: Tashkent Market"
-              style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-          </FormField>
-          {kirimQty && (
-            <div style={{ background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 9, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#10B981' }}>
-              ✅ Kirimdan keyin: {showKirim.stock} + {kirimQty} = <strong>{showKirim.stock + parseInt(kirimQty || 0)} ta</strong>
-            </div>
-          )}
-          <ModalActions onCancel={() => setShowKirim(null)} onConfirm={handleKirim} confirmLabel="✅ Kirimni Tasdiqlash" confirmVariant="green" disabled={!kirimQty} />
-        </Modal>
-      )}
-
-      {/* ADD PRODUCT MODAL */}
+      {/* ── Modallar ── */}
       {showAdd && (
-        <Modal onClose={() => setShowAdd(false)} wide>
-          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 24 }}>{isPhone ? '📱 Yangi Telefon/Aksesuar Qo\'shish' : '📦 Yangi Tovar Qo\'shish'}</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            {isPhone ? (<>
-              {/* PHONE MODE FORM */}
-              <FormField label="Brend (Kategoriya) *">
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {PHONE_BRANDS.map(b => (
-                    <button key={b.name} onClick={() => setNewProd({ ...newProd, cat: b.name, emoji: b.icon })}
-                      style={{ padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: `1px solid ${newProd.cat === b.name ? '#A78BFA' : 'rgba(255,255,255,0.05)'}`, background: newProd.cat === b.name ? 'rgba(167,139,250,0.12)' : 'rgba(17,24,39,0.4)', color: newProd.cat === b.name ? '#A78BFA' : 'var(--t2)', fontFamily: 'Outfit,sans-serif', transition: 'all .15s' }}>
-                      {b.icon} {b.name}
-                    </button>
-                  ))}
-                </div>
-              </FormField>
-              <FormField label="Model yoki Nomi *">
-                <input value={newProd.phoneModel} onChange={e => setNewProd({ ...newProd, phoneModel: e.target.value, name: `${newProd.cat === 'Boshqa' ? '' : newProd.cat} ${e.target.value}`.trim() })} placeholder={newProd.cat === 'Aksesuar' || newProd.cat === 'Boshqa' ? "Masalan: Naushnik, Zaryadka, Chexol..." : "Galaxy S24 Ultra"} style={inputStyle} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-              </FormField>
-
-              {newProd.cat === 'Boshqa' && (
-                <FormField label="Yangi Kategoriya nomi">
-                  <input placeholder="Masalan: Soat, Simsiz quloqchin..." onChange={e => setNewProd({ ...newProd, customCat: e.target.value })} style={inputStyle} />
-                </FormField>
-              )}
-
-              {newProd.cat !== 'Aksesuar' && newProd.cat !== 'Boshqa' && (<>
-                <FormField label="Xotira hajmi">
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {PHONE_MEMORIES.map(m => (
-                      <button key={m} onClick={() => setNewProd({ ...newProd, phoneMemory: m })}
-                        style={{ flex: 1, padding: '8px 4px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: `1px solid ${newProd.phoneMemory === m ? '#22D3EE' : 'rgba(255,255,255,0.05)'}`, background: newProd.phoneMemory === m ? 'rgba(34,211,238,0.12)' : 'rgba(17,24,39,0.4)', color: newProd.phoneMemory === m ? '#22D3EE' : 'var(--t2)', fontFamily: 'Outfit,sans-serif' }}>
-                        {m}
-                      </button>
-                    ))}
-                  </div>
-                </FormField>
-                <FormField label="Rang">
-                  <input value={newProd.phoneColor} onChange={e => setNewProd({ ...newProd, phoneColor: e.target.value })} placeholder="Qora, Oq, Ko'k..." style={inputStyle} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-                </FormField>
-
-                {/* SMART SCANNER */}
-                <div style={{ gridColumn: '1 / -1', background: 'linear-gradient(135deg, rgba(16,185,129,0.06), rgba(34,211,238,0.06))', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 14, padding: '16px 18px', marginBottom: 4 }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, color: '#10B981' }}>📷 Smart Scanner — Skanerlang!</div>
-                  <div style={{ fontSize: 11, color: 'var(--t2)', marginBottom: 10 }}>Telefon qutisidagi barcode ni skanerlang. 15 raqam = IMEI, boshqasi = S/N. Avval IMEI1, keyin IMEI2, keyin S/N avtomatik to'ladi.</div>
-                  <input
-                    id="phone-scanner-input"
-                    autoFocus
-                    placeholder="📷 Shu yerga skanerlang..."
-                    style={{ ...inputStyle, background: 'rgba(0,0,0,0.3)', border: '2px solid rgba(16,185,129,0.3)', fontSize: 15, fontFamily: 'JetBrains Mono,monospace', letterSpacing: 1.5, textAlign: 'center', padding: '14px' }}
-                    onFocus={e => e.target.style.borderColor = '#10B981'}
-                    onBlur={e => e.target.style.borderColor = 'rgba(16,185,129,0.3)'}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && e.target.value.trim()) {
-                        const val = e.target.value.trim();
-                        const digits = val.replace(/\D/g, '');
-                        if (digits.length === 15) {
-                          if (!newProd.phoneImei1) {
-                            setNewProd(prev => ({ ...prev, phoneImei1: digits }));
-                            showToast('✅ IMEI 1 skanerlandi!');
-                          } else if (!newProd.phoneImei2) {
-                            setNewProd(prev => ({ ...prev, phoneImei2: digits }));
-                            showToast('✅ IMEI 2 skanerlandi!');
-                          } else {
-                            showToast('⚠️ Barcha IMEI maydonlari to\'ldirilgan', 'danger');
-                          }
-                        } else {
-                          setNewProd(prev => ({ ...prev, phoneSerial: val }));
-                          showToast('✅ S/N skanerlandi!');
-                        }
-                        e.target.value = '';
-                        setTimeout(() => e.target.focus(), 100);
-                      }
-                    }}
-                  />
-                  <div style={{ display: 'flex', gap: 10, marginTop: 10, fontSize: 11 }}>
-                    <span style={{ color: newProd.phoneImei1 ? '#10B981' : 'var(--t3)' }}>{newProd.phoneImei1 ? '✅' : '⬜'} IMEI1: {newProd.phoneImei1 || '—'}</span>
-                    <span style={{ color: newProd.phoneImei2 ? '#10B981' : 'var(--t3)' }}>{newProd.phoneImei2 ? '✅' : '⬜'} IMEI2: {newProd.phoneImei2 || '—'}</span>
-                    <span style={{ color: newProd.phoneSerial ? '#10B981' : 'var(--t3)' }}>{newProd.phoneSerial ? '✅' : '⬜'} S/N: {newProd.phoneSerial || '—'}</span>
-                    {(newProd.phoneImei1 || newProd.phoneImei2 || newProd.phoneSerial) && (
-                      <button onClick={() => setNewProd(prev => ({ ...prev, phoneImei1: '', phoneImei2: '', phoneSerial: '' }))} style={{ background: 'none', border: 'none', color: '#F43F5E', cursor: 'pointer', fontSize: 11, fontWeight: 700, fontFamily: 'Outfit,sans-serif' }}>🔄 Tozalash</button>
-                    )}
-                  </div>
-                </div>
-
-                <FormField label="IMEI 1">
-                  <input value={newProd.phoneImei1} onChange={e => setNewProd({ ...newProd, phoneImei1: e.target.value.replace(/\D/g, '').slice(0, 15) })} placeholder="Skaner yoki qo'lda" maxLength={15} style={{ ...inputStyle, fontFamily: 'JetBrains Mono,monospace', letterSpacing: 1.5, background: newProd.phoneImei1 ? 'rgba(16,185,129,0.08)' : undefined, borderColor: newProd.phoneImei1 ? 'rgba(16,185,129,0.3)' : undefined }} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-                </FormField>
-                <FormField label="IMEI 2 (ixtiyoriy)">
-                  <input value={newProd.phoneImei2} onChange={e => setNewProd({ ...newProd, phoneImei2: e.target.value.replace(/\D/g, '').slice(0, 15) })} placeholder="Skaner yoki qo'lda" maxLength={15} style={{ ...inputStyle, fontFamily: 'JetBrains Mono,monospace', letterSpacing: 1.5, background: newProd.phoneImei2 ? 'rgba(16,185,129,0.08)' : undefined, borderColor: newProd.phoneImei2 ? 'rgba(16,185,129,0.3)' : undefined }} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-                </FormField>
-                <FormField label="Seriya raqami (S/N)">
-                  <input value={newProd.phoneSerial} onChange={e => setNewProd({ ...newProd, phoneSerial: e.target.value })} placeholder="Skaner yoki qo'lda" style={{ ...inputStyle, fontFamily: 'JetBrains Mono,monospace', background: newProd.phoneSerial ? 'rgba(16,185,129,0.08)' : undefined, borderColor: newProd.phoneSerial ? 'rgba(16,185,129,0.3)' : undefined }} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-                </FormField>
-                <FormField label="Holati">
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    {PHONE_CONDITIONS.map(c => (
-                      <button key={c} onClick={() => setNewProd({ ...newProd, phoneCondition: c })}
-                        style={{ flex: 1, padding: '10px 8px', borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: `1px solid ${newProd.phoneCondition === c ? (c === 'Yangi' ? '#10B981' : c === 'B/U' ? '#F59E0B' : '#3B82F6') : 'rgba(255,255,255,0.05)'}`, background: newProd.phoneCondition === c ? (c === 'Yangi' ? 'rgba(16,185,129,0.12)' : c === 'B/U' ? 'rgba(245,158,11,0.12)' : 'rgba(59,130,246,0.12)') : 'rgba(17,24,39,0.4)', color: newProd.phoneCondition === c ? (c === 'Yangi' ? '#10B981' : c === 'B/U' ? '#F59E0B' : '#3B82F6') : 'var(--t2)', fontFamily: 'Outfit,sans-serif', textAlign: 'center' }}>
-                        {c === 'Yangi' ? '✨' : c === 'B/U' ? '♻️' : '🔧'} {c}
-                      </button>
-                    ))}
-                  </div>
-                </FormField>
-              </>)}
-
-              {/* Aksesuar/Boshqa uchun qo'shimcha maydonlar */}
-              {(newProd.cat === 'Aksesuar' || newProd.cat === 'Boshqa') && (<>
-                <FormField label="Barcode">
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <input value={newProd.barcode} onChange={e => setNewProd({ ...newProd, barcode: e.target.value })} placeholder="Barcode skanerlang yoki kiriting" style={{ ...inputStyle, flex: 1, fontFamily: 'JetBrains Mono,monospace' }} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-                    <Btn variant="subtle" onClick={generateBarcode}>🎲</Btn>
-                  </div>
-                </FormField>
-                <FormField label="Boshlang'ich qoldiq">
-                  <input type="number" value={newProd.stock} onChange={e => setNewProd({ ...newProd, stock: e.target.value })} placeholder="10" style={inputStyle} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-                </FormField>
-                <FormField label="Minimal qoldiq (eslatma)">
-                  <input type="number" value={newProd.minStock} onChange={e => setNewProd({ ...newProd, minStock: e.target.value })} placeholder="5" style={inputStyle} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-                </FormField>
-              </>)}
-
-              <FormField label="Tan narxi (so'm) *">
-                <input type="text" inputMode="numeric" value={formatMoney(newProd.cost)} onChange={e => handlePriceChange('cost', e.target.value)} placeholder="2.500.000" style={inputStyle} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-              </FormField>
-              <FormField label="Sotuv narxi (so'm) *">
-                <input type="text" inputMode="numeric" value={formatMoney(newProd.price)} onChange={e => handlePriceChange('price', e.target.value)} placeholder="3.000.000" style={inputStyle} onFocus={e => e.target.style.borderColor = '#A78BFA'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-              </FormField>
-            </>) : (<>
-              {/* GENERAL MODE FORM (original) */}
-              <FormField label="Mahsulot nomi *">
-                <input value={newProd.name} onChange={e => setNewProd({ ...newProd, name: e.target.value })} placeholder="Coca Cola 0.5L" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-              </FormField>
-              <FormField label="Barcode">
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input value={newProd.barcode} onChange={e => setNewProd({ ...newProd, barcode: e.target.value })} placeholder="8690637" style={{ ...inputStyle, flex: 1 }} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-                  <Btn variant="subtle" onClick={generateBarcode}>🎲 Random</Btn>
-                </div>
-              </FormField>
-              <FormField label="Kategoriya">
-                {showAddCat ? (
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <input value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="Yangi kategoriya" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} autoFocus />
-                    <Btn variant="primary" onClick={handleAddCategory}>+</Btn>
-                    <Btn variant="subtle" onClick={() => setShowAddCat(false)}>✕</Btn>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <select value={newProd.cat} onChange={e => setNewProd({ ...newProd, cat: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}>
-                      {categories.filter(c => c.name !== 'Hammasi').map(c => <option key={c.name} value={c.name}>{c.icon} {c.name}</option>)}
-                    </select>
-                    <Btn variant="subtle" onClick={() => setShowAddCat(true)}>+ Yangi</Btn>
-                  </div>
-                )}
-              </FormField>
-              <FormField label="Emoji">
-                <select value={newProd.emoji} onChange={e => setNewProd({ ...newProd, emoji: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}>
-                  {EMOJIS.map(e => <option key={e} value={e}>{e}</option>)}
-                </select>
-              </FormField>
-              <FormField label="Tan narxi (so'm) *">
-                <input type="text" inputMode="numeric" value={formatMoney(newProd.cost)} onChange={e => handlePriceChange('cost', e.target.value)} placeholder="6.000" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-              </FormField>
-              <FormField label="Sotuv narxi (so'm) *">
-                <input type="text" inputMode="numeric" value={formatMoney(newProd.price)} onChange={e => handlePriceChange('price', e.target.value)} placeholder="8.000" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-              </FormField>
-              <FormField label="Boshlang'ich qoldiq">
-                <input type="number" value={newProd.stock} onChange={e => setNewProd({ ...newProd, stock: e.target.value })} placeholder="0" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-              </FormField>
-              <FormField label="Minimal qoldiq (ogohlantirish)">
-                <input type="number" value={newProd.minStock} onChange={e => setNewProd({ ...newProd, minStock: e.target.value })} placeholder="50" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-              </FormField>
-            </>)}
-          </div>
-          <div style={{ marginTop: 8 }}>
-            <ModalActions onCancel={() => setShowAdd(false)} onConfirm={handleAddProduct} confirmLabel={isPhone ? "📱 Telefon Qo'shish" : "✅ Tovar Qo'shish"} disabled={isPhone ? (!newProd.phoneModel || !newProd.price || !newProd.cost) : (!newProd.name || !newProd.price || !newProd.cost)} />
-          </div>
-        </Modal>
+        <AddProductModal
+          storeId={user?.store_id}
+          isPhoneStore={isPhoneStore}
+          categories={categories}
+          onClose={() => setShowAdd(false)}
+          onSaved={(name) => {
+            setShowAdd(false);
+            load(user.store_id);
+            refreshAlerts();
+            notify(`"${name}" qo‘shildi`);
+          }}
+          onError={(m) => notify(m, 'dang')}
+        />
       )}
 
-      {/* BARCODE PRINT MODAL */}
-      {printProd && (
-        <Modal onClose={() => setPrintProd(null)}>
-          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 16 }}>🖨️ Barkod Chop Etish</div>
-          <div style={{ background: '#fff', padding: '24px 16px', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 20 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#000', marginBottom: 10, textAlign: 'center' }}>{printProd.name}</div>
-            <Barcode value={printProd.barcode || "0000000000"} width={2} height={60} fontSize={14} background="#ffffff" lineColor="#000000" margin={0} />
-            <div style={{ fontSize: 14, fontWeight: 800, color: '#000', marginTop: 8 }}>{printProd.price.toLocaleString()} so'm</div>
-          </div>
-          <p style={{ fontSize: 13, color: 'var(--t2)', textAlign: 'center', marginBottom: 20, lineHeight: 1.5 }}>
-            Printeringiz (masalan xprinter) 40x30mm stiker uchun sozlanganligiga ishonch hosil qiling.
-          </p>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button className="fast-transition" onClick={() => setPrintProd(null)} style={{ flex: 1, padding: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 11, color: 'var(--t2)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }}>Yopish</button>
-            <button onClick={() => {
-              const printWin = window.open('', '_blank');
-              printWin.document.write(`
-                <html>
-                  <head>
-                    <title>Print Barcode</title>
-                    <style>
-                      body { margin: 0; padding: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; background: #fff; }
-                      .label { width: 40mm; height: 30mm; border: 1px dashed #ccc; padding: 2mm; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
-                      .name { font-size: 10px; font-weight: bold; margin-bottom: 2px; line-height: 1.1; max-height: 22px; overflow: hidden; }
-                      .price { font-size: 12px; font-weight: bold; margin-top: 2px; }
-                      @media print { body { justify-content: flex-start; } .label { border: none; } }
-                    </style>
-                  </head>
-                  <body>
-                    <div class="label">
-                      <div class="name">${printProd.name}</div>
-                      <img src="https://barcode.tec-it.com/barcode.ashx?data=${printProd.barcode || '000000000'}&code=Code128&translate-esc=on" style="height: 12mm; width: auto;" />
-                      <div class="price">${printProd.price.toLocaleString()} so'm</div>
-                    </div>
-                    <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
-                  </body>
-                </html>
-              `);
-              printWin.document.close();
-            }} className="btn-primary" style={{ flex: 2, padding: '12px', background: 'linear-gradient(135deg,#3B82F6,#2563EB)', border: 'none', borderRadius: 11, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'Outfit,sans-serif', boxShadow: '0 4px 16px rgba(59,130,246,0.28)' }}>🖨️ Chop Etish (Print)</button>
-          </div>
-        </Modal>
+      {kirimFor && (
+        <KirimModal
+          product={kirimFor}
+          onClose={() => setKirimFor(null)}
+          onSaved={(qty) => {
+            setKirimFor(null);
+            load(user.store_id);
+            refreshAlerts();
+            notify(`${kirimFor.name}: +${qty} dona kirim qilindi`);
+          }}
+          onError={(m) => notify(m, 'dang')}
+        />
       )}
 
-      {/* TOAST */}
-      {toast && (
-        <div style={{ position: 'fixed', bottom: 28, right: 28, background: toast.type === 'success' ? '#10B981' : '#F43F5E', color: '#fff', padding: '14px 22px', borderRadius: 12, fontSize: 14, fontWeight: 700, zIndex: 9999, boxShadow: '0 8px 24px rgba(0,0,0,0.3)', animation: 'slideUp .3s ease' }}>
-          {toast.msg}
-        </div>
-      )}
-      <style>{`@keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}`}</style>
-    </div>
+      {printFor && <BarcodeModal product={printFor} onClose={() => setPrintFor(null)} />}
+
+      {toast && <Toast message={toast.msg} variant={toast.variant} onClose={() => setToast(null)} />}
+    </Page>
   );
 }
 
-// ── Shared mini components ─────────────────────────────────────────
-function Modal({ children, onClose, wide }) {
+/* ── Statistika kartochkasi (filtr tugmasi) ────────────────────────────── */
+function StatTile({ label, value, unit, icon, color, valueColor, active, onClick }) {
   return (
-    <div className="modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, backdropFilter: 'blur(8px)' }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-content" style={{ background: 'linear-gradient(145deg, rgba(26, 35, 50, 0.95) 0%, rgba(13, 17, 23, 0.98) 100%)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: '32px 30px', width: wide ? 500 : 380, maxWidth: '92vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 60px rgba(0,0,0,0.4)' }}>
-        {children}
+    <div
+      className="card elev-sm" onClick={onClick}
+      style={{
+        padding: 14, gap: 5, cursor: 'pointer',
+        boxShadow: active ? '0 0 0 1px var(--color-accent)' : undefined,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: 'var(--color-neutral-400)' }}>
+        <Icon name={icon} fill size={16} color={color} />
+        {label}
+      </div>
+      <div className="num" style={{ fontSize: 22, fontWeight: 500, color: valueColor }}>
+        {value}
+        {unit && <span style={{ fontSize: 12, color: 'var(--color-neutral-500)', fontWeight: 400 }}> {unit}</span>}
       </div>
     </div>
   );
 }
 
-function FormField({ label, children }) {
+/* ── Kirim modali ──────────────────────────────────────────────────────── */
+function KirimModal({ product, onClose, onSaved, onError }) {
+  const [qty, setQty] = useState('');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const st = statusOf(product);
+  const n = parseInt(qty, 10) || 0;
+
+  const save = async () => {
+    if (n <= 0) return;
+    setSaving(true);
+    const { error } = await supabase.from('products')
+      .update({ stock: product.stock + n }).eq('id', product.id);
+    setSaving(false);
+    if (error) onError(`Kirim saqlanmadi: ${error.message}`);
+    else onSaved(n);
+  };
+
   return (
-    <div style={{ marginBottom: 14 }}>
-      <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--t2)', display: 'block', marginBottom: 7, textTransform: 'uppercase', letterSpacing: .8 }}>{label}</label>
+    <Modal title={`Kirim — ${product.name}`} onClose={onClose} actions={
+      <>
+        <Btn variant="secondary" onClick={onClose}>Bekor qilish</Btn>
+        <Btn variant="primary" icon="check-circle" onClick={save} disabled={n <= 0} loading={saving}>
+          Kirimni Tasdiqlash
+        </Btn>
+      </>
+    }>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: 'var(--color-neutral-400)' }}>
+          <span>Hozirgi qoldiq</span>
+          <span className="num" style={{ color: `var(--${st.variant === 'ok' ? 'ok' : st.variant})`, fontWeight: 500 }}>
+            {product.stock} ta · {st.label}
+          </span>
+        </div>
+
+        <Field label="Miqdor">
+          <input
+            className="input num" autoFocus inputMode="numeric" value={qty}
+            onChange={e => setQty(e.target.value.replace(/\D/g, ''))}
+            style={{ borderColor: n > 0 ? 'var(--color-accent)' : undefined, fontSize: 15, fontWeight: 600 }}
+          />
+        </Field>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6 }}>
+          {[10, 25, 50, 100].map(v => (
+            <Btn
+              key={v}
+              variant={n === v ? 'primary' : 'secondary'}
+              onClick={() => setQty(String(v))}
+              style={{ minHeight: 38, justifyContent: 'center', fontSize: 12 }}
+            >
+              +{v}
+            </Btn>
+          ))}
+        </div>
+
+        <Field label="Izoh">
+          <input className="input" value={note} onChange={e => setNote(e.target.value)}
+            placeholder="Masalan: yetkazib beruvchi — Chilonzor baza" />
+        </Field>
+
+        {n > 0 && (
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '11px 13px', borderRadius: 9, background: 'var(--okbg)',
+          }}>
+            <span style={{ fontSize: 12.5, color: 'var(--ok)' }}>Kirimdan keyin</span>
+            <span className="num" style={{ fontSize: 18, fontWeight: 600, color: 'var(--ok)' }}>
+              {product.stock + n} ta
+            </span>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+/* ── Barcode chop etish ────────────────────────────────────────────────── */
+function BarcodeModal({ product, onClose }) {
+  const [copies, setCopies] = useState('1');
+  const previewRef = useRef(null);
+  const code = product.barcode || product.phone_imei1 || String(product.id).padStart(10, '0');
+
+  const print = () => {
+    // Barkod SVG'ini ko'rinishdan olamiz — tashqi xizmatga bog'liq bo'lmaslik uchun
+    const svg = previewRef.current?.querySelector('svg')?.outerHTML || '';
+    const n = Math.min(50, Math.max(1, parseInt(copies, 10) || 1));
+    const label = `
+      <div class="label">
+        <div class="name">${product.name}</div>
+        ${svg}
+        <div class="price">${money(product.price)} so'm</div>
+      </div>`;
+
+    const win = window.open('', '_blank');
+    if (!win) return;
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Barcode</title>
+      <style>
+        @page { margin: 0; }
+        body { margin: 0; font-family: Arial, sans-serif; background: #fff; }
+        .label { width: 40mm; height: 30mm; padding: 2mm; box-sizing: border-box;
+                 display: flex; flex-direction: column; align-items: center;
+                 justify-content: center; text-align: center; page-break-after: always; }
+        .name { font-size: 9px; font-weight: bold; line-height: 1.15; margin-bottom: 1mm;
+                max-height: 7mm; overflow: hidden; }
+        .price { font-size: 11px; font-weight: bold; margin-top: 1mm; }
+        svg { max-width: 100%; height: auto; }
+      </style></head><body>
+      ${label.repeat(n)}
+      <script>setTimeout(function(){ window.print(); window.close(); }, 400);<\/script>
+      </body></html>`);
+    win.document.close();
+  };
+
+  return (
+    <Modal title="Barcode chop etish" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 11, alignItems: 'center' }}>
+        <div
+          ref={previewRef}
+          style={{
+            width: 240, minHeight: 180, borderRadius: 6, background: '#fdfdfb', color: '#1a1a1a',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            gap: 6, padding: 14, boxShadow: 'var(--shadow-md)',
+          }}
+        >
+          <div style={{ font: '600 12px Inter, sans-serif', textAlign: 'center', lineHeight: 1.25 }}>
+            {product.name}
+          </div>
+          <Barcode value={code} width={1.6} height={46} fontSize={11} margin={0}
+            background="#fdfdfb" lineColor="#1a1a1a" />
+          <div style={{ font: '600 13px Inter, sans-serif' }}>{money(product.price)} so‘m</div>
+        </div>
+
+        <div style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>Stiker o‘lchami: 40 × 30 mm</div>
+
+        <div style={{ display: 'flex', gap: 9, alignItems: 'flex-end', width: '100%' }}>
+          <Field label="Nusxa soni" style={{ flex: 1 }}>
+            <input className="input num" inputMode="numeric" value={copies}
+              onChange={e => setCopies(e.target.value.replace(/\D/g, ''))} />
+          </Field>
+          <Btn variant="primary" icon="printer" onClick={print}>Chop Etish</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ── Tovar qo'shish ────────────────────────────────────────────────────── */
+function AddProductModal({ storeId, isPhoneStore, categories, onClose, onSaved, onError }) {
+  const [mode, setMode] = useState(isPhoneStore ? 'phone' : 'simple');
+  const [saving, setSaving] = useState(false);
+  const scannerRef = useRef(null);
+
+  const [f, setF] = useState({
+    brand: 'Samsung', model: '', memory: '128GB', color: '',
+    imei1: '', imei2: '', serial: '', condition: 'Yangi',
+    name: '', barcode: '', category: '', emoji: '📦',
+    stock: '', minStock: '', cost: '', price: '',
+  });
+  const set = (k, v) => setF(prev => ({ ...prev, [k]: v }));
+
+  const cost = Number(f.cost) || 0;
+  const price = Number(f.price) || 0;
+  const profit = price - cost;
+  const margin = price > 0 ? ((profit / price) * 100).toFixed(1) : 0;
+
+  const valid = mode === 'phone'
+    ? f.model && price > 0 && cost > 0
+    : f.name && price > 0 && cost > 0;
+
+  /* Smart skaner: 15 xonali → IMEI1 → IMEI2, boshqasi → S/N */
+  const onScan = (e) => {
+    if (e.key !== 'Enter') return;
+    const raw = e.target.value.trim();
+    if (!raw) return;
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length === 15) {
+      if (!f.imei1) set('imei1', digits);
+      else if (!f.imei2) set('imei2', digits);
+    } else {
+      set('serial', raw);
+    }
+    e.target.value = '';
+  };
+
+  const save = async () => {
+    setSaving(true);
+    const isPhoneItem = mode === 'phone';
+    const name = isPhoneItem
+      ? `${f.brand === 'Boshqa' ? '' : f.brand} ${f.model}`.trim()
+      : f.name;
+
+    const row = {
+      store_id: storeId,
+      name,
+      barcode: f.barcode || '',
+      category: isPhoneItem ? f.brand : (f.category || 'Boshqa'),
+      cost_price: cost,
+      price,
+      // Telefon noyob IMEI bilan keladi — har biri 1 dona
+      stock: isPhoneItem ? 1 : (parseInt(f.stock, 10) || 0),
+      minStock: parseInt(f.minStock, 10) || 0,
+      image: isPhoneItem ? '📱' : f.emoji,
+      ...(isPhoneItem ? {
+        phone_model: f.model,
+        phone_memory: f.memory,
+        phone_color: f.color,
+        phone_imei1: f.imei1,
+        phone_imei2: f.imei2,
+        phone_serial: f.serial,
+        phone_condition: f.condition,
+      } : {}),
+    };
+
+    const { error } = await supabase.from('products').insert(row);
+    setSaving(false);
+    if (error) onError(`Saqlanmadi: ${error.message}`);
+    else onSaved(name);
+  };
+
+  const chip = (active) => ({
+    padding: '6px 12px', borderRadius: 14, border: 0, cursor: 'pointer', font: 'inherit',
+    fontSize: 12, fontWeight: active ? 500 : 400,
+    background: active ? 'var(--color-accent)' : 'color-mix(in srgb, var(--color-text) 6%, transparent)',
+    color: active ? 'var(--color-bg)' : 'var(--color-neutral-300)',
+  });
+
+  return (
+    <Modal title="Tovar Qo‘shish" onClose={onClose} wide actions={
+      <>
+        <Btn variant="secondary" onClick={onClose}>Bekor qilish</Btn>
+        <Btn variant="primary" icon="check" onClick={save} disabled={!valid} loading={saving}>Saqlash</Btn>
+      </>
+    }>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <Seg
+          style={{ width: '100%' }}
+          options={[
+            { value: 'phone', label: '📱 Telefon' },
+            { value: 'simple', label: '📦 Oddiy / Aksessuar' },
+          ]}
+          value={mode}
+          onChange={setMode}
+        />
+
+        {mode === 'phone' ? (
+          <>
+            <Step n={1} title="Brend va model">
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {PHONE_BRANDS.map(b => (
+                  <button key={b} onClick={() => set('brand', b)} style={chip(f.brand === b)}>{b}</button>
+                ))}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 9 }}>
+                <Field label="Model">
+                  <input className="input" value={f.model} onChange={e => set('model', e.target.value)}
+                    placeholder="Galaxy S24 Ultra" />
+                </Field>
+                <Field label="Xotira">
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {MEMORIES.map(m => (
+                      <button key={m} onClick={() => set('memory', m)} style={{
+                        padding: '7px 9px', borderRadius: 7, cursor: 'pointer', font: 'inherit', fontSize: 11.5,
+                        border: `1px solid ${f.memory === m ? 'var(--color-accent)' : 'var(--color-divider)'}`,
+                        background: f.memory === m ? 'var(--color-accent-900)' : 'transparent',
+                        color: f.memory === m ? 'var(--color-accent-200)' : 'var(--color-neutral-400)',
+                      }}>{m}</button>
+                    ))}
+                  </div>
+                </Field>
+              </div>
+            </Step>
+
+            <Step n={2} title="Texnik ma’lumot — Smart skaner">
+              <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{
+                  flex: 1, display: 'flex', alignItems: 'center', gap: 9, minHeight: 44,
+                  padding: '0 12px', borderRadius: 9,
+                  border: '2px solid var(--color-accent)', background: 'var(--color-surface)',
+                }}>
+                  <Icon name="barcode" size={18} color="var(--color-accent)" />
+                  <input
+                    ref={scannerRef} autoFocus onKeyDown={onScan}
+                    placeholder="Raqamni skanerlang — 15 xonali: IMEI-1 → IMEI-2, boshqa: S/N"
+                    style={{ flex: 1, background: 'none', border: 0, outline: 'none', color: 'var(--color-text)', font: 'inherit', fontSize: 13 }}
+                  />
+                </div>
+                <Btn variant="secondary" icon="arrows-clockwise" style={{ minHeight: 44 }}
+                  onClick={() => setF(p => ({ ...p, imei1: '', imei2: '', serial: '' }))}>
+                  Tozalash
+                </Btn>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
+                <ImeiField label="IMEI 1" value={f.imei1} onChange={v => set('imei1', v)} />
+                <ImeiField label="IMEI 2" value={f.imei2} onChange={v => set('imei2', v)} />
+                <Field label="S/N">
+                  <input className="input" value={f.serial} onChange={e => set('serial', e.target.value)}
+                    placeholder="Seriya raqami" />
+                </Field>
+                <Field label="Rang">
+                  <input className="input" value={f.color} onChange={e => set('color', e.target.value)}
+                    placeholder="Black" />
+                </Field>
+              </div>
+            </Step>
+
+            <Step n={3} title="Holati">
+              <Seg style={{ width: '100%' }} options={CONDITIONS} value={f.condition} onChange={v => set('condition', v)} />
+            </Step>
+          </>
+        ) : (
+          <Step n={1} title="Tovar ma’lumoti">
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 9 }}>
+              <Field label="Nomi">
+                <input className="input" autoFocus value={f.name} onChange={e => set('name', e.target.value)}
+                  placeholder="Silikon chexol" />
+              </Field>
+              <Field label="Belgi">
+                <select className="input" value={f.emoji} onChange={e => set('emoji', e.target.value)}>
+                  {EMOJIS.map(e => <option key={e} value={e}>{e}</option>)}
+                </select>
+              </Field>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
+              <Field label="Barcode">
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input className="input mono" value={f.barcode} onChange={e => set('barcode', e.target.value)}
+                    placeholder="4780 0031 2205" />
+                  <Btn variant="secondary" iconOnly icon="dice-five" title="Tasodifiy barcode"
+                    onClick={() => set('barcode', '200' + Math.floor(1e9 + Math.random() * 9e9))} />
+                </div>
+              </Field>
+              <Field label="Kategoriya">
+                <input className="input" list="cat-list" value={f.category}
+                  onChange={e => set('category', e.target.value)} placeholder="Aksessuarlar" />
+                <datalist id="cat-list">
+                  {categories.map(c => <option key={c} value={c} />)}
+                </datalist>
+              </Field>
+              <Field label="Boshlang‘ich qoldiq">
+                <input className="input num" inputMode="numeric" value={f.stock}
+                  onChange={e => set('stock', e.target.value.replace(/\D/g, ''))} placeholder="10" />
+              </Field>
+              <Field label="Minimal qoldiq" hint="Shu darajaga tushganda ogohlantiradi">
+                <input className="input num" inputMode="numeric" value={f.minStock}
+                  onChange={e => set('minStock', e.target.value.replace(/\D/g, ''))} placeholder="5" />
+              </Field>
+            </div>
+          </Step>
+        )}
+
+        <Step n={mode === 'phone' ? 4 : 2} title="Narxlar">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
+            <Field label="Tan narxi">
+              <MoneyInput value={f.cost} onChange={v => set('cost', v)} />
+            </Field>
+            <Field label="Sotuv narxi">
+              <MoneyInput value={f.price} onChange={v => set('price', v)} accent />
+            </Field>
+          </div>
+          {price > 0 && cost > 0 && (
+            <div style={{ fontSize: 11, color: profit >= 0 ? 'var(--ok)' : 'var(--dang)' }}>
+              {profit >= 0 ? 'Foyda' : 'Zarar'}: {money(Math.abs(profit))} so‘m ({Math.abs(margin)}%)
+            </div>
+          )}
+        </Step>
+      </div>
+    </Modal>
+  );
+}
+
+function Step({ n, title, children }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{
+          width: 20, height: 20, borderRadius: '50%', background: 'var(--color-accent)',
+          color: 'var(--color-bg)', display: 'grid', placeItems: 'center',
+          fontSize: 11, fontWeight: 600, flex: 'none',
+        }}>{n}</span>
+        <span style={{ fontSize: 13, fontWeight: 500 }}>{title}</span>
+      </div>
       {children}
     </div>
   );
 }
 
-function ModalActions({ onCancel, onConfirm, confirmLabel = 'Tasdiqlash', confirmVariant = 'primary', disabled }) {
-  const variants = {
-    primary: { background: 'linear-gradient(135deg,#3B82F6,#2563EB)', boxShadow: '0 4px 16px rgba(59,130,246,0.28)' },
-    green: { background: 'linear-gradient(135deg,#10B981,#059669)', boxShadow: '0 4px 16px rgba(16,185,129,0.28)' },
-  };
+function ImeiField({ label, value, onChange }) {
+  const filled = value?.length === 15;
   return (
-    <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-      <button className="fast-transition" onClick={onCancel} style={{ flex: 1, padding: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 11, color: 'var(--t2)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'} onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}>Bekor</button>
-      <button className="btn-primary" onClick={onConfirm} disabled={disabled} style={{ flex: 2, padding: '12px', border: 'none', borderRadius: 11, color: '#fff', fontSize: 13, fontWeight: 800, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'Outfit,sans-serif', opacity: disabled ? .45 : 1, ...variants[confirmVariant] }}>{confirmLabel}</button>
+    <Field label={
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+        <Icon name="shield-check" size={12} color={filled ? 'var(--info)' : 'var(--color-neutral-600)'} />
+        {label}
+      </span>
+    }>
+      <input
+        className="input num" value={value} maxLength={15}
+        onChange={e => onChange(e.target.value.replace(/\D/g, '').slice(0, 15))}
+        placeholder="15 xonali raqam"
+        style={{ background: filled ? 'oklch(0.33 0.06 240 / 0.12)' : undefined }}
+      />
+    </Field>
+  );
+}
+
+function MoneyInput({ value, onChange, accent }) {
+  return (
+    <div className="input" style={{
+      display: 'flex', alignItems: 'center',
+      borderColor: accent ? 'var(--color-accent)' : undefined,
+      padding: 0, paddingInline: 10,
+    }}>
+      <input
+        className="num" inputMode="numeric" value={formatInput(value)}
+        onChange={e => onChange(e.target.value.replace(/\D/g, ''))}
+        placeholder="0"
+        style={{
+          flex: 1, background: 'none', border: 0, outline: 'none', color: 'inherit',
+          font: 'inherit', fontSize: accent ? 15 : 14, fontWeight: accent ? 600 : 400,
+          padding: '6px 0',
+        }}
+      />
+      <span style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>so‘m</span>
     </div>
   );
 }
 
-const inputStyle = { width: '100%', padding: '11px 13px', background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, color: 'var(--t1)', fontSize: 13, fontFamily: 'Outfit,sans-serif', outline: 'none', boxSizing: 'border-box', transition: 'all 0.15s cubic-bezier(0.4, 0, 0.2, 1)' };
+/* ── Filiallarga ko'chirish ────────────────────────────────────────────── */
+function TransferTab({ products, onApply }) {
+  const [branch, setBranch] = useState(BRANCHES[0]);
+  const [productId, setProductId] = useState('');
+  const [qty, setQty] = useState('');
+
+  const product = products.find(p => String(p.id) === productId);
+  const n = parseInt(qty, 10) || 0;
+  const valid = product && n > 0 && n <= product.stock;
+
+  const apply = () => {
+    onApply(
+      products.map(p => p.id === product.id ? { ...p, stock: p.stock - n } : p),
+      `${branch} filialiga ${n} dona "${product.name}" ko‘chirildi`
+    );
+    setProductId(''); setQty('');
+  };
+
+  return (
+    <Card padding="var(--space-6)" gap={13} style={{ maxWidth: 620 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Icon name="truck" size={18} color="var(--color-accent)" />
+        <span style={{ fontSize: 15, fontWeight: 500 }}>Filiallarga Ko‘chirish</span>
+      </div>
+
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 12, padding: 13, borderRadius: 10,
+        background: 'color-mix(in srgb, var(--color-text) 4%, transparent)',
+      }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'center', textAlign: 'center' }}>
+          <Icon name="storefront" fill size={20} color="var(--color-accent)" />
+          <span style={{ fontSize: 12.5, fontWeight: 500 }}>Asosiy do‘kon</span>
+          <span style={{ fontSize: 10.5, color: 'var(--color-neutral-500)' }}>Manba</span>
+        </div>
+        <Icon name="arrow-right" size={20} color="var(--color-neutral-500)" />
+        <div style={{ flex: 1.6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span style={{ fontSize: 10.5, color: 'var(--color-neutral-500)', textAlign: 'center' }}>Qaysi filialga?</span>
+          <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+            {BRANCHES.map(b => (
+              <button key={b} onClick={() => setBranch(b)} style={{
+                padding: '7px 13px', borderRadius: 14, border: 0, cursor: 'pointer', font: 'inherit',
+                fontSize: 12, fontWeight: branch === b ? 500 : 400,
+                background: branch === b ? 'var(--color-accent)' : 'color-mix(in srgb, var(--color-text) 6%, transparent)',
+                color: branch === b ? 'var(--color-bg)' : 'var(--color-neutral-300)',
+              }}>{b}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <Field label="Tovar">
+        <select className="input" value={productId} onChange={e => { setProductId(e.target.value); setQty(''); }}>
+          <option value="">Tovarni tanlang…</option>
+          {products.filter(p => p.stock > 0).map(p => (
+            <option key={p.id} value={p.id}>{p.name} — qoldiq: {p.stock}</option>
+          ))}
+        </select>
+      </Field>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: 9, alignItems: 'end' }}>
+        <Field label="Miqdor">
+          <input className="input num" inputMode="numeric" value={qty} disabled={!product}
+            onChange={e => setQty(e.target.value.replace(/\D/g, ''))}
+            style={{ fontWeight: 600, borderColor: valid ? 'var(--color-accent)' : undefined }} />
+        </Field>
+        <div style={{ fontSize: 11.5, color: 'var(--color-neutral-500)', paddingBottom: 9 }}>
+          {product && n > 0 && (
+            n > product.stock
+              ? <span style={{ color: 'var(--dang)' }}>Omborda faqat {product.stock} dona bor</span>
+              : <>Ko‘chirishdan keyin asosiy do‘konda: <b style={{ color: 'var(--color-text)', fontWeight: 500 }}>{product.stock - n} ta</b>
+                {' · '}{branch}da: <b style={{ color: 'var(--color-text)', fontWeight: 500 }}>+{n}</b></>
+          )}
+        </div>
+      </div>
+
+      <Btn variant="primary" icon="truck" block disabled={!valid} onClick={apply} style={{ minHeight: 44 }}>
+        Ko‘chirishni Tasdiqlash
+      </Btn>
+
+      <ScreenOnlyWarning text="Hozircha ko‘chirish faqat ekranda aks etadi — bazaga saqlanmaydi. Sahifa yangilanganda qaytadi." />
+    </Card>
+  );
+}
+
+/* ── Inventarizatsiya ──────────────────────────────────────────────────── */
+function AuditTab({ products, onApply }) {
+  const [counts, setCounts] = useState({});
+  const [search, setSearch] = useState('');
+
+  const shown = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return q ? products.filter(p => String(p.name || '').toLowerCase().includes(q)) : products;
+  }, [products, search]);
+
+  const totals = useMemo(() => {
+    let shortQty = 0, shortVal = 0, overQty = 0, overVal = 0, counted = 0;
+    products.forEach(p => {
+      const c = counts[p.id];
+      if (c === undefined || c === '') return;
+      counted++;
+      const diff = Number(c) - p.stock;
+      const val = diff * (Number(p.cost_price) || 0);
+      if (diff < 0) { shortQty += diff; shortVal += val; }
+      else if (diff > 0) { overQty += diff; overVal += val; }
+    });
+    return { shortQty, shortVal, overQty, overVal, counted };
+  }, [products, counts]);
+
+  const save = () => {
+    const updated = products.map(p => {
+      const c = counts[p.id];
+      return (c === undefined || c === '') ? p : { ...p, stock: Number(c) };
+    });
+    onApply(updated, `Taftish saqlandi: ${totals.counted} ta tovar yangilandi`);
+    setCounts({});
+  };
+
+  return (
+    <Card padding="var(--space-6)" gap={13}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Icon name="clipboard-text" size={18} color="var(--color-accent)" />
+        <span style={{ fontSize: 15, fontWeight: 500 }}>Inventarizatsiya</span>
+        <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--color-neutral-500)' }}>
+          {new Date().toLocaleDateString('ru-RU')} · {totals.counted}/{products.length} tovar sanaldi
+        </span>
+      </div>
+
+      <div className="input-icon" style={{ maxWidth: 280 }}>
+        <Icon name="magnifying-glass" />
+        <input className="input" value={search} onChange={e => setSearch(e.target.value)} placeholder="Tovar qidirish…" />
+      </div>
+
+      {products.length === 0 ? (
+        <EmptyState icon="clipboard-text" text="Sanaladigan tovar yo‘q" />
+      ) : (
+        <div style={{ overflowX: 'auto', maxHeight: 420, overflowY: 'auto' }}>
+          <table className="table" style={{ fontSize: 12.5 }}>
+            <thead>
+              <tr>
+                <th>Tovar</th>
+                <th style={{ textAlign: 'right' }}>Tizimda</th>
+                <th style={{ textAlign: 'right' }}>Sanaldi</th>
+                <th style={{ textAlign: 'right' }}>Farq</th>
+                <th style={{ textAlign: 'right' }}>Qiymat farqi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map(p => {
+                const c = counts[p.id];
+                const has = c !== undefined && c !== '';
+                const diff = has ? Number(c) - p.stock : 0;
+                const val = diff * (Number(p.cost_price) || 0);
+                const color = !has || diff === 0 ? 'var(--color-neutral-500)' : diff < 0 ? 'var(--dang)' : 'var(--ok)';
+                return (
+                  <tr key={p.id}>
+                    <td style={{ fontWeight: 500 }}>{p.name}</td>
+                    <td className="num" style={{ textAlign: 'right', color: 'var(--color-neutral-400)' }}>{p.stock}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      <input
+                        className="input num" inputMode="numeric" value={c ?? ''}
+                        onChange={e => setCounts(prev => ({ ...prev, [p.id]: e.target.value.replace(/\D/g, '') }))}
+                        placeholder={String(p.stock)}
+                        style={{ width: 64, minHeight: 28, padding: '4px 8px', textAlign: 'right', display: 'inline-block' }}
+                      />
+                    </td>
+                    <td className="num" style={{ textAlign: 'right', fontWeight: has && diff !== 0 ? 600 : 400, color }}>
+                      {has ? (diff > 0 ? `+${diff}` : diff) : '—'}
+                    </td>
+                    <td className="num" style={{ textAlign: 'right', color }}>
+                      {has && diff !== 0 ? `${val > 0 ? '+' : '−'}${money(Math.abs(val))}` : has ? '0' : '—'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {totals.counted > 0 && (
+        <div style={{ display: 'flex', gap: 12 }}>
+          <SummaryBox label="Kamomad" variant="dang"
+            value={`${totals.shortQty} dona · ${money(totals.shortVal)}`} />
+          <SummaryBox label="Ortiqcha" variant="ok"
+            value={`+${totals.overQty} dona · +${money(totals.overVal)}`} />
+        </div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <Btn variant="primary" icon="floppy-disk" onClick={save} disabled={totals.counted === 0}>Saqlash</Btn>
+        <span style={{ fontSize: 11.5, color: 'var(--warn)', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Icon name="warning" size={13} />
+          Natijalar hozircha bazaga saqlanmaydi — faqat joriy sessiyada.
+        </span>
+      </div>
+    </Card>
+  );
+}
+
+function SummaryBox({ label, value, variant }) {
+  return (
+    <div style={{
+      flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      padding: '11px 13px', borderRadius: 9, background: `var(--${variant}bg)`,
+    }}>
+      <span style={{ fontSize: 12, color: `var(--${variant})` }}>{label}</span>
+      <span className="num" style={{ fontSize: 14, fontWeight: 600, color: `var(--${variant})` }}>{value}</span>
+    </div>
+  );
+}
+
+function ScreenOnlyWarning({ text }) {
+  return (
+    <div style={{
+      display: 'flex', gap: 9, alignItems: 'flex-start',
+      padding: '10px 12px', borderRadius: 8, background: 'var(--warnbg)',
+    }}>
+      <Icon name="warning" fill size={14} color="var(--warn)" style={{ marginTop: 1 }} />
+      <span style={{ fontSize: 11.5, color: 'var(--warn)', lineHeight: 1.45 }}>{text}</span>
+    </div>
+  );
+}

@@ -1,83 +1,169 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth, ROLE_NAV, useTranslation } from '../context/AuthContext';
+import { Icon, Btn, Avatar } from './UI';
+
+/* Nocturne sidebar — 236px ochiq, 66px yig'ilgan holatda.
+   Aktiv element: akcent rangi + fill ikon, fon yo'q (Nocturne akcentni
+   to'ldirish emas, chiziq va belgi sifatida ishlatadi). */
+
+const initialsOf = (name = '') =>
+  name.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '??';
 
 export default function Sidebar() {
-  const { user, logout } = useAuth();
+  const { user, logout, alerts, hasPermission } = useAuth();
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const nav = ROLE_NAV[user?.role] || [];
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem('mybazzar_sidebar_collapsed') === '1'
+  );
+
+  // Xodimga berilgan ruxsatlarga ko'ra menyu qisqaradi
+  const nav = (ROLE_NAV[user?.role] || []).filter(i => !i.perm || hasPermission(i.perm));
+
+  const toggle = () => {
+    setCollapsed(c => {
+      localStorage.setItem('mybazzar_sidebar_collapsed', c ? '0' : '1');
+      return !c;
+    });
+  };
 
   const handleLogout = () => { logout(); navigate('/login'); };
 
-  const roleColors = {
-    creator: 'linear-gradient(135deg,#F59E0B,#D97706)',
-    owner: 'linear-gradient(135deg,#3B82F6,#2563EB)',
-    manager: 'linear-gradient(135deg,#10B981,#059669)',
-    cashier: 'linear-gradient(135deg,#A78BFA,#7C3AED)',
-  };
-
-  const roleBadgeColor = {
-    creator: '#F59E0B',
-    owner: '#3B82F6',
-    manager: '#10B981',
-    cashier: '#A78BFA',
-  };
-
   return (
-    <aside style={{ width: 224, minWidth: 224, background: 'linear-gradient(180deg, rgba(26, 35, 50, 0.95) 0%, rgba(13, 17, 23, 0.98) 100%)', borderRight: '1px solid rgba(255,255,255,0.05)', backdropFilter: 'blur(10px)', display: 'flex', flexDirection: 'column', height: '100vh', position: 'sticky', top: 0, zIndex: 10 }}>
-
-      {/* Logo */}
-      <div style={{ padding: '18px 16px 16px', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <img src="/logo.png" alt="MyBazzar" style={{ width: 36, height: 36, borderRadius: 10, objectFit: 'cover', boxShadow: '0 0 18px rgba(59,130,246,0.35)', flexShrink: 0 }} />
-          <span style={{ fontSize: 16, fontWeight: 900, background: 'linear-gradient(90deg,#fff,#22D3EE)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>MyBazzar</span>
+    <aside
+      style={{
+        width: collapsed ? 'var(--sidebar-w-collapsed)' : 'var(--sidebar-w)',
+        flex: 'none',
+        display: 'flex',
+        flexDirection: 'column',
+        borderRight: '1px solid var(--color-divider)',
+        padding: '14px 10px',
+        gap: 4,
+        transition: 'width .16s ease',
+      }}
+    >
+      {/* ── Brend ── */}
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '6px 10px 16px',
+          justifyContent: collapsed ? 'center' : 'flex-start',
+        }}
+      >
+        <div
+          onClick={toggle}
+          title={collapsed ? 'Menyuni ochish' : 'Menyuni yig\'ish'}
+          style={{
+            width: 30, height: 30, flex: 'none', borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--color-accent)', color: 'var(--color-accent)',
+            display: 'grid', placeItems: 'center', cursor: 'pointer',
+          }}
+        >
+          <Icon name="storefront" fill size={17} />
         </div>
-        {user?.storeName && (
-          <div style={{ marginTop: 8, fontSize: 11, color: 'var(--t2)', padding: '4px 10px', background: 'var(--s2)', borderRadius: 8, display: 'inline-block' }}>
-            🏪 {user.storeName}
+        {!collapsed && (
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 500, fontSize: 15, letterSpacing: '-0.01em' }}>MyBazzar</div>
+            {user?.storeName && (
+              <div style={{
+                fontSize: 10, color: 'var(--color-neutral-500)',
+                letterSpacing: '.06em', textTransform: 'uppercase',
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }}>
+                {user.storeName}
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {/* Nav */}
-      <nav style={{ flex: 1, overflowY: 'auto', padding: '10px 8px' }}>
-        {nav.map(item => (
-          <NavLink key={item.to} to={item.to} end={item.to === '/creator'}
-            style={({ isActive }) => ({
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '9px 12px', margin: '2px 0', borderRadius: 10,
-              textDecoration: 'none', fontSize: 13,
-              fontWeight: isActive ? 700 : 500,
-              color: isActive ? roleBadgeColor[user?.role] || '#3B82F6' : 'var(--t2)',
-              background: isActive ? (roleBadgeColor[user?.role] || '#3B82F6') + '14' : 'transparent',
-              transition: 'all .15s', position: 'relative',
-            })}
-          >
-            {({ isActive }) => (
-              <>
-                {isActive && <div style={{ position: 'absolute', left: -8, top: '50%', transform: 'translateY(-50%)', width: 3, height: 18, background: roleBadgeColor[user?.role] || '#3B82F6', borderRadius: 2 }} />}
-                <span style={{ fontSize: 16, width: 22, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
-                <span style={{ flex: 1 }}>{t(item.label)}</span>
-                {item.badge && <span style={{ background: '#F43F5E', color: '#fff', fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 20 }}>{item.badge}</span>}
-              </>
-            )}
-          </NavLink>
-        ))}
+      {/* ── Menyu ── */}
+      <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
+        {nav.map(item => {
+          const count = item.badge ? alerts?.[item.badge] : 0;
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.to === '/creator'}
+              title={t(item.label)}
+              style={({ isActive }) => ({
+                display: 'flex', alignItems: 'center', gap: 11,
+                padding: '9px 11px', borderRadius: 'var(--radius-md)',
+                fontSize: 14, textDecoration: 'none',
+                color: isActive ? 'var(--color-accent)' : 'var(--color-neutral-400)',
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                transition: 'color .12s ease, background .12s ease',
+                position: 'relative',
+              })}
+              className="nav-item"
+            >
+              {({ isActive }) => (
+                <>
+                  <Icon name={item.icon} fill={isActive} size={18} />
+                  {!collapsed && <span style={{ flex: 1 }}>{t(item.label)}</span>}
+                  {!collapsed && count > 0 && (
+                    <span style={{
+                      fontSize: 10, fontWeight: 600, minWidth: 17, height: 17, padding: '0 5px',
+                      borderRadius: 9, display: 'inline-grid', placeItems: 'center',
+                      background: 'var(--warnbg)', color: 'var(--warn)',
+                    }}>
+                      {count}
+                    </span>
+                  )}
+                  {/* Yig'ilgan holatda raqam sig'maydi — nuqta bilan belgilanadi */}
+                  {collapsed && count > 0 && (
+                    <span style={{
+                      position: 'absolute', top: 7, right: 9,
+                      width: 7, height: 7, borderRadius: '50%', background: 'var(--warn)',
+                    }} />
+                  )}
+                </>
+              )}
+            </NavLink>
+          );
+        })}
       </nav>
 
-      {/* User card */}
-      <div style={{ padding: '12px 10px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-        <div className="glass" style={{ borderRadius: 12, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 10, background: roleColors[user?.role] || 'var(--s2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0, boxShadow: `0 0 12px ${roleBadgeColor[user?.role]}44` }}>
-            {user?.icon}
-          </div>
-          <div style={{ flex: 1, overflow: 'hidden' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#fff' }}>{user?.name}</div>
-            <div style={{ fontSize: 10, padding: '2px 6px', background: roleBadgeColor[user?.role] + '22', color: roleBadgeColor[user?.role], borderRadius: 20, display: 'inline-block', fontWeight: 700, marginTop: 2 }}>{user?.label}</div>
-          </div>
-          <button className="btn-primary" onClick={handleLogout} title="Chiqish" style={{ background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.2)', color: '#F43F5E', cursor: 'pointer', fontSize: 14, padding: '6px 8px', borderRadius: 8, fontFamily: 'Outfit,sans-serif' }}>↩</button>
-        </div>
+      <div style={{ flex: 1 }} />
+
+      {/* ── Foydalanuvchi ── */}
+      <div
+        style={{
+          borderTop: '1px solid var(--color-divider)',
+          paddingTop: 10,
+          display: 'flex', alignItems: 'center', gap: 10,
+          paddingLeft: 6, paddingRight: 6,
+          justifyContent: collapsed ? 'center' : 'flex-start',
+        }}
+      >
+        <Avatar initials={initialsOf(user?.name)} size={32} />
+        {!collapsed && (
+          <>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontSize: 13, fontWeight: 500,
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }}>
+                {user?.name}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>{user?.label}</div>
+            </div>
+            <div style={{ display: 'flex', gap: 2 }}>
+              <Btn
+                variant="ghost" iconOnly icon="gear" title="Sozlamalar"
+                onClick={() => navigate('/settings')}
+                style={{ width: 30, height: 30, color: 'var(--color-neutral-400)' }}
+              />
+              <Btn
+                variant="ghost" iconOnly icon="sign-out" title="Chiqish"
+                onClick={handleLogout}
+                style={{ width: 30, height: 30, color: 'var(--color-neutral-400)' }}
+              />
+            </div>
+          </>
+        )}
       </div>
     </aside>
   );

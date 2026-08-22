@@ -2,12 +2,18 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
+import { Icon } from './components/UI';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import POS from './pages/POS';
 import Inventory from './pages/Inventory';
-import { Employees, Analytics, Reports, Settings } from './pages/OtherPages';
-import { CRM, Nasiya, ChekPrinter } from './pages/NewModules';
+import Employees from './pages/Employees';
+import Analytics from './pages/Analytics';
+import Reports from './pages/Reports';
+import Settings from './pages/Settings';
+import CRM from './pages/CRM';
+import Nasiya from './pages/Nasiya';
+import ChekPrinter from './pages/ChekPrinter';
 import Finance from './pages/Finance';
 import CreatorPanel from './pages/CreatorPanel';
 import LandingPage from './pages/LandingPage';
@@ -32,10 +38,15 @@ function RoleRedirect() {
 
 function NoAccess() {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 16 }}>
-      <div style={{ fontSize: 64 }}>🔒</div>
-      <div style={{ fontSize: 22, fontWeight: 800 }}>Ruxsat yo'q</div>
-      <div style={{ fontSize: 14, color: 'var(--t2)' }}>Bu sahifaga kirishga ruxsatingiz yo'q</div>
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      justifyContent: 'center', height: '60vh', gap: 12, textAlign: 'center',
+    }}>
+      <Icon name="lock-simple" size={34} color="var(--color-neutral-600)" />
+      <div style={{ fontSize: 17, fontWeight: 500 }}>Ruxsat yo'q</div>
+      <div style={{ fontSize: 13, color: 'var(--color-neutral-500)' }}>
+        Bu bo'limga kirish huquqingiz yo'q. Do'kon egasiga murojaat qiling.
+      </div>
     </div>
   );
 }
@@ -59,7 +70,7 @@ function AppRoutes() {
         <Route path="dashboard" element={<PrivateRoute permission="dashboard_owner"><Dashboard /></PrivateRoute>} />
         <Route path="pos" element={<POS />} />
         <Route path="inventory" element={<PrivateRoute permission="inventory"><Inventory /></PrivateRoute>} />
-        <Route path="customers" element={<PrivateRoute permission="dashboard_owner"><CRM /></PrivateRoute>} />
+        <Route path="customers" element={<PrivateRoute permission="crm"><CRM /></PrivateRoute>} />
         <Route path="dealer" element={<PrivateRoute permission="dealer_dashboard"><DealerPortal /></PrivateRoute>} />
         <Route path="nasiya" element={<PrivateRoute permission="nasiya"><Nasiya /></PrivateRoute>} />
         <Route path="finance" element={<PrivateRoute permission="finance"><Finance /></PrivateRoute>} />

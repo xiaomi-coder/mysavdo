@@ -1,121 +1,201 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, useTranslation } from '../context/AuthContext';
-import { supabase } from '../utils/supabaseClient';
+import { Icon, Btn, Avatar } from './UI';
+
+/* Nocturne topbar — qidiruv, sinxronlash holati, sana, bildirishnomalar,
+   foydalanuvchi. Sahifa sarlavhasi bu yerda emas: har sahifa o'zining
+   PageHeader ini chizadi (dizayndagidek). */
+
+const initialsOf = (name = '') =>
+  name.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '??';
+
+const WEEKDAYS = ['yakshanba', 'dushanba', 'seshanba', 'chorshanba', 'payshanba', 'juma', 'shanba'];
+const MONTHS = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'];
+
+function formatDate(d) {
+  return `${d.getDate()}-${MONTHS[d.getMonth()]}, ${WEEKDAYS[d.getDay()]}`;
+}
 
 export default function Topbar() {
   const location = useLocation();
-  const { user, pendingTxns } = useAuth();
+  const navigate = useNavigate();
+  const { user, pendingTxns, alerts, settings } = useAuth();
   const { t } = useTranslation();
   const [showNotif, setShowNotif] = useState(false);
-  const [stockAlerts, setStockAlerts] = useState({ out: 0, low: 0 });
   const notifRef = useRef(null);
 
-  // Close dropdown on click outside
   useEffect(() => {
-    const handleClick = (e) => {
+    const onClick = e => {
       if (notifRef.current && !notifRef.current.contains(e.target)) setShowNotif(false);
     };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
   }, []);
 
-  useEffect(() => {
-    if (user?.store_id) {
-      loadStockAlerts(user.store_id);
-    }
-  }, [user]);
+  // Marshrut o'zgarsa popover yopiladi
+  useEffect(() => { setShowNotif(false); }, [location.pathname]);
 
-  const loadStockAlerts = async (storeId) => {
-    const { data } = await supabase.from('products').select('stock').eq('store_id', storeId).lte('stock', 10);
-    if (data) {
-      const out = data.filter(p => p.stock === 0).length;
-      const low = data.filter(p => p.stock > 0 && p.stock <= 10).length;
-      setStockAlerts({ out, low });
-    }
-  };
+  const pending = pendingTxns?.length || 0;
+  const offline = pending > 0 || settings?.isOnline === false;
 
-  const getPageTitle = (path) => {
-    switch (path) {
-      case '/dashboard': return `📊 ${t('dashboard')}`;
-      case '/pos': return `🛒 ${t('pos')}`;
-      case '/inventory': return `📦 ${t('inventory')}`;
-      case '/customers': return `👥 ${t('crm')}`;
-      case '/nasiya': return `💸 ${t('nasiya')}`;
-      case '/finance': return `💰 ${t('finance')}`;
-      case '/employees': return `🧑‍💼 ${t('employees')}`;
-      case '/reports': return `📈 ${t('reports')}`;
-      case '/analytics': return `🤖 ${t('aiAnalytics')}`;
-      case '/chek': return `🖨️ ${t('printer')}`;
-      case '/settings': return `⚙️ ${t('settings')}`;
-      default: return `📊 ${t('dashboard')}`;
-    }
-  };
-
-  const title = location.pathname.startsWith('/creator') ? '👑 Creator Panel' : getPageTitle(location.pathname);
-
-  // Dynamic Notifications
   const notifs = [];
-
-  if (stockAlerts.out > 0) {
-    notifs.push({ icon: '❌', text: `${stockAlerts.out} ta mahsulot tugadi!`, time: 'Hozir', color: '#F43F5E' });
+  if (alerts?.outOfStock > 0) {
+    notifs.push({
+      icon: 'warning-circle', color: 'var(--dang)', unread: true,
+      text: <>Tugagan mahsulot: <b style={{ fontWeight: 500 }}>{alerts.outOfStockNames[0] || `${alerts.outOfStock} ta`}</b></>,
+      sub: alerts.outOfStock > 1 ? `Jami ${alerts.outOfStock} ta` : 'Hozir',
+      to: '/inventory',
+    });
   }
-  if (stockAlerts.low > 0) {
-    notifs.push({ icon: '⚠️', text: `${stockAlerts.low} ta mahsulot qoldig'i kam (<10)`, time: 'Hozir', color: '#F59E0B' });
+  if (alerts?.lowStock > 0) {
+    notifs.push({
+      icon: 'warning', color: 'var(--warn)', unread: true,
+      text: <>Kam qoldiq: <b style={{ fontWeight: 500 }}>{alerts.lowStockNames[0] || `${alerts.lowStock} ta mahsulot`}</b></>,
+      sub: `Jami ${alerts.lowStock} ta mahsulot`,
+      to: '/inventory',
+    });
   }
-  if (pendingTxns?.length > 0) {
-    notifs.push({ icon: '📶', text: `${pendingTxns.length} ta sotuv offline xotirada. Internet kutilmoqda.`, time: 'Kutilmoqda', color: '#3B82F6' });
+  if (alerts?.overdueDebts > 0) {
+    notifs.push({
+      icon: 'clock-countdown', color: 'var(--dang)', unread: true,
+      text: <>Muddati o‘tgan nasiya: <b style={{ fontWeight: 500 }}>{alerts.overdueDebts} mijoz</b></>,
+      sub: `${alerts.overdueAmount.toLocaleString('ru-RU')} so‘m`,
+      to: '/nasiya',
+    });
+  }
+  if (pending > 0) {
+    notifs.push({
+      icon: 'arrows-clockwise', color: 'var(--info)', unread: false,
+      text: `${pending} ta oflayn sotuv sinxronlashni kutmoqda`,
+      sub: 'Internet ulanishi kutilmoqda',
+    });
   }
 
-  const hasUnread = notifs.length > 0;
-
-  const roleColors = { creator: '#F59E0B', owner: '#3B82F6', manager: '#10B981', cashier: '#A78BFA' };
-  const accent = roleColors[user?.role] || '#3B82F6';
+  const unread = notifs.filter(n => n.unread).length;
 
   return (
-    <header className="glass" style={{ display: 'flex', alignItems: 'center', padding: '10px 22px', borderBottom: '1px solid rgba(255,255,255,0.05)', gap: 14, position: 'sticky', top: 0, zIndex: 100, minHeight: 56 }}>
-      <h2 style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.3px', flex: 1, filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))' }}>{title}</h2>
+    <header
+      style={{
+        display: 'flex', alignItems: 'center', gap: 16,
+        padding: '12px 24px',
+        borderBottom: '1px solid var(--color-divider)',
+        position: 'relative', flex: 'none',
+      }}
+    >
+      {/* Qidiruv — hali ulanmagan, dizaynda ham shunday belgilangan */}
+      <div
+        title="Qidiruv hozircha ulanmagan"
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          width: 340, minHeight: 34, padding: '0 12px',
+          borderRadius: 'var(--radius-md)',
+          border: '1px solid var(--color-divider)',
+          background: 'var(--color-surface)',
+          color: 'var(--color-neutral-600)',
+          cursor: 'not-allowed', opacity: 0.7,
+        }}
+      >
+        <Icon name="magnifying-glass" size={15} />
+        <span style={{ fontSize: 13, flex: 1 }}>{t('search')}…</span>
+        <span style={{
+          fontSize: 10, letterSpacing: '.05em', textTransform: 'uppercase',
+          padding: '2px 6px', borderRadius: 'var(--radius-sm)',
+          background: 'color-mix(in srgb, var(--color-text) 6%, transparent)',
+        }}>
+          Tez orada
+        </span>
+      </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {/* Search */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: '7px 13px', backdropFilter: 'blur(4px)' }}>
-          <span style={{ fontSize: 13, color: 'var(--t2)' }}>🔍</span>
-          <input placeholder={t('search')} style={{ background: 'none', border: 'none', outline: 'none', color: 'var(--t1)', fontSize: 13, fontFamily: 'Outfit,sans-serif', width: 150 }} className="fast-transition" onFocus={(e) => e.target.parentElement.style.borderColor = 'rgba(59,130,246,0.5)'} onBlur={(e) => e.target.parentElement.style.borderColor = 'rgba(255,255,255,0.05)'} />
-        </div>
+      <div style={{ flex: 1 }} />
 
-        {/* Notif */}
-        <div style={{ position: 'relative' }} ref={notifRef}>
-          <button className="btn-primary" onClick={() => setShowNotif(!showNotif)} style={{ width: 36, height: 36, background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, cursor: 'pointer', position: 'relative', color: '#fff' }}>
-            🔔
-            {hasUnread && <div style={{ position: 'absolute', top: 7, right: 7, width: 8, height: 8, background: '#F43F5E', borderRadius: '50%', border: '2px solid var(--s1)', animation: 'pulse 2s infinite' }} />}
-          </button>
-          <style>{`@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(244,63,94,0.7); } 70% { box-shadow: 0 0 0 4px rgba(244,63,94,0); } 100% { box-shadow: 0 0 0 0 rgba(244,63,94,0); } }`}</style>
-          {showNotif && (
-            <div className="glass-card" style={{ position: 'absolute', right: 0, top: 44, width: 320, borderRadius: 14, zIndex: 200, animation: 'slideUp .15s ease-out forwards' }}>
-              <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.05)', fontWeight: 700, fontSize: 13, color: '#fff' }}>{t('notifications')} {hasUnread && `(${notifs.length})`}</div>
-              {notifs.length === 0 ? (
-                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--t2)', fontSize: 13 }}>Ogohlantirishlar yo'q</div>
-              ) : notifs.map((n, i) => (
-                <div key={i} style={{ padding: '11px 16px', display: 'flex', gap: 10, borderBottom: i < notifs.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none', cursor: 'pointer', transition: 'background 0.15s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                  <span style={{ fontSize: 17 }}>{n.icon}</span>
-                  <div>
-                    <div style={{ fontSize: 12, lineHeight: 1.4, color: '#fff' }}>{n.text}</div>
-                    <div style={{ fontSize: 10, color: 'var(--t2)', marginTop: 2 }}>{n.time}</div>
-                  </div>
-                </div>
-              ))}
+      {/* Sinxronlash holati */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 7,
+        padding: '5px 11px', borderRadius: 16, fontSize: 12,
+        background: offline ? 'var(--warnbg)' : 'var(--okbg)',
+        color: offline ? 'var(--warn)' : 'var(--ok)',
+      }}>
+        <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'currentColor' }} />
+        <Icon name="arrows-clockwise" size={13} />
+        {pending > 0
+          ? `${pending} ta sotuv sinxronlashni kutmoqda`
+          : settings?.isOnline === false ? 'Oflayn rejim' : 'Onlayn — hammasi sinxron'}
+      </div>
+
+      {/* Sana */}
+      <div style={{ fontSize: 13, color: 'var(--color-neutral-400)', display: 'flex', alignItems: 'center', gap: 7 }}>
+        <Icon name="calendar-blank" size={15} />
+        {formatDate(new Date())}
+      </div>
+
+      {/* Bildirishnomalar */}
+      <div style={{ position: 'relative' }} ref={notifRef}>
+        <Btn
+          variant="secondary" iconOnly icon="bell" title="Bildirishnomalar"
+          onClick={() => setShowNotif(v => !v)}
+          style={{ position: 'relative' }}
+        />
+        {unread > 0 && (
+          <span style={{
+            position: 'absolute', top: -4, right: -4,
+            minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8,
+            background: 'var(--dang)', color: 'var(--color-bg)',
+            fontSize: 10, fontWeight: 700, display: 'grid', placeItems: 'center',
+            pointerEvents: 'none',
+          }}>
+            {unread}
+          </span>
+        )}
+
+        {showNotif && (
+          <div style={{
+            position: 'absolute', top: 46, right: 0, width: 340, zIndex: 50,
+            borderRadius: 'var(--radius-lg)', background: 'var(--color-surface)',
+            boxShadow: 'var(--shadow-lg)', overflow: 'hidden',
+            animation: 'rise .14s ease-out',
+          }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '12px 14px', borderBottom: '1px solid var(--color-divider)',
+            }}>
+              <span style={{ fontSize: 13, fontWeight: 500 }}>{t('notifications')}</span>
             </div>
-          )}
-        </div>
 
-        {/* Date */}
-        <div style={{ padding: '7px 12px', background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 9, fontSize: 12, color: 'var(--t2)', whiteSpace: 'nowrap' }}>
-          📅 {new Date().toLocaleDateString('uz-UZ')}
-        </div>
+            {notifs.length === 0 ? (
+              <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--color-neutral-500)' }}>
+                Ogohlantirishlar yo‘q
+              </div>
+            ) : notifs.map((n, i) => (
+              <div
+                key={i}
+                onClick={() => { if (n.to) { navigate(n.to); setShowNotif(false); } }}
+                style={{
+                  display: 'flex', gap: 11, padding: '11px 14px',
+                  background: n.unread ? 'color-mix(in srgb, var(--color-text) 3%, transparent)' : 'transparent',
+                  cursor: n.to ? 'pointer' : 'default',
+                }}
+              >
+                <Icon name={n.icon} fill={n.unread} size={17} color={n.color} style={{ marginTop: 1 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, color: n.unread ? 'var(--color-text)' : 'var(--color-neutral-300)' }}>{n.text}</div>
+                  <div style={{ fontSize: 11, color: 'var(--color-neutral-500)', marginTop: 2 }}>{n.sub}</div>
+                </div>
+                {n.unread && (
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--color-accent)', marginTop: 5, flex: 'none' }} />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
-        {/* Role badge */}
-        <div style={{ padding: '5px 12px', background: accent + '18', border: `1px solid ${accent}33`, borderRadius: 9, fontSize: 11, fontWeight: 700, color: accent, boxShadow: `0 0 10px ${accent}22` }}>
-          {user?.icon} {user?.label}
+      {/* Foydalanuvchi */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        <Avatar initials={initialsOf(user?.name)} size={30} />
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.2 }}>{user?.name}</div>
+          <div style={{ fontSize: 10.5, color: 'var(--color-neutral-500)', lineHeight: 1.2 }}>{user?.label}</div>
         </div>
       </div>
     </header>

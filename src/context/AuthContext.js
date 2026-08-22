@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../utils/supabaseClient';
 
 // Simulated Telegram Toast for global use
@@ -29,7 +29,7 @@ export const ROLES = {
     label: "Do'kon Egasi",
     icon: '🏪',
     color: '#3B82F6',
-    permissions: ['dashboard_owner', 'pos', 'inventory', 'employees', 'reports', 'analytics', 'nasiya', 'chek', 'settings', 'finance'],
+    permissions: ['dashboard_owner', 'pos', 'inventory', 'crm', 'employees', 'reports', 'analytics', 'nasiya', 'chek', 'settings', 'finance'],
   },
   manager: {
     label: 'Manager',
@@ -51,42 +51,42 @@ export const ROLES = {
   },
 };
 
+/* Sidebar menyusi — ikonlar Phosphor nomlari (index.js da ulangan).
+   `badge` — jonli hisoblagich kaliti, AuthContext.alerts dan o'qiladi. */
 export const ROLE_NAV = {
   creator: [
-    { to: '/creator', icon: '📊', label: 'dashboard' },
-    { to: '/creator/stores', icon: '🏪', label: "Do'konlar" },
-    { to: '/creator/users', icon: '👥', label: 'Foydalanuvchilar' },
-    { to: '/creator/stats', icon: '📈', label: 'Umumiy Statistika' },
-    { to: '/creator/settings', icon: '⚙️', label: 'settings' },
+    { to: '/creator', icon: 'squares-four', label: 'dashboard' },
+    { to: '/creator/stores', icon: 'storefront', label: "Do'konlar" },
+    { to: '/creator/users', icon: 'users-three', label: 'Foydalanuvchilar' },
+    { to: '/creator/stats', icon: 'chart-bar', label: 'Umumiy Statistika' },
+    { to: '/creator/settings', icon: 'gear', label: 'settings' },
   ],
   owner: [
-    { to: '/dashboard', icon: '📊', label: 'dashboard' },
-    { to: '/pos', icon: '🛒', label: 'pos' },
-    { to: '/inventory', icon: '📦', label: 'inventory' },
-    { to: '/nasiya', icon: '💸', label: 'nasiya' },
-    { to: '/finance', icon: '💰', label: 'finance' },
-    { to: '/customers', icon: '👥', label: 'crm' },
-    { to: '/employees', icon: '🧑‍💼', label: 'employees' },
-    { to: '/reports', icon: '📈', label: 'reports' },
-    { to: '/analytics', icon: '🤖', label: 'aiAnalytics' },
-    { to: '/chek', icon: '🖨️', label: 'printer' },
-    { to: '/settings', icon: '⚙️', label: 'settings' },
+    { to: '/dashboard', icon: 'squares-four', label: 'dashboard', perm: 'dashboard_owner' },
+    { to: '/pos', icon: 'cash-register', label: 'pos', perm: 'pos' },
+    { to: '/inventory', icon: 'package', label: 'inventory', badge: 'lowStock', perm: 'inventory' },
+    { to: '/customers', icon: 'users-three', label: 'crm', perm: 'crm' },
+    { to: '/nasiya', icon: 'hand-coins', label: 'nasiya', badge: 'urgentDebts', perm: 'nasiya' },
+    { to: '/finance', icon: 'wallet', label: 'finance', perm: 'finance' },
+    { to: '/reports', icon: 'chart-bar', label: 'reports', perm: 'reports' },
+    { to: '/employees', icon: 'identification-badge', label: 'employees', perm: 'employees' },
+    { to: '/settings', icon: 'gear', label: 'settings', perm: 'settings' },
   ],
   manager: [
-    { to: '/dashboard', icon: '📊', label: 'dashboard' },
-    { to: '/pos', icon: '🛒', label: 'pos' },
-    { to: '/inventory', icon: '📦', label: 'inventory' },
-    { to: '/nasiya', icon: '💸', label: 'nasiya' },
-    { to: '/finance', icon: '💰', label: 'finance' },
-    { to: '/reports', icon: '📈', label: 'reports' },
-    { to: '/chek', icon: '🖨️', label: 'printer' },
+    { to: '/dashboard', icon: 'squares-four', label: 'dashboard', perm: 'dashboard_owner' },
+    { to: '/pos', icon: 'cash-register', label: 'pos', perm: 'pos' },
+    { to: '/inventory', icon: 'package', label: 'inventory', badge: 'lowStock', perm: 'inventory' },
+    { to: '/nasiya', icon: 'hand-coins', label: 'nasiya', badge: 'urgentDebts', perm: 'nasiya' },
+    { to: '/finance', icon: 'wallet', label: 'finance', perm: 'finance' },
+    { to: '/reports', icon: 'chart-bar', label: 'reports', perm: 'reports' },
+    { to: '/chek', icon: 'printer', label: 'printer', perm: 'chek' },
   ],
   cashier: [
-    { to: '/pos', icon: '🛒', label: 'pos' },
-    { to: '/chek', icon: '🖨️', label: 'printer' },
+    { to: '/pos', icon: 'cash-register', label: 'pos', perm: 'pos' },
+    { to: '/chek', icon: 'printer', label: 'printer', perm: 'chek' },
   ],
   dealer: [
-    { to: '/dealer', icon: '📊', label: 'Mening Profilim' },
+    { to: '/dealer', icon: 'squares-four', label: 'Mening Profilim' },
   ],
 };
 
@@ -136,6 +136,48 @@ export function AuthProvider({ children }) {
     window.addEventListener('offline', handleOffline);
     return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
   }, []);
+
+  /* ── Jonli ogohlantirishlar ────────────────────────────────────────────
+     Sidebar badge'lari, Topbar bildirishnomalari va Dashboard'ning
+     "E'tibor talab qiladi" paneli — hammasi shu bitta so'rovdan oziqlanadi,
+     har biri alohida so'rov yubormasligi uchun. */
+  const [alerts, setAlerts] = useState({
+    outOfStock: 0, lowStock: 0, urgentDebts: 0, overdueDebts: 0, overdueAmount: 0,
+    outOfStockNames: [], lowStockNames: [],
+  });
+
+  const refreshAlerts = useCallback(async () => {
+    if (!user?.store_id) return;
+    const [prodRes, debtRes] = await Promise.all([
+      supabase.from('products').select('name, stock, minStock').eq('store_id', user.store_id),
+      supabase.from('debts').select('due_date, date, amount, paid_amount').eq('store_id', user.store_id).eq('status', "To'lanmagan"),
+    ]);
+
+    const prods = prodRes.data || [];
+    const out = prods.filter(p => (p.stock ?? 0) <= 0);
+    // Chegara: mahsulotning o'z minStock i, belgilanmagan bo'lsa 5 dona
+    const low = prods.filter(p => (p.stock ?? 0) > 0 && (p.stock ?? 0) <= (p.minStock || 5));
+
+    const now = Date.now();
+    const week = 7 * 24 * 60 * 60 * 1000;
+    const debts = (debtRes.data || []).map(d => {
+      const due = d.due_date ? new Date(d.due_date) : new Date(new Date(d.date).getTime() + 30 * 24 * 60 * 60 * 1000);
+      return { due: due.getTime(), rest: Number(d.amount || 0) - Number(d.paid_amount || 0) };
+    });
+    const overdue = debts.filter(d => d.due < now);
+
+    setAlerts({
+      outOfStock: out.length,
+      lowStock: low.length,
+      urgentDebts: debts.filter(d => d.due - now <= week).length,
+      overdueDebts: overdue.length,
+      overdueAmount: overdue.reduce((s, d) => s + d.rest, 0),
+      outOfStockNames: out.slice(0, 5).map(p => p.name),
+      lowStockNames: low.slice(0, 5).map(p => `${p.name} — ${p.stock} dona`),
+    });
+  }, [user]);
+
+  useEffect(() => { refreshAlerts(); }, [refreshAlerts]);
 
   const toggleSetting = (k) => setSettings(p => ({ ...p, [k]: !p[k] }));
 
@@ -197,6 +239,11 @@ export function AuthProvider({ children }) {
       }
       if (data.password !== password) return { error: "Parol noto'g'ri" };
 
+      // Xodimlar sahifasidan o'chirilgan hisob tizimga kira olmaydi
+      if (data.is_active === false) {
+        return { error: "Sizning hisobingiz vaqtincha to'xtatilgan. Do'kon egasiga murojaat qiling." };
+      }
+
       // Block if store is inactive
       if (data.role !== 'creator' && data.stores && data.stores.is_active === false) {
         return { error: "Sizning do'koningiz faoliyati to'xtatilgan. Iltimos, ma'muriyat bilan bog'laning." };
@@ -227,7 +274,7 @@ export function AuthProvider({ children }) {
   const hasPermission = (perm) => user?.permissions?.includes(perm);
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, hasPermission, sendTgAlert, settings, toggleSetting, addPendingTxn, pendingTxns, setSettings }}>
+    <AuthContext.Provider value={{ user, login, logout, hasPermission, sendTgAlert, settings, toggleSetting, addPendingTxn, pendingTxns, setSettings, alerts, refreshAlerts }}>
       {children}
       {tgAlert && <TelegramToast msg={tgAlert} onClose={() => setTgAlert(null)} />}
     </AuthContext.Provider>

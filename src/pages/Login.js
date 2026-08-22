@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Icon, Btn, Field } from '../components/UI';
 import { useAuth } from '../context/AuthContext';
 
-const ROLE_COLORS = {
-  creator: '#F59E0B',
-  owner: '#3B82F6',
-  manager: '#10B981',
-  cashier: '#A78BFA',
-};
+/* ══════════════════════════════════════════════════════════════════════════
+   Kirish sahifasi
+
+   Dizayn maketida bu ekran chizilmagan — Nocturne tokenlari asosida
+   qolgan sahifalarga mos qilib yasaldi.
+   ══════════════════════════════════════════════════════════════════════ */
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -15,106 +16,107 @@ export default function Login() {
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const { login, sendTgAlert } = useAuth();
+
+  const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogin = async () => {
-    if (!email) { setError("Email kiriting"); return; }
-    if (!password) { setError("Parol kiriting"); return; }
-    setLoading(true); setError('');
-    const result = await login(email, password);
-    setLoading(false);
-    if (result.error) { setError(result.error); return; }
+  const submit = async (e) => {
+    e?.preventDefault();
+    if (!email.trim()) return setError('Email yoki login kiriting');
+    if (!password) return setError('Parol kiriting');
 
-    // Simulate Telegram IP Alert
-    sendTgAlert(`🔒 Xavfsizlik Alerti!\nQurilma: Mac OS\nIP: 192.168.1.${Math.floor(Math.random() * 255)}\nTizimga kirildi: ${email}`);
-    setTimeout(() => navigate('/'), 2000);
+    setLoading(true);
+    setError('');
+    const result = await login(email.trim(), password);
+    setLoading(false);
+
+    if (result.error) setError(result.error);
+    else navigate('/');
   };
 
   return (
     <div style={{
-      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'var(--bg)', position: 'relative', overflow: 'hidden',
+      minHeight: '100vh', display: 'grid', placeItems: 'center',
+      padding: 'var(--space-6)', position: 'relative', overflow: 'hidden',
     }}>
-      {/* BG effects */}
-      <div style={{ position: 'absolute', top: '-15%', left: '50%', transform: 'translateX(-50%)', width: 700, height: 700, background: 'radial-gradient(circle, rgba(59,130,246,0.1) 0%, transparent 65%)', pointerEvents: 'none' }} />
-      <div style={{ position: 'absolute', bottom: 0, right: 0, width: 400, height: 400, background: 'radial-gradient(circle, rgba(34,211,238,0.06) 0%, transparent 65%)', pointerEvents: 'none' }} />
-      <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(59,130,246,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(59,130,246,0.03) 1px, transparent 1px)', backgroundSize: '44px 44px', maskImage: 'radial-gradient(ellipse 80% 80% at 50% 50%, black 30%, transparent 80%)' }} />
+      {/* Akcent yorug'ligi — Nocturne'da akcent chiziq va nur sifatida ishlatiladi */}
+      <div style={{
+        position: 'absolute', top: '-20%', left: '50%', transform: 'translateX(-50%)',
+        width: 720, height: 720, pointerEvents: 'none',
+        background: 'radial-gradient(circle, color-mix(in srgb, var(--color-accent) 12%, transparent) 0%, transparent 65%)',
+      }} />
 
-      <div style={{ position: 'relative', zIndex: 10, width: 420, maxWidth: '94vw' }}>
-        {/* Card */}
-        <div className="glass-card" style={{
-          borderRadius: 24,
-          padding: '40px 38px', boxShadow: '0 0 60px rgba(0,0,0,0.5), 0 0 30px rgba(59,130,246,0.08)',
-          animation: 'fadeInUp .5s cubic-bezier(.34,1.56,.64,1)',
-        }}>
-          <style>{`@keyframes fadeInUp { from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)} }`}</style>
+      <form onSubmit={submit} style={{ position: 'relative', width: 400, maxWidth: '100%' }}>
+        <div className="card elev-md" style={{ padding: 'var(--space-8)', gap: 'var(--space-4)', borderRadius: 'var(--radius-lg)' }}>
 
-          {/* Logo */}
-          <div style={{ textAlign: 'center', marginBottom: 8 }}>
-            <img src="/logo.png" alt="MyBazzar" style={{ width: 120, height: 120, borderRadius: 18, objectFit: 'cover', boxShadow: '0 0 30px rgba(59,130,246,0.3)', marginBottom: 8 }} />
-            <div style={{ fontSize: 11, color: 'var(--t3)', fontWeight: 400 }}>Aqlli savdo boshqaruv tizimi</div>
+          {/* Brend */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 'var(--space-4)' }}>
+            <div style={{
+              width: 44, height: 44, flex: 'none', borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--color-accent)', color: 'var(--color-accent)',
+              display: 'grid', placeItems: 'center',
+            }}>
+              <Icon name="storefront" fill size={24} />
+            </div>
+            <div>
+              <div style={{ fontSize: 19, fontWeight: 500, letterSpacing: '-0.01em' }}>MyBazzar</div>
+              <div style={{ fontSize: 11.5, color: 'var(--color-neutral-500)' }}>
+                Savdo boshqaruv tizimi
+              </div>
+            </div>
           </div>
 
-          <div style={{ fontSize: 14, color: 'var(--t2)', marginBottom: 28, marginTop: 16 }}>Tizimga kirish uchun ma'lumotlaringizni kiriting</div>
-
-          {/* Email */}
-          <div style={{ marginBottom: 14 }}>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--t2)', display: 'block', marginBottom: 7, textTransform: 'uppercase', letterSpacing: .8 }}>Email</label>
-            <div style={{ position: 'relative' }}>
-              <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', fontSize: 16 }}>✉️</span>
+          <Field label="Email yoki login">
+            <div className="input-icon">
+              <Icon name="user" />
               <input
-                type="email" value={email} onChange={e => { setEmail(e.target.value); setError(''); }}
-                onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                className="input" type="text" autoFocus autoComplete="username"
+                value={email} onChange={e => { setEmail(e.target.value); setError(''); }}
                 placeholder="email@mybazzar.uz"
-                className="fast-transition"
-                style={{ width: '100%', padding: '13px 14px 13px 40px', background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 11, color: 'var(--t1)', fontSize: 14, fontFamily: 'Outfit,sans-serif', outline: 'none', boxSizing: 'border-box', backdropFilter: 'blur(4px)' }}
-                onFocus={e => e.target.style.borderColor = 'rgba(59,130,246,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.05)'}
               />
             </div>
-          </div>
+          </Field>
 
-          {/* Password */}
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--t2)', display: 'block', marginBottom: 7, textTransform: 'uppercase', letterSpacing: .8 }}>Parol</label>
-            <div style={{ position: 'relative' }}>
-              <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', fontSize: 16 }}>🔒</span>
+          <Field label="Parol">
+            <div className="input" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 0, paddingInline: 10 }}>
+              <Icon name="lock-simple" size={15} color="var(--color-neutral-500)" />
               <input
-                type={showPass ? 'text' : 'password'} value={password}
-                onChange={e => { setPassword(e.target.value); setError(''); }}
-                onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                type={showPass ? 'text' : 'password'} autoComplete="current-password"
+                value={password} onChange={e => { setPassword(e.target.value); setError(''); }}
                 placeholder="Parolni kiriting"
-                className="fast-transition"
-                style={{ width: '100%', padding: '13px 40px 13px 40px', background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 11, color: 'var(--t1)', fontSize: 14, fontFamily: 'Outfit,sans-serif', outline: 'none', boxSizing: 'border-box', backdropFilter: 'blur(4px)' }}
-                onFocus={e => e.target.style.borderColor = 'rgba(59,130,246,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.05)'}
+                style={{
+                  flex: 1, background: 'none', border: 0, outline: 'none',
+                  color: 'var(--color-text)', font: 'inherit', fontSize: 14, padding: '8px 0',
+                }}
               />
-              <span onClick={() => setShowPass(!showPass)} style={{ position: 'absolute', right: 13, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', fontSize: 16, opacity: .6 }}>
-                {showPass ? '🙈' : '👁️'}
-              </span>
+              <Icon
+                name={showPass ? 'eye-slash' : 'eye'} size={16} color="var(--color-neutral-500)"
+                style={{ cursor: 'pointer' }} onClick={() => setShowPass(s => !s)}
+              />
             </div>
-          </div>
+          </Field>
 
-          {/* Error */}
           {error && (
-            <div style={{ background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.2)', borderRadius: 9, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#F43F5E', display: 'flex', alignItems: 'center', gap: 8 }}>
-              ⚠️ {error}
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: 9,
+              padding: '10px 12px', borderRadius: 'var(--radius-md)',
+              background: 'var(--dangbg)', color: 'var(--dang)', fontSize: 12.5,
+            }}>
+              <Icon name="warning-circle" fill size={15} style={{ marginTop: 1 }} />
+              {error}
             </div>
           )}
 
-          {/* Login btn */}
-          <button onClick={handleLogin} disabled={loading} style={{
-            width: '100%', padding: 15,
-            background: loading ? 'var(--s2)' : 'linear-gradient(135deg,#3B82F6,#2563EB)',
-            border: 'none', borderRadius: 12, color: loading ? 'var(--t2)' : '#fff',
-            fontSize: 15, fontWeight: 800, fontFamily: 'Outfit,sans-serif',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            boxShadow: loading ? 'none' : '0 6px 20px rgba(59,130,246,0.3)',
-            transition: 'all .2s', marginBottom: 14,
-          }}>
-            {loading ? '⏳ Tekshirilmoqda...' : 'Tizimga Kirish →'}
-          </button>
+          <Btn type="submit" variant="primary" block loading={loading}
+            style={{ minHeight: 46, fontSize: 15, marginTop: 'var(--space-2)' }}>
+            {loading ? 'Tekshirilmoqda…' : 'Tizimga kirish'}
+          </Btn>
+
+          <div style={{ fontSize: 11, color: 'var(--color-neutral-500)', textAlign: 'center' }}>
+            Dilerlar o‘zlariga berilgan login bilan kiradi
+          </div>
         </div>
-      </div>
+      </form>
     </div>
   );
 }

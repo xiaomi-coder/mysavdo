@@ -1,739 +1,722 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Btn, Badge, EmptyState } from '../components/UI';
+import { Icon, Btn, Tag, Seg, Modal, EmptyState, Avatar, Toast, SkeletonRows } from '../components/UI';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../utils/supabaseClient';
+import { printReceipt } from '../utils/receipt';
+
+/* ── yordamchilar ──────────────────────────────────────────────────────── */
+
+const money = n => Math.round(Number(n) || 0).toLocaleString('ru-RU');
+
+// Kiritish paytida raqamni bo'shliq bilan ajratib ko'rsatadi: 8 900 000
+const formatInput = v => {
+  const digits = String(v ?? '').replace(/\D/g, '');
+  return digits ? Number(digits).toLocaleString('ru-RU') : '';
+};
+
+const initialsOf = (name = '') =>
+  name.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '??';
+
+const PAY_METHODS = [
+  { id: 'cash', label: 'Naqd', icon: 'money' },
+  { id: 'card', label: 'Plastik', icon: 'credit-card' },
+  { id: 'transfer', label: 'Transfer', icon: 'arrows-left-right' },
+  { id: 'nasiya', label: 'Nasiya', icon: 'hand-coins' },
+];
+
+const DISCOUNTS = [0, 5, 10, 15].map(d => ({ value: d, label: `${d}%` }));
+
+/* ══════════════════════════════════════════════════════════════════════════
+   POS — sotuv sahifasi
+   ══════════════════════════════════════════════════════════════════════ */
 
 export default function POS() {
-  const { user, settings, addPendingTxn } = useAuth();
+  const { user, settings, addPendingTxn, refreshAlerts } = useAuth();
+  const location = useLocation();
   const isPhone = user?.storeType === 'phone';
+  const isDealer = user?.role === 'dealer';
+
+  const searchRef = useRef(null);
+
+  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [search, setSearch] = useState('');
   const [cat, setCat] = useState('Hammasi');
+
   const [cart, setCart] = useState({});
-  const [payMethod, setMethod] = useState('cash');
+  const [discount, setDiscount] = useState(0);
+  const [payMethod, setPayMethod] = useState(isDealer ? 'nasiya' : 'cash');
   const [paidAmount, setPaidAmount] = useState('');
   const [dueDays, setDueDays] = useState('30');
-  const [discount, setDiscount] = useState(0);
-  const [success, setSuccess] = useState(false);
+
+  const [customer, setCustomer] = useState(location.state?.selectedCustomer || null);
+  const [showCustomers, setShowCustomers] = useState(false);
+  const [custSearch, setCustSearch] = useState('');
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [receiptNo, setReceiptNo] = useState(1);
-  const [products, setProducts] = useState([]);
-  const location = useLocation();
-  const [customers, setCustomers] = useState([]);
-  const [selectedCustomer, setSelectedCustomer] = useState(location.state?.selectedCustomer || null);
-  const [showCustModal, setShowCustModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState(null);
+  const [toast, setToast] = useState(null);
 
-  const formatMoney = (val) => {
-    if (!val) return '';
-    const num = String(val).replace(/\D/g, '');
-    if (!num) return '';
-    return Number(num).toLocaleString('de-DE'); // dot separation
-  };
+  /* ── yuklash ── */
+  const load = useCallback(async (storeId) => {
+    setLoading(true);
+    const [prodRes, custRes, cntRes] = await Promise.all([
+      supabase.from('products').select('*').eq('store_id', storeId),
+      supabase.from('customers').select('*').eq('store_id', storeId),
+      supabase.from('transactions').select('*', { count: 'exact', head: true }).eq('store_id', storeId),
+    ]);
+    setProducts(prodRes.data || []);
+    setCustomers(custRes.data || []);
+    setReceiptNo((cntRes.count || 0) + 1);
+    setLoading(false);
+  }, []);
 
-  useEffect(() => {
-    if (user?.store_id) {
-      loadProducts(user.store_id);
-      loadReceiptCount(user.store_id);
-      loadCustomers(user.store_id);
-    }
-  }, [user]);
+  useEffect(() => { if (user?.store_id) load(user.store_id); }, [user, load]);
 
-  const loadCustomers = async (storeId) => {
-    const { data } = await supabase.from('customers').select('*').eq('store_id', storeId);
-    if (data) setCustomers(data);
-  };
+  /* ── filtrlash ── */
+  const categories = useMemo(
+    () => ['Hammasi', ...new Set(products.map(p => p.category || p.cat).filter(Boolean))],
+    [products]
+  );
 
-  const loadProducts = async (storeId) => {
-    const { data } = await supabase.from('products').select('*').eq('store_id', storeId);
-    if (data) setProducts(data.map(p => ({ ...p, emoji: p.image || '📦' })));
-  };
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return products.filter(p => {
+      if (cat !== 'Hammasi' && (p.category || p.cat) !== cat) return false;
+      if (!q) return true;
+      return [p.name, p.barcode, p.phone_imei1, p.phone_imei2, p.phone_serial, p.phone_model]
+        .some(v => String(v || '').toLowerCase().includes(q));
+    });
+  }, [products, search, cat]);
 
-  const loadReceiptCount = async (storeId) => {
-    const { count } = await supabase.from('transactions').select('*', { count: 'exact', head: true }).eq('store_id', storeId);
-    setReceiptNo((count || 0) + 1);
-  };
-
-  const filtered = products.filter(p => {
-    const pCat = p.category || p.cat;
-    const matchCat = cat === 'Hammasi' || pCat === cat;
-    const q = search.toLowerCase();
-    const matchQ = p.name.toLowerCase().includes(q) || (p.barcode || '').includes(search)
-      || (p.phone_imei1 || '').includes(search) || (p.phone_imei2 || '').includes(search)
-      || (p.phone_serial || '').toLowerCase().includes(q);
-    return matchCat && matchQ;
-  });
-
-  const dynamicCats = ['Hammasi', ...new Set(products.map(p => p.category || p.cat).filter(Boolean))];
-
+  /* ── savat ── */
   const addToCart = (p) => {
-    if (p.stock === 0) return;
+    if (p.stock <= 0) return;
     setCart(prev => {
       const cur = prev[p.id];
-      if (cur && cur.qty >= p.stock) return prev;
-      return { ...prev, [p.id]: { ...p, qty: (cur?.qty || 0) + 1 } };
+      if (cur && cur.qty >= p.stock) {
+        setToast({ msg: `${p.name}: omborda ${p.stock} dona bor, ko'proq qo'shib bo'lmaydi`, variant: 'warn' });
+        return prev;
+      }
+      return { ...prev, [p.id]: { ...p, qty: (cur?.qty || 0) + 1, itemDiscount: cur?.itemDiscount || '' } };
     });
   };
 
-  const changeQty = (id, delta) => {
-    setCart(prev => {
-      const cur = prev[id];
-      if (!cur) return prev;
-      const newQty = cur.qty + delta;
-      if (newQty <= 0) { const n = { ...prev }; delete n[id]; return n; }
-      if (newQty > cur.stock) return prev;
-      return { ...prev, [id]: { ...cur, qty: newQty } };
-    });
+  const changeQty = (id, delta) => setCart(prev => {
+    const cur = prev[id];
+    if (!cur) return prev;
+    const next = cur.qty + delta;
+    if (next <= 0) { const c = { ...prev }; delete c[id]; return c; }
+    if (next > cur.stock) return prev;
+    return { ...prev, [id]: { ...cur, qty: next } };
+  });
+
+  const setItemDiscount = (id, val) =>
+    setCart(prev => prev[id] ? { ...prev, [id]: { ...prev[id], itemDiscount: val } } : prev);
+
+  const clearCart = () => { setCart({}); setDiscount(0); setPaidAmount(''); setShowClearConfirm(false); };
+
+  /* ── hisob-kitob ── */
+  const items = Object.values(cart);
+  const itemCount = items.reduce((s, i) => s + i.qty, 0);
+  const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+  const itemsDiscount = items.reduce((s, i) => s + (Number(i.itemDiscount) || 0) * i.qty, 0);
+  const globalDiscount = Math.round((subtotal - itemsDiscount) * discount / 100);
+  const discountTotal = itemsDiscount + globalDiscount;
+  const total = subtotal - discountTotal;
+  const remainingDebt = Math.max(0, total - Number(paidAmount || 0));
+
+  /* ── barcode skaneri: Enter bosilganda savatga qo'shadi ── */
+  const onSearchKeyDown = (e) => {
+    if (e.key !== 'Enter') return;
+    const q = search.trim();
+    if (!q) return;
+    const match = products.find(p =>
+      p.barcode === q || p.phone_imei1 === q || p.phone_imei2 === q || p.phone_serial === q
+    ) || (filtered.length === 1 ? filtered[0] : null);
+
+    if (match) { addToCart(match); setSearch(''); }
+    else setToast({ msg: `"${q}" topilmadi`, variant: 'warn' });
   };
 
-  const changeItemDiscount = (id, val) => {
-    setCart(prev => {
-      const cur = prev[id];
-      if (!cur) return prev;
-      return { ...prev, [id]: { ...cur, itemDiscount: val } };
-    });
-  };
-
-  const clearCart = () => { setCart({}); setDiscount(0); };
-
-  const cartItems = Object.values(cart);
-  const itemCount = cartItems.reduce((s, i) => s + i.qty, 0);
-  const subtotal = cartItems.reduce((s, i) => s + i.price * i.qty, 0);
-  const itemsDiscountSum = cartItems.reduce((s, i) => s + (Number(i.itemDiscount) || 0) * i.qty, 0);
-  const afterItemsDiscount = subtotal - itemsDiscountSum;
-  const globalDiscountAmt = Math.round(afterItemsDiscount * discount / 100);
-  const discountAmt = itemsDiscountSum + globalDiscountAmt;
-  const total = subtotal - discountAmt;
-
-  const PAY_METHODS = user?.role === 'dealer'
-    ? [{ id: 'nasiya', label: '💸 Nasiya (Qarz)' }] // Diler faqat nasiya orqali oladi (hisobdan yechiladi)
-    : [
-      { id: 'cash', label: '💵 Naqd' },
-      { id: 'card', label: '💳 Plastik' },
-      { id: 'transfer', label: '📱 Transfer' },
-      { id: 'nasiya', label: '💸 Nasiya' }
-    ];
-
+  /* ── sotuvni yakunlash ── */
   const checkout = async () => {
-    if (!settings.isOnline && settings.offline) {
-      addPendingTxn({ id: Date.now(), items: cartItems, total, method: payMethod, time: new Date().toISOString() });
+    if (payMethod === 'nasiya' && !customer) {
+      setToast({ msg: 'Nasiyaga sotish uchun avval xaridorni tanlang', variant: 'warn' });
+      setShowCustomers(true);
+      return;
+    }
+    if (payMethod === 'nasiya' && Number(paidAmount || 0) > total) {
+      setToast({ msg: "Boshlang'ich to'lov jami summadan katta bo'lishi mumkin emas", variant: 'dang' });
+      return;
+    }
+
+    setSaving(true);
+    const offline = !settings.isOnline && settings.offline;
+
+    if (offline) {
+      // Internet yo'q — sotuvni xotiraga saqlaymiz, ulanganda yuboriladi
+      addPendingTxn({
+        id: Date.now(), items, total, discount: discountTotal,
+        method: payMethod, customer_id: customer?.id || null,
+        time: new Date().toISOString(),
+      });
     } else {
-      // Create transaction in Supabase
       const { error } = await supabase.from('transactions').insert({
         store_id: user.store_id,
-        customer_id: selectedCustomer?.id || null,
+        customer_id: customer?.id || null,
         receipt_no: `#${receiptNo}`,
         cashier: user.name,
-        items: cartItems,
-        total: total,
-        discount: discountAmt,
+        items,
+        total,
+        discount: discountTotal,
         payment_method: payMethod,
-        status: 'completed'
+        status: 'completed',
       });
+
       if (error) {
-        console.error("Checkout db error:", error);
-        alert("Sotuvni saqlashda baza xatosi yuz berdi! Xato: " + error.message);
+        setSaving(false);
+        setToast({ msg: `Sotuv saqlanmadi: ${error.message}`, variant: 'dang' });
         return;
       }
 
-      // Enforce selecting a customer if Nasiya is chosen. 
-      // We will actually do UI validation down below, but keep this safety check here.
       if (payMethod === 'nasiya') {
-        if (!selectedCustomer) {
-           alert("Nasiya qarz yozish uchun Mijoz tanlash shart!");
-           return;
-        }
-
-        const initialPay = Number(paidAmount) || 0;
-        if (initialPay > total) {
-          alert("Boshlang'ich to'lov jami summadan katta bo'lishi mumkin emas!");
-          return;
-        }
-
-        const dDate = new Date();
-        dDate.setDate(dDate.getDate() + parseInt(dueDays || 30));
-
-        const debtData = {
+        const due = new Date();
+        due.setDate(due.getDate() + (parseInt(dueDays, 10) || 30));
+        const paid = Number(paidAmount) || 0;
+        await supabase.from('debts').insert({
           store_id: user.store_id,
-          customer_id: selectedCustomer.id,
-          client: selectedCustomer.name,
-          phone: selectedCustomer.phone || '',
+          customer_id: customer.id,
+          client: customer.name,
+          phone: customer.phone || '',
           amount: total,
-          paid_amount: initialPay,
-          due_date: dDate.toISOString(),
-          status: initialPay >= total ? 'To\'langan' : 'To\'lanmagan'
-        };
-        await supabase.from('debts').insert(debtData);
+          paid_amount: paid,
+          due_date: due.toISOString(),
+          status: paid >= total ? "To'landi" : "To'lanmagan",
+        });
       }
 
-      if (selectedCustomer) {
-        // Increment purchases count & amount for the selected customer regardless of payment method
-        await supabase.rpc('increment_customer_spent', { cid: selectedCustomer.id, amnt: total });
+      if (customer) {
+        await supabase.rpc('increment_customer_spent', { cid: customer.id, amnt: total });
       }
 
-      // Reduce stock locally and in DB
-      cartItems.forEach(async (item) => {
-        await supabase.from('products').update({ stock: item.stock - item.qty }).eq('id', item.id);
-      });
-      loadProducts(user.store_id);
+      // Ombor qoldig'ini kamaytiramiz — hammasi tugagach ro'yxatni yangilaymiz
+      await Promise.all(items.map(i =>
+        supabase.from('products').update({ stock: i.stock - i.qty }).eq('id', i.id)
+      ));
+      await load(user.store_id);
+      refreshAlerts();
     }
 
-    // Generate and open Receipt
-    const printWin = window.open('', '_blank');
-    const paymentLabel = PAY_METHODS.find(m => m.id === payMethod)?.label.substring(2) || 'Naqd';
-    const receiptTemplate = localStorage.getItem('mybazzar_receipt_template') || 'detailed';
+    const printed = printReceipt({
+      items, subtotal, discount: discountTotal, total, paidAmount,
+      payMethod, receiptNo, cashier: user?.name, customer,
+      storeName: user?.storeName, isPhone,
+    });
 
-    let receiptHtml = '';
+    setSaving(false);
+    setSuccess({
+      receiptNo, total, printed, offline,
+      payLabel: PAY_METHODS.find(m => m.id === payMethod)?.label,
+    });
+  };
 
-    if (receiptTemplate === 'compact' || receiptTemplate === 'standard') {
-      receiptHtml = `
-      <html>
-        <head>
-          <title>Chek #${receiptNo}</title>
-          <style>
-            @page { margin: 0; }
-            body { font-family: monospace; width: 58mm; margin: 0 auto; color: #000; font-size: 12px; padding: 2mm; box-sizing: border-box; }
-            .center { text-align: center; }
-            .bold { font-weight: bold; }
-            .right { text-align: right; }
-            .divider { border-bottom: 1px dashed #000; margin: 8px 0; }
-            @media print { body { width: 100%; margin: 0; padding: 0; } }
-          </style>
-        </head>
-        <body>
-          <div class="center bold" style="font-size: 16px; margin-bottom: 4px; text-transform: uppercase;">${user?.storeName || 'MyBazzar'}</div>
-          <div class="center" style="margin-bottom: 6px;">Chek: ${(receiptNo).toString().padStart(6, '0')}</div>
-          <div class="center" style="margin-bottom: 6px; font-size: 10px;">${new Date().toLocaleString('uz-UZ')}</div>
-          
-          <div>Kassir: ${user?.name || 'Kassir'}</div>
-          ${selectedCustomer ? `<div>Mijoz: ${selectedCustomer.name}</div>` : ''}
-          ${selectedCustomer?.phone ? `<div>Telefon: ${selectedCustomer.phone}</div>` : ''}
-          <div>To'lov: ${paymentLabel.trim()}</div>
-          <div class="divider"></div>
-
-          ${cartItems.map((item, index) => {
-            const itemDiscount = Number(item.itemDiscount) || 0;
-            const netPrice = item.price - itemDiscount;
-            return \`
-              <div style="margin-bottom: 4px;">
-                <div class="bold">${isPhone ? (item.phone_model || item.name) : item.name} ${isPhone && item.phone_memory ? item.phone_memory : ''}</div>
-                ${isPhone && item.phone_imei1 ? \`<div style="font-size:9px;">IMEI:\${item.phone_imei1}</div>\` : ''}
-                <div style="display: flex; justify-content: space-between; font-size: 11px;">
-                  <span>\${item.qty} x \${netPrice.toLocaleString()}</span>
-                  <span class="bold">\${(netPrice * item.qty).toLocaleString()}</span>
-                </div>
-              </div>
-            \`;
-          }).join('')}
-          <div class="divider"></div>
-
-          ${discountAmt > 0 ? \`
-          <div style="display: flex; justify-content: space-between;">
-            <span>Chegirma:</span>
-            <span>-\${discountAmt.toLocaleString()}</span>
-          </div>
-          \` : ''}
-          <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 14px; margin-top: 4px;">
-            <span>JAMI:</span>
-            <span>${total.toLocaleString()} so'm</span>
-          </div>
-
-          ${payMethod === 'nasiya' ? \`
-            <div style="margin-top: 8px; font-size: 12px; font-weight: bold;">
-              Qarz: \${Math.max(0, total - Number(paidAmount)).toLocaleString()} so'm
-            </div>
-          \` : ''}
-
-          <div class="divider"></div>
-          <div class="center" style="font-size: 11px;">Xaridingiz uchun rahmat!</div>
-          <div class="center" style="font-size: 10px; margin-top: 2px;">*** mybazzar.uz ***</div>
-          
-          <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
-        </body>
-      </html>
-      `;
-    } else {
-      receiptHtml = `
-      <html>
-        <head>
-          <title>Chek #${receiptNo}</title>
-          <style>
-            @page { margin: 0; }
-            body { font-family: 'Arial', sans-serif; width: 80mm; margin: 0 auto; color: #000; font-size: 11px; padding: 2mm; box-sizing: border-box; }
-            .center { text-align: center; }
-            .bold { font-weight: bold; }
-            .bordered-table { width: 100%; border-collapse: collapse; margin-top: 8px; margin-bottom: 8px; }
-            .bordered-table th, .bordered-table td { border: 1px solid #000; padding: 4px; font-size: 10px; }
-            .bordered-table th { font-weight: bold; text-align: center; }
-            .right { text-align: right; }
-            .info-text { font-size: 11px; margin-bottom: 3px; }
-            .total-table { width: 100%; font-size: 11px; margin-top: 5px; border-collapse: collapse; }
-            .total-table td { padding: 3px; }
-            .divider { border-bottom: 1px dashed #000; margin: 10px 0; }
-            @media print { body { width: 100%; margin: 0; padding: 0; } }
-          </style>
-        </head>
-        <body>
-          <div class="center bold" style="font-size: 16px; margin-bottom: 4px; text-transform: uppercase;">${user?.storeName || 'MyBazzar'}</div>
-          <div class="center bold" style="font-size: 12px; margin-bottom: 6px;">Mahsulot chek bilan qaytarib olinadi 30 KUN ICHIDA</div>
-          
-          <div class="center bold" style="font-size: 13px; margin-bottom: 4px;">Товарный чек № ${(receiptNo).toString().padStart(6, '0')}</div>
-          <div class="center info-text" style="margin-bottom: 8px;">от ${new Date().toLocaleDateString('ru-RU')}</div>
-          
-          <div class="info-text">Продавец: ${user?.name || 'Kassir'}</div>
-          ${selectedCustomer ? `<div class="info-text">Покупатель: ${selectedCustomer.name}</div>` : ''}
-          ${selectedCustomer?.phone ? `<div class="info-text">Телефон: ${selectedCustomer.phone}</div>` : ''}
-          <div class="info-text">Оплата: ${paymentLabel.trim()}</div>
-
-          <table class="bordered-table">
-            <thead>
-              <tr>
-                <th style="width: 5%;">№</th>
-                <th style="width: 40%;">Наименование</th>
-                <th style="width: 10%;">Ед.</th>
-                <th style="width: 10%;">Кол-во</th>
-                <th style="width: 15%;">Цена</th>
-                <th style="width: 20%;">Сумма</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${cartItems.map((item, index) => {
-                const itemDiscount = Number(item.itemDiscount) || 0;
-                const netPrice = item.price - itemDiscount;
-                const rowTotal = netPrice * item.qty;
-                return \`
-                  <tr>
-                    <td class="center">\${index + 1}</td>
-                    <td>
-                      \${isPhone ? (item.phone_model || item.name) : item.name} \${isPhone && item.phone_memory ? item.phone_memory : ''}
-                      \${isPhone && item.phone_imei1 ? \`<br><span style="font-size:8px;">IMEI:\${item.phone_imei1}</span>\` : ''}
-                    </td>
-                    <td class="center">шт</td>
-                    <td class="center">\${item.qty}</td>
-                    <td class="right">\${netPrice.toLocaleString()}</td>
-                    <td class="right">\${rowTotal.toLocaleString()}</td>
-                  </tr>
-                \`;
-              }).join('')}
-            </tbody>
-          </table>
-
-          <table class="total-table">
-            <tr>
-              <td class="right">Сумма чека:</td>
-              <td class="right bold" style="width: 35%;">${subtotal.toLocaleString()}</td>
-            </tr>
-            <tr>
-              <td class="right">Скидка:</td>
-              <td class="right bold">${discountAmt > 0 ? discountAmt.toLocaleString() : '0,00'}</td>
-            </tr>
-            <tr>
-              <td class="right">Итого:</td>
-              <td class="right bold" style="font-size: 13px;">${total.toLocaleString()}</td>
-            </tr>
-          </table>
-
-          <div style="margin-top: 8px; font-size: 11px;">
-            Всего наименований ${itemCount} на сумму ${total.toLocaleString()}
-          </div>
-          
-          ${payMethod === 'nasiya' ? \`
-            <div style="margin-top: 10px; font-size: 13px; font-weight: bold; color: #000;">
-              Долг: \${Math.max(0, total - Number(paidAmount)).toLocaleString()} сум
-            </div>
-          \` : ''}
-
-          <div class="divider"></div>
-          <div class="center info-text">Xaridingiz uchun rahmat!</div>
-          <div class="center info-text" style="font-size: 9px; margin-top: 2px;">*** mybazzar.uz ***</div>
-          
-          <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
-        </body>
-      </html>
-      `;
-    }
-
-    if (printWin) {
-      printWin.document.write(receiptHtml);
-      printWin.document.close();
-    } else {
-      console.warn("Pop-up blocker prevented receipt printing.");
-      // Optional: alert asking user to allow popups
-      alert("Chekni chop etish uchun brauzeringizda pop-uplarga (ochiluvchi oynalarga) ruxsat bering!");
-    }
-
-    setSuccess(true);
+  const startNewSale = () => {
+    setSuccess(null);
+    clearCart();
+    setCustomer(null);
+    setPayMethod(isDealer ? 'nasiya' : 'cash');
     setReceiptNo(n => n + 1);
-    setPaidAmount('');
-    setTimeout(() => { setSuccess(false); clearCart(); }, 2600);
-  };
-  const catBtnStyle = {
-    padding: '6px 16px', borderRadius: 20, fontSize: 12, fontWeight: 700,
-    fontFamily: 'Outfit,sans-serif', cursor: 'pointer', transition: 'all .15s',
-    border: '1px solid var(--border)', background: 'var(--s1)', color: 'var(--t2)',
-    whiteSpace: 'nowrap'
-  };
-  const catBtnActive = {
-    border: '1px solid rgba(59,130,246,0.4)', background: 'rgba(59,130,246,0.12)', color: '#3B82F6'
+    searchRef.current?.focus();
   };
 
+  const filteredCustomers = useMemo(() => {
+    const q = custSearch.trim().toLowerCase();
+    if (!q) return customers;
+    return customers.filter(c =>
+      [c.name, c.phone, c.shop_name].some(v => String(v || '').toLowerCase().includes(q))
+    );
+  }, [customers, custSearch]);
+
+  /* ══ ko'rinish ══ */
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 16, padding: 20, height: 'calc(100vh - 64px)', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', height: '100%', minHeight: 0 }}>
 
-      {/* ── LEFT ── */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, overflow: 'hidden' }}>
-
-        {/* Search + scan */}
+      {/* ── CHAP: katalog ── */}
+      <div style={{
+        flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column',
+        padding: '18px 20px', gap: 14, borderRight: '1px solid var(--color-divider)',
+      }}>
+        {/* Qidiruv + skaner */}
         <div style={{ display: 'flex', gap: 10 }}>
-          <div style={{ flex: 1, position: 'relative' }}>
-            <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', fontSize: 16, color: 'var(--t2)' }}>🔍</span>
+          <div style={{
+            flex: 1, display: 'flex', alignItems: 'center', gap: 10,
+            minHeight: 46, padding: '0 14px', borderRadius: 10,
+            border: '2px solid var(--color-accent)', background: 'var(--color-surface)',
+          }}>
+            <Icon name="barcode" size={20} color="var(--color-accent)" />
             <input
+              ref={searchRef}
               autoFocus
               value={search}
               onChange={e => setSearch(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && search.trim()) {
-                  const matched = products.find(p => p.barcode === search.trim() || p.barcode.includes(search.trim()));
-                  if (matched) {
-                    addToCart(matched);
-                    setSearch('');
-                  }
-                }
-              }}
-              placeholder={isPhone ? "IMEI, S/N yoki model qidiring..." : "Mahsulot nomi yoki barcode..."}
+              onKeyDown={onSearchKeyDown}
+              placeholder={isPhone
+                ? 'Mahsulot, barcode, IMEI yoki S/N qidiring...'
+                : 'Mahsulot nomi yoki barcode qidiring...'}
               style={{
-                width: '100%', padding: '12px 14px 12px 40px',
-                background: 'var(--s1)', border: '1px solid var(--border)',
-                borderRadius: 12, color: 'var(--t1)', fontSize: 14,
-                fontFamily: 'Outfit,sans-serif', outline: 'none',
+                flex: 1, background: 'none', border: 0, outline: 'none',
+                color: 'var(--color-text)', font: 'inherit', fontSize: 14.5,
               }}
-              onFocus={e => e.target.style.borderColor = '#3B82F6'}
-              onBlur={e => e.target.style.borderColor = 'var(--border)'}
             />
+            <span style={{
+              fontSize: 10, letterSpacing: '.05em', padding: '3px 7px', borderRadius: 5,
+              background: 'color-mix(in srgb, var(--color-text) 7%, transparent)',
+              color: 'var(--color-neutral-400)', whiteSpace: 'nowrap',
+            }}>
+              Enter — savatga
+            </span>
           </div>
-          <Btn variant="subtle">📷 Skaner</Btn>
+
+          <Btn
+            variant="secondary" icon="camera" disabled
+            title="Kamera skaneri hozircha mavjud emas"
+            style={{ minHeight: 46 }}
+          >
+            Skaner
+            <span style={{
+              fontSize: 9.5, letterSpacing: '.05em', textTransform: 'uppercase',
+              padding: '2px 5px', borderRadius: 4,
+              background: 'color-mix(in srgb, var(--color-text) 8%, transparent)',
+            }}>
+              Tez orada
+            </span>
+          </Btn>
         </div>
 
-        {/* Categories */}
-        <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
-          {dynamicCats.map(c => (
-            <button key={c} onClick={() => setCat(c)} className="fast-transition" style={{ ...catBtnStyle, ...(cat === c ? catBtnActive : {}) }}>
-              {c}
-            </button>
-          ))}
-        </div>
+        {/* Kategoriyalar */}
+        {categories.length > 1 && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {categories.map(c => {
+              const active = cat === c;
+              return (
+                <button
+                  key={c}
+                  onClick={() => setCat(c)}
+                  style={{
+                    padding: '7px 14px', borderRadius: 16, border: 0, cursor: 'pointer',
+                    font: 'inherit', fontSize: 12.5, fontWeight: active ? 500 : 400,
+                    background: active ? 'var(--color-accent)' : 'color-mix(in srgb, var(--color-text) 6%, transparent)',
+                    color: active ? 'var(--color-bg)' : 'var(--color-neutral-300)',
+                  }}
+                >
+                  {c}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
-        {/* Products grid */}
+        {/* Mahsulotlar */}
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+          {loading ? (
+            <SkeletonRows count={6} widths={['100%']} />
+          ) : filtered.length === 0 ? (
+            <EmptyState
+              icon="magnifying-glass"
+              text={search ? `"${search}" bo‘yicha hech narsa topilmadi` : 'Omborda mahsulot yo‘q'}
+              sub={search ? 'Barcode, IMEI yoki S/N bilan qidirib ko‘ring' : 'Ombor bo‘limidan tovar qo‘shing'}
+            />
+          ) : (
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))',
+              gap: 12, alignContent: 'start',
+            }}>
+              {filtered.map(p => {
+                const inCart = cart[p.id]?.qty || 0;
+                const out = p.stock <= 0;
+                const low = !out && p.stock <= (p.minStock || 5);
+                const sub = isPhone
+                  ? [p.phone_memory, p.phone_color].filter(Boolean).join(' · ')
+                  : (p.category || p.cat || '');
+                const serial = p.phone_imei1 || p.phone_serial;
+
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => addToCart(p)}
+                    className={out ? 'card' : 'card elev-sm'}
+                    style={{
+                      padding: 13, gap: 7,
+                      cursor: out ? 'not-allowed' : 'pointer',
+                      opacity: out ? 0.45 : 1,
+                      boxShadow: inCart ? '0 0 0 1px var(--color-accent)' : undefined,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <span style={{ fontSize: 26, filter: out ? 'grayscale(1)' : 'none' }}>
+                        {p.image || (isPhone ? '📱' : '📦')}
+                      </span>
+                      {out
+                        ? <Tag variant="dang">Tugagan</Tag>
+                        : low
+                          ? <Tag variant="warn">Kam! · {p.stock}</Tag>
+                          : <span style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>{p.stock} dona</span>}
+                    </div>
+
+                    <div style={{ fontSize: 13.5, fontWeight: 500, lineHeight: 1.25 }}>
+                      {isPhone ? (p.phone_model || p.name) : p.name}
+                    </div>
+                    {sub && <div style={{ fontSize: 11.5, color: 'var(--color-neutral-400)' }}>{sub}</div>}
+                    {serial && (
+                      <div className="num" style={{ fontSize: 10.5, color: 'var(--color-neutral-500)' }}>
+                        {p.phone_imei1 ? 'IMEI' : 'S/N'}: …{String(serial).slice(-8)}
+                      </div>
+                    )}
+                    <div className="num" style={{ fontSize: 14.5, fontWeight: 500, marginTop: serial ? 2 : 'auto' }}>
+                      {money(p.price)}
+                    </div>
+
+                    {inCart > 0 && (
+                      <div style={{ fontSize: 11, color: 'var(--color-accent)' }}>
+                        Savatda: {inCart} dona
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── O'NG: savat ── */}
+      <aside style={{
+        width: 430, flex: 'none', display: 'flex', flexDirection: 'column',
+        background: 'var(--color-surface)', minHeight: 0,
+      }}>
+        {/* Xaridor */}
         <div style={{
-          display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px,1fr))',
-          gap: 10, overflowY: 'auto', paddingBottom: 8,
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '14px 16px', borderBottom: '1px solid var(--color-divider)',
         }}>
-          {filtered.map(p => {
-            const inCart = cart[p.id]?.qty || 0;
+          <Icon name="user-circle" size={19} color="var(--color-neutral-400)" />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {customer ? (
+              <>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>
+                  {customer.name}
+                  {customer.type === 'dealer' && <Tag variant="accent" style={{ marginLeft: 5 }}>Diler</Tag>}
+                </div>
+                <div className="num" style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>
+                  {customer.phone}
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 13, color: 'var(--color-neutral-500)' }}>Xaridor tanlanmagan</div>
+            )}
+          </div>
+          {customer && (
+            <Btn variant="ghost" iconOnly icon="x" title="Xaridorni olib tashlash"
+              onClick={() => setCustomer(null)} style={{ width: 28, height: 28 }} />
+          )}
+          <Btn variant="ghost" size="sm" onClick={() => setShowCustomers(true)}>
+            {customer ? 'Almashtirish' : 'Tanlash'}
+          </Btn>
+        </div>
+
+        {isDealer && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 9, padding: '9px 16px',
+            fontSize: 12, background: 'var(--infobg)', color: 'var(--info)',
+          }}>
+            <Icon name="info" fill size={15} />
+            Diler rejimi — faqat Nasiya to‘lovi mavjud
+          </div>
+        )}
+
+        {/* Savat ro'yxati */}
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '6px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0' }}>
+            <span style={{ fontSize: 12, color: 'var(--color-neutral-500)' }}>
+              Savat · {itemCount} dona
+            </span>
+            {items.length > 0 && (
+              <Btn variant="ghost" size="sm" icon="trash" onClick={() => setShowClearConfirm(true)}
+                style={{ color: 'var(--dang)' }}>
+                Tozalash
+              </Btn>
+            )}
+          </div>
+
+          {items.length === 0 ? (
+            <EmptyState icon="shopping-cart" text="Savat bo‘sh" sub="Chapdan mahsulot tanlang yoki barcode skanerlang" />
+          ) : items.map(item => {
+            const disc = Number(item.itemDiscount) || 0;
+            const net = item.price - disc;
             return (
-              <div
-                key={p.id}
-                onClick={() => addToCart(p)}
-                className="glass-card"
-                style={{
-                  border: `1px solid ${inCart > 0 ? 'rgba(59,130,246,0.6)' : 'rgba(255, 255, 255, 0.05)'}`,
-                  borderRadius: 14, padding: 14, cursor: p.stock === 0 ? 'not-allowed' : 'pointer',
-                  opacity: p.stock === 0 ? 0.4 : 1,
-                  position: 'relative', overflow: 'hidden',
-                  transform: inCart > 0 ? 'scale(1.02) translateY(-2px)' : 'scale(1)',
-                  boxShadow: inCart > 0 ? '0 8px 32px -4px rgba(59,130,246,0.3)' : '',
-                }}
-              >
-                {/* Low stock badge */}
-                {p.stock > 0 && p.stock < 10 && (
-                  <div style={{ position: 'absolute', top: 8, right: 8, background: '#F43F5E', color: '#fff', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 20 }}>
-                    Kam!
+              <div key={item.id} style={{ padding: '9px 0', borderBottom: '1px solid var(--color-divider)' }}>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: 19 }}>{item.image || (isPhone ? '📱' : '📦')}</span>
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>
+                      {isPhone ? (item.phone_model || item.name) : item.name}
+                      {isPhone && item.phone_memory ? ` ${item.phone_memory}` : ''}
+                    </div>
+                    <div className="num" style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>
+                      {disc > 0 ? (
+                        <>
+                          <s>{money(item.price)}</s> → {money(net)}{' '}
+                          <span style={{ color: 'var(--warn)' }}>(−{money(disc)} / dona)</span>
+                        </>
+                      ) : (
+                        <>{money(item.price)} / dona{item.stock <= 5 && <span style={{ color: 'var(--warn)' }}> · omborda {item.stock} ta</span>}</>
+                      )}
+                    </div>
                   </div>
-                )}
-                {/* Cart count */}
-                {inCart > 0 && (
-                  <div style={{ position: 'absolute', top: 8, left: 8, background: '#3B82F6', color: '#fff', fontSize: 10, fontWeight: 800, width: 20, height: 20, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 10px rgba(59,130,246,0.5)' }}>
-                    {inCart}
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Btn variant="secondary" iconOnly icon="minus" onClick={() => changeQty(item.id, -1)}
+                      style={{ width: 26, height: 26 }} />
+                    <span className="num" style={{ fontSize: 13, width: 18, textAlign: 'center' }}>{item.qty}</span>
+                    <Btn variant="secondary" iconOnly icon="plus" onClick={() => changeQty(item.id, 1)}
+                      style={{ width: 26, height: 26 }} />
                   </div>
-                )}
-                <div style={{ fontSize: isPhone ? 22 : 30, marginBottom: isPhone ? 4 : 8, filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.2))' }}>{p.emoji || (isPhone ? '📱' : '📦')}</div>
-                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2, lineHeight: 1.3 }}>{isPhone ? (p.phone_model || p.name) : p.name}</div>
-                {isPhone && p.phone_memory && <div style={{ fontSize: 10, color: '#22D3EE', fontWeight: 700, marginBottom: 2 }}>💾 {p.phone_memory} {p.phone_color ? `· ${p.phone_color}` : ''}</div>}
-                {isPhone && p.phone_imei1 && <div style={{ fontSize: 8, color: 'var(--t3)', fontFamily: 'JetBrains Mono,monospace', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis' }}>IMEI: {p.phone_imei1}</div>}
-                <div style={{ fontSize: 14, fontWeight: 800, color: '#22D3EE' }}>{p.price.toLocaleString()} so'm</div>
-                <div style={{ fontSize: 11, color: p.stock === 0 ? '#F43F5E' : p.stock < 10 ? '#F59E0B' : 'var(--t2)', marginTop: 2 }}>
-                  {p.stock === 0 ? '❌ Tugagan' : `${p.stock} ta qoldi`}
+
+                  <div className="num" style={{ fontSize: 13, fontWeight: 500, width: 82, textAlign: 'right' }}>
+                    {money(net * item.qty)}
+                  </div>
+                </div>
+
+                {/* Dona uchun chegirma */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, paddingLeft: 29 }}>
+                  <span style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>Chegirma / dona</span>
+                  <input
+                    className="input num"
+                    inputMode="numeric"
+                    value={formatInput(item.itemDiscount)}
+                    onChange={e => setItemDiscount(item.id, e.target.value.replace(/\D/g, ''))}
+                    placeholder="0"
+                    style={{ width: 110, minHeight: 28, padding: '2px 8px', fontSize: 12 }}
+                  />
                 </div>
               </div>
             );
           })}
         </div>
-      </div>
 
-      {/* ── CART ── */}
-      <div style={{
-        background: 'var(--s1)', border: '1px solid var(--border)',
-        borderRadius: 16, display: 'flex', flexDirection: 'column', overflow: 'hidden',
-      }}>
-        {/* Cart header */}
-        <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ fontSize: 15, fontWeight: 800 }}>
-            🧾 Savat <span style={{ fontSize: 12, color: 'var(--t2)', fontWeight: 400 }}>({itemCount} ta)</span>
-          </div>
-          {cartItems.length > 0 && (
-            <button onClick={clearCart} style={{ background: 'none', border: 'none', color: '#F43F5E', fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit,sans-serif', fontWeight: 700 }}>
-              Tozalash
-            </button>
-          )}
-        </div>
-
-        {/* Items */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
-          {cartItems.length === 0
-            ? <EmptyState icon="🛒" text="Mahsulot qo'shing" />
-            : cartItems.map(item => (
-              <div key={item.id} style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: '9px 8px', borderRadius: 10,
-                borderBottom: '1px solid rgba(30,45,61,0.5)',
-                animation: 'slideIn .2s ease',
-              }}>
-                <span style={{ fontSize: 20 }}>{item.emoji || (isPhone ? '📱' : '📦')}</span>
-                <div style={{ flex: 1, overflow: 'hidden' }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{isPhone ? (item.phone_model || item.name) : item.name}</div>
-                  {isPhone && item.phone_memory && <div style={{ fontSize: 9, color: '#22D3EE' }}>{item.phone_memory} {item.phone_color ? `· ${item.phone_color}` : ''}</div>}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                     <div style={{ fontSize: 11, color: 'var(--t2)', textDecoration: item.itemDiscount ? 'line-through' : 'none' }}>
-                       {(item.price * item.qty).toLocaleString()} so'm
-                     </div>
-                     {Number(item.itemDiscount) > 0 && (
-                       <div style={{ fontSize: 11, color: '#10B981', fontWeight: 800 }}>
-                         {((item.price - Number(item.itemDiscount)) * item.qty).toLocaleString()} so'm
-                       </div>
-                     )}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
-                    <input 
-                      type="text" 
-                      inputMode="numeric"
-                      value={formatMoney(item.itemDiscount)} 
-                      onChange={e => changeItemDiscount(item.id, e.target.value.replace(/\D/g, ''))}
-                      placeholder="Chegirma qiymati..."
-                      style={{
-                        width: '100%', maxWidth: 110, padding: '4px 6px', fontSize: 10, borderRadius: 4, 
-                        border: '1px solid var(--border)', background: 'var(--s2)', color: 'var(--t1)',
-                        outline: 'none'
-                      }}
-                    />
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <button onClick={() => changeQty(item.id, -1)} style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--s2)', border: '1px solid var(--border)', color: 'var(--t1)', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
-                  <span style={{ fontSize: 13, fontWeight: 700, minWidth: 18, textAlign: 'center' }}>{item.qty}</span>
-                  <button onClick={() => changeQty(item.id, 1)} style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--s2)', border: '1px solid var(--border)', color: 'var(--t1)', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
-                </div>
-              </div>
-            ))
-          }
-        </div>
-
-        {/* Footer */}
-        <div style={{ padding: '14px 18px', borderTop: '1px solid var(--border)' }}>
-          {/* Customer Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, padding: '10px 14px', background: 'rgba(59,130,246,0.06)', borderRadius: 12, border: '1px solid rgba(59,130,246,0.2)' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--t1)' }}>
-              👥 Xaridor: <span style={{ color: selectedCustomer ? '#3B82F6' : 'var(--t3)' }}>{selectedCustomer ? selectedCustomer.name : 'Tanlanmagan'}</span>
-            </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {selectedCustomer && (
-                <button onClick={() => setSelectedCustomer(null)} style={{ background: 'none', border: '1px solid rgba(244,63,94,0.3)', borderRadius: 6, color: '#F43F5E', fontSize: 11, padding: '4px 8px', cursor: 'pointer' }}>✕</button>
-              )}
-              <button onClick={() => setShowCustModal(true)} style={{ background: '#3B82F6', border: 'none', borderRadius: 6, color: '#fff', fontSize: 11, fontWeight: 700, padding: '4px 12px', cursor: 'pointer' }}>Tanlash</button>
-            </div>
-          </div>
-
-          {/* Discount */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <span style={{ fontSize: 12, color: 'var(--t2)', whiteSpace: 'nowrap' }}>Chegirma:</span>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {[0, 5, 10, 15].map(d => (
-                <button key={d} onClick={() => setDiscount(d)} style={{
-                  padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700,
-                  fontFamily: 'Outfit,sans-serif', cursor: 'pointer',
-                  border: `1px solid ${discount === d ? '#3B82F6' : 'var(--border)'}`,
-                  background: discount === d ? 'rgba(59,130,246,0.12)' : 'var(--s2)',
-                  color: discount === d ? '#3B82F6' : 'var(--t2)',
-                }}>{d}%</button>
-              ))}
-            </div>
-          </div>
-
-          {/* Totals */}
-          {[
-            { label: "Mahsulotlar:", val: subtotal.toLocaleString() + " so'm" },
-            { label: "Chegirma:", val: `- ${discountAmt.toLocaleString()} so'm`, red: true },
-          ].map(r => (
-            <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--t2)', marginBottom: 6 }}>
-              <span>{r.label}</span>
-              <span style={{ color: r.red ? '#F43F5E' : undefined }}>{r.val}</span>
-            </div>
-          ))}
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, marginTop: 8, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-            <span style={{ fontSize: 15, fontWeight: 800 }}>Jami:</span>
-            <span style={{ fontSize: 22, fontWeight: 900, color: '#22D3EE' }}>{total.toLocaleString()} so'm</span>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, marginBottom: 12 }}>
-            {PAY_METHODS.map(m => (
-              <button key={m.id} onClick={() => { setMethod(m.id); setPaidAmount(''); }} style={{
-                padding: '8px 4px', borderRadius: 8, fontSize: 11, fontWeight: 700,
-                fontFamily: 'Outfit,sans-serif', cursor: 'pointer', textAlign: 'center',
-                border: `1px solid ${payMethod === m.id ? '#10B981' : 'var(--border)'}`,
-                background: payMethod === m.id ? 'rgba(16,185,129,0.1)' : 'var(--s2)',
-                color: payMethod === m.id ? '#10B981' : 'var(--t2)',
-                transition: 'all .15s',
-              }}>{m.label}</button>
-            ))}
-          </div>
-
-          {/* Partial Payment for Nasiya */}
-          {payMethod === 'nasiya' && (
-            <div style={{ marginBottom: 16, background: 'rgba(244,63,94,0.05)', border: '1px solid rgba(244,63,94,0.2)', borderRadius: 12, padding: '12px 14px' }}>
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#F43F5E', marginBottom: 8 }}>💵 Boshlang'ich to'lov (Naqd/Plastik)</div>
-                <input 
-                  type="text" 
-                  inputMode="numeric"
-                  value={formatMoney(paidAmount)} 
-                  onChange={(e) => setPaidAmount(e.target.value.replace(/\D/g, ''))}
-                  placeholder="0 so'm" 
-                  style={{ 
-                    width: '100%', padding: '10px 12px', background: 'var(--s1)', border: '1px solid rgba(255,255,255,0.1)', 
-                    borderRadius: 8, color: 'var(--t1)', fontSize: 16, fontWeight: 800, fontFamily: 'Outfit,sans-serif' 
-                  }}
-                />
-              </div>
-
-              <div style={{ marginBottom: 8 }}>
-                 <div style={{ fontSize: 12, fontWeight: 700, color: '#F43F5E', marginBottom: 8 }}>⏳ Nasiya muddati (kun)</div>
-                 <input 
-                  type="number" 
-                  value={dueDays} 
-                  onChange={(e) => setDueDays(e.target.value)}
-                  placeholder="Masalan: 30" 
-                  style={{ 
-                    width: '100%', padding: '10px 12px', background: 'var(--s1)', border: '1px solid rgba(255,255,255,0.1)', 
-                    borderRadius: 8, color: 'var(--t1)', fontSize: 16, fontWeight: 800, fontFamily: 'Outfit,sans-serif' 
-                  }}
-                 />
-              </div>
-
-              {Number(paidAmount) > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, borderTop: '1px solid rgba(244,63,94,0.2)', paddingTop: 8, color: 'var(--t2)' }}>
-                  <span>Qolgan qarz:</span>
-                  <span style={{ color: '#F43F5E', fontWeight: 800 }}>{Math.max(0, total - Number(paidAmount)).toLocaleString()} so'm</span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Checkout btn */}
-          <button
-            onClick={() => {
-              if (payMethod === 'nasiya' && !selectedCustomer) {
-                alert("Iltimos, Nasiyaga (Qarzga) sotish uchun avval Xaridorni tanlang!");
-                setShowCustModal(true);
-                return;
-              }
-              checkout();
-            }}
-            disabled={cartItems.length === 0}
-            className="btn-primary"
-            style={{
-              width: '100%', padding: 14,
-              background: cartItems.length === 0 ? 'var(--s2)' : 'linear-gradient(135deg,#10B981,#059669)',
-              border: 'none', borderRadius: 12,
-              color: cartItems.length === 0 ? 'var(--t3)' : '#fff',
-              fontSize: 14, fontWeight: 800, fontFamily: 'Outfit,sans-serif',
-              cursor: cartItems.length === 0 ? 'not-allowed' : 'pointer',
-              boxShadow: cartItems.length > 0 ? '0 6px 20px rgba(16,185,129,0.28)' : 'none',
-              filter: cartItems.length === 0 ? 'none' : 'drop-shadow(0 4px 6px rgba(16,185,129,0.2))',
-            }}
-          >
-            ✓ Sotuvni Yakunlash
-          </button>
-        </div>
-      </div>
-
-      {/* ── SUCCESS MODAL ── */}
-      {success && (
-        <div className="modal-overlay" style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 9999, backdropFilter: 'blur(8px)',
+        {/* Yakuniy panel */}
+        <div style={{
+          padding: '12px 16px', borderTop: '1px solid var(--color-divider)',
+          display: 'flex', flexDirection: 'column', gap: 11,
         }}>
-          <div className="modal-content" style={{
-            background: 'linear-gradient(145deg, rgba(26, 35, 50, 0.95) 0%, rgba(13, 17, 23, 0.98) 100%)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: 24, padding: '44px 36px', textAlign: 'center',
-            maxWidth: 320, width: '90%',
-            boxShadow: '0 24px 60px rgba(16,185,129,0.3)',
-          }}>
-            <div style={{ fontSize: 72, marginBottom: 16, filter: 'drop-shadow(0 0 20px rgba(16,185,129,0.4))' }}>✅</div>
-            <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 8, color: '#fff' }}>Yakunlandi!</div>
-            <div style={{ fontSize: 13, color: 'var(--t2)', marginBottom: 20 }}>
-              Sayvdo yakunlandi. {(!settings.isOnline && settings.offline) ? "(Offline Xotiraga Saqlandi)" : "Kvitantsiya tayyor."}
-            </div>
-            <div style={{ fontSize: 24, fontWeight: 800, color: '#10B981', marginTop: 12 }}>
-              {total.toLocaleString()} so'm
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 12, color: 'var(--color-neutral-500)' }}>Umumiy chegirma</span>
+            <Seg options={DISCOUNTS} value={discount} onChange={setDiscount} style={{ fontSize: 12 }} />
+          </div>
+
+          <div className="num" style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12.5 }}>
+            <Row label="Oraliq jami" value={money(subtotal)} />
+            {itemsDiscount > 0 && <Row label="Mahsulot chegirmalari" value={`−${money(itemsDiscount)}`} />}
+            {globalDiscount > 0 && <Row label={`Umumiy chegirma (${discount}%)`} value={`−${money(globalDiscount)}`} />}
+            <div style={{
+              display: 'flex', justifyContent: 'space-between',
+              fontSize: 16, fontWeight: 500, color: 'var(--color-text)',
+              paddingTop: 4, borderTop: '1px dashed var(--color-divider)',
+            }}>
+              <span>Jami</span><span>{money(total)} so‘m</span>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* ── CUSTOMER MODAL ── */}
-      {showCustModal && (
-        <div className="modal-overlay" style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 9999, backdropFilter: 'blur(8px)',
-        }} onClick={e => e.target === e.currentTarget && setShowCustModal(false)}>
-          <div className="modal-content" style={{
-            background: 'linear-gradient(145deg, rgba(26, 35, 50, 0.95) 0%, rgba(13, 17, 23, 0.98) 100%)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: 20, padding: '30px', width: 440, maxWidth: '90vw',
-            boxShadow: '0 24px 60px rgba(0,0,0,0.4)',
-            display: 'flex', flexDirection: 'column', maxHeight: '80vh'
-          }}>
-            <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-              <span>👥 Xaridorni tanlang</span>
-              <button onClick={() => setShowCustModal(false)} style={{ background: 'none', border: 'none', color: 'var(--t2)', fontSize: 18, cursor: 'pointer' }}>✕</button>
-            </div>
-            
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, paddingRight: 6 }}>
-              {customers.map(c => (
-                <div key={c.id} onClick={() => { setSelectedCustomer(c); setShowCustModal(false); }} className="fast-transition" style={{
-                  display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
-                  background: 'var(--s2)', borderRadius: 12, border: `1px solid ${selectedCustomer?.id === c.id ? '#3B82F6' : 'rgba(255,255,255,0.05)'}`,
-                  cursor: 'pointer'
-                }}>
-                  <div style={{ fontSize: 24 }}>{c.type === 'dealer' ? '🏪' : '👤'}</div>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 700 }}>{c.name} {c.shop_name ? `(${c.shop_name})` : ''}</div>
-                    <div style={{ fontSize: 12, color: 'var(--t2)' }}>{c.phone}</div>
-                  </div>
+          {/* To'lov turi */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 7 }}>
+            {PAY_METHODS.map(pm => {
+              const sel = payMethod === pm.id;
+              const dis = isDealer && pm.id !== 'nasiya';
+              return (
+                <button
+                  key={pm.id}
+                  disabled={dis}
+                  title={dis ? 'Diler rejimida faqat Nasiya' : pm.label}
+                  onClick={() => { setPayMethod(pm.id); setPaidAmount(''); }}
+                  style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                    padding: '9px 4px', borderRadius: 8, font: 'inherit',
+                    border: `1px solid ${sel ? 'var(--color-accent)' : 'var(--color-divider)'}`,
+                    background: sel ? 'var(--color-accent-900)' : 'transparent',
+                    opacity: dis ? 0.35 : 1,
+                    cursor: dis ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  <Icon name={pm.icon} size={17} color={sel ? 'var(--color-accent)' : 'var(--color-neutral-400)'} />
+                  <span style={{ fontSize: 11.5, color: sel ? 'var(--color-text)' : 'var(--color-neutral-400)' }}>
+                    {pm.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Nasiya tafsilotlari */}
+          {payMethod === 'nasiya' && (
+            <div style={{
+              display: 'flex', flexDirection: 'column', gap: 9, padding: 11, borderRadius: 9,
+              background: 'color-mix(in srgb, var(--color-text) 4%, transparent)',
+            }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
+                <div className="field">
+                  <label style={{ fontSize: 11 }}>Boshlang‘ich to‘lov</label>
+                  <input
+                    className="input num" inputMode="numeric" placeholder="0"
+                    value={formatInput(paidAmount)}
+                    onChange={e => setPaidAmount(e.target.value.replace(/\D/g, ''))}
+                    style={{ fontSize: 13 }}
+                  />
                 </div>
-              ))}
-              {customers.length === 0 && (
-                 <div style={{ textAlign: 'center', padding: 20, color: 'var(--t3)', fontSize: 13 }}>Mijozlar mavjud emas. CRM orqali qo'shing.</div>
-              )}
+                <div className="field">
+                  <label style={{ fontSize: 11 }}>Nasiya muddati (kun)</label>
+                  <input
+                    className="input num" inputMode="numeric" placeholder="30"
+                    value={dueDays}
+                    onChange={e => setDueDays(e.target.value.replace(/\D/g, ''))}
+                    style={{ fontSize: 13 }}
+                  />
+                </div>
+              </div>
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '9px 11px', borderRadius: 8, background: 'var(--warnbg)',
+              }}>
+                <span style={{ fontSize: 12.5, color: 'var(--warn)' }}>Qolgan qarz</span>
+                <span className="num" style={{ fontSize: 17, fontWeight: 600, color: 'var(--warn)' }}>
+                  {money(remainingDebt)} so‘m
+                </span>
+              </div>
             </div>
+          )}
+
+          <Btn
+            variant="primary" icon="check-circle" block
+            disabled={items.length === 0} loading={saving}
+            onClick={checkout}
+            style={{ minHeight: 48, fontSize: 15 }}
+          >
+            {saving ? 'Saqlanmoqda…' : `Sotuvni Yakunlash — ${money(total)} so‘m`}
+          </Btn>
+
+          <div style={{ fontSize: 10.5, color: 'var(--color-neutral-500)', textAlign: 'center' }}>
+            Yakunlangach: ombor kamayadi · nasiya bo‘lsa qarz ochiladi · chek yangi oynada chop etiladi
           </div>
         </div>
+      </aside>
+
+      {/* ── Xaridor tanlash ── */}
+      {showCustomers && (
+        <Modal title="Xaridorni tanlash" onClose={() => setShowCustomers(false)}>
+          <input
+            className="input" autoFocus placeholder="Ism yoki telefon…"
+            value={custSearch} onChange={e => setCustSearch(e.target.value)}
+            style={{ marginBottom: 'var(--space-3)' }}
+          />
+          <div style={{ maxHeight: 320, overflowY: 'auto', margin: '0 calc(-1 * var(--space-6))' }}>
+            {filteredCustomers.length === 0 ? (
+              <EmptyState icon="users-three" text="Mijoz topilmadi" sub="CRM bo‘limidan yangi mijoz qo‘shing" />
+            ) : filteredCustomers.map(c => {
+              const sel = customer?.id === c.id;
+              return (
+                <div
+                  key={c.id}
+                  onClick={() => { setCustomer(c); setShowCustomers(false); setCustSearch(''); }}
+                  className="row-link"
+                  style={{
+                    borderRadius: 0, gap: 11, padding: '11px var(--space-6)',
+                    background: sel ? 'var(--color-accent-900)' : 'transparent',
+                  }}
+                >
+                  <Avatar initials={initialsOf(c.name)} size={34}
+                    color={c.type === 'dealer' ? undefined : 'var(--color-neutral-800)'} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>
+                      {c.shop_name ? `"${c.shop_name}" — ${c.name}` : c.name}
+                    </div>
+                    <div className="num" style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>{c.phone}</div>
+                  </div>
+                  {c.type === 'dealer' && <Tag variant="accent">Diler</Tag>}
+                  {sel && <Icon name="check-circle" fill size={17} color="var(--color-accent)" />}
+                </div>
+              );
+            })}
+          </div>
+        </Modal>
       )}
 
-      <style>{`
-        @keyframes slideIn { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:translateX(0)} }
-      `}</style>
+      {/* ── Savatni tozalash tasdig'i ── */}
+      {showClearConfirm && (
+        <Modal onClose={() => setShowClearConfirm(false)}>
+          <div style={{ display: 'flex', gap: 11, alignItems: 'flex-start' }}>
+            <Icon name="warning" fill size={20} color="var(--warn)" />
+            <div>
+              <div style={{ fontSize: 14.5, fontWeight: 500 }}>Savatni tozalash?</div>
+              <div style={{ fontSize: 12.5, color: 'var(--color-neutral-500)', marginTop: 3 }}>
+                Savatdagi {itemCount} ta mahsulot olib tashlanadi. Bu amalni qaytarib bo‘lmaydi.
+              </div>
+            </div>
+          </div>
+          <div className="dialog-actions">
+            <Btn variant="secondary" onClick={() => setShowClearConfirm(false)}>Bekor qilish</Btn>
+            <Btn variant="danger" onClick={clearCart}>Tozalash</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Muvaffaqiyatli sotuv ── */}
+      {success && (
+        <Modal onClose={startNewSale}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9, textAlign: 'center', padding: '10px 0' }}>
+            <div style={{
+              width: 52, height: 52, borderRadius: '50%',
+              background: 'var(--okbg)', display: 'grid', placeItems: 'center',
+            }}>
+              <Icon name="check-circle" fill size={30} color="var(--ok)" />
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 500 }}>Sotuv yakunlandi</div>
+            <div className="num" style={{ fontSize: 13, color: 'var(--color-neutral-400)' }}>
+              Chek #{success.receiptNo} · {money(success.total)} so‘m · {success.payLabel}
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--color-neutral-500)' }}>
+              {success.offline
+                ? 'Internet yo‘q — sotuv xotiraga saqlandi, ulanganda yuboriladi'
+                : success.printed
+                  ? 'Chek yangi oynada ochildi · ombor yangilandi'
+                  : 'Ombor yangilandi · chekni chop etish uchun pop-up oynalarga ruxsat bering'}
+            </div>
+            <div style={{ display: 'flex', gap: 9, marginTop: 5 }}>
+              <Btn variant="secondary" icon="printer" onClick={() => printReceipt({
+                items, subtotal, discount: discountTotal, total, paidAmount,
+                payMethod, receiptNo: success.receiptNo, cashier: user?.name,
+                customer, storeName: user?.storeName, isPhone,
+              })}>
+                Qayta chop etish
+              </Btn>
+              <Btn variant="primary" icon="plus" onClick={startNewSale}>Yangi sotuv</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {toast && <Toast message={toast.msg} variant={toast.variant} onClose={() => setToast(null)} />}
+    </div>
+  );
+}
+
+function Row({ label, value }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--color-neutral-400)' }}>
+      <span>{label}</span><span>{value}</span>
     </div>
   );
 }

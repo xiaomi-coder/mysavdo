@@ -1,221 +1,276 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  Page, PageHeader, Card, SectionHeader, Icon, Btn, Tag, Modal, Field,
+  EmptyState, SkeletonRows, Toast,
+} from '../components/UI';
 import { useAuth } from '../context/AuthContext';
-import { StatCard, SectionHeader, Btn, Badge } from '../components/UI';
 import { supabase } from '../utils/supabaseClient';
 
-const CATEGORIES = [
-    { name: 'Ijara', icon: '🏢', color: '#8B5CF6' },
-    { name: 'Oylik Maosh', icon: '👥', color: '#10B981' },
-    { name: 'Kommunal, Internet', icon: '⚡', color: '#F59E0B' },
-    { name: 'Soliqlar', icon: '🏛️', color: '#EF4444' },
-    { name: 'Kantselyariya, Xo\'jalik', icon: '🧹', color: '#6366F1' },
-    { name: 'Transport, Logistika', icon: '🚚', color: '#3B82F6' },
-    { name: 'Marketing', icon: '📣', color: '#EC4899' },
-    { name: 'Boshqa', icon: '💸', color: '#94A3B8' },
-];
+const CATEGORIES = ['Ijara', 'Oylik Maosh', 'Kommunal', 'Soliqlar',
+  'Kantselyariya', 'Transport', 'Marketing', 'Boshqa'];
 
-const inputStyle = { width: '100%', padding: '11px 13px', background: 'var(--s2)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--t1)', fontSize: 13, fontFamily: 'Outfit,sans-serif', outline: 'none', boxSizing: 'border-box' };
+const MONTHS = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun',
+  'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'];
 
-function Modal({ children, onClose }) {
-    return (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, backdropFilter: 'blur(8px)' }} onClick={e => e.target === e.currentTarget && onClose()}>
-            <div className="modal-content" style={{ background: 'linear-gradient(145deg, rgba(26, 35, 50, 0.95) 0%, rgba(13, 17, 23, 0.98) 100%)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: '32px 30px', width: 420, maxWidth: '92vw', boxShadow: '0 24px 60px rgba(0,0,0,0.4)', animation: 'slideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)' }}>
-                <style>{`@keyframes slideUp { 0% { transform: translateY(40px) scale(0.95); opacity: 0; } 100% { transform: translateY(0) scale(1); opacity: 1; } }`}</style>
-                {children}
-            </div>
-        </div>
-    );
-}
+const money = n => Math.round(Number(n) || 0).toLocaleString('ru-RU');
+const formatInput = v => {
+  const d = String(v ?? '').replace(/\D/g, '');
+  return d ? Number(d).toLocaleString('ru-RU') : '';
+};
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Moliya — xarajatlar va oylik ko'rsatkichlar
+   ══════════════════════════════════════════════════════════════════════ */
 
 export default function Finance() {
-    const { user } = useAuth();
-    const [expenses, setExpenses] = useState([]);
-    const [showAdd, setShowAdd] = useState(false);
-    const [toast, setToast] = useState(null);
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [expenses, setExpenses] = useState([]);
+  const [revenue, setRevenue] = useState(0);
+  const [profit, setProfit] = useState(0);
+  const [debtTotal, setDebtTotal] = useState(0);
+  const [showAdd, setShowAdd] = useState(false);
+  const [toast, setToast] = useState(null);
 
-    // Form State
-    const [amount, setAmount] = useState('');
-    const [cat, setCat] = useState('Kommunal, Internet');
-    const [desc, setDesc] = useState('');
-    const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const now = new Date();
+  const monthLabel = `${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
 
-    useEffect(() => {
-        if (user?.store_id) {
-            loadExpenses(user.store_id);
-        }
-    }, [user]);
+  const load = useCallback(async (storeId) => {
+    setLoading(true);
+    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
 
-    const loadExpenses = async (storeId) => {
-        const { data, error } = await supabase.from('expenses').select('*').eq('store_id', storeId).order('date', { ascending: false });
-        if (!error && data) {
-            setExpenses(data.map(d => ({ ...d, date: new Date(d.date).toISOString().split('T')[0] })));
-        }
-    };
+    const [expRes, txnRes, debtRes] = await Promise.all([
+      supabase.from('expenses').select('*').eq('store_id', storeId)
+        .gte('date', monthStart).order('date', { ascending: false }),
+      supabase.from('transactions').select('total, items').eq('store_id', storeId)
+        .eq('status', 'completed').gte('date', monthStart),
+      supabase.from('debts').select('amount, paid_amount').eq('store_id', storeId)
+        .eq('status', "To'lanmagan"),
+    ]);
 
-    const handleAddReturn = async () => {
-        if (!amount || isNaN(amount) || amount <= 0 || !user?.store_id) return;
+    setExpenses(expRes.data || []);
 
-        const newExp = {
-            store_id: user.store_id,
-            date: date,
-            category: cat,
-            note: desc || CATEGORIES.find(c => c.name === cat)?.name || 'Xarajat',
-            amount: parseInt(amount),
-            cashier: user.name || 'Noma\'lum',
-        };
+    // Daromad va tovar foydasi — sotuvlar ichidagi tan narxlardan
+    let sales = 0, gross = 0;
+    (txnRes.data || []).forEach(t => {
+      sales += Number(t.total) || 0;
+      (Array.isArray(t.items) ? t.items : []).forEach(i => {
+        const qty = i.qty || 1;
+        gross += ((Number(i.price) || 0) - (Number(i.cost_price) || Number(i.cost) || 0)) * qty;
+      });
+    });
+    setRevenue(sales);
+    setProfit(gross - (expRes.data || []).reduce((s, e) => s + (Number(e.amount) || 0), 0));
+    setDebtTotal((debtRes.data || []).reduce((s, d) => s + (Number(d.amount) - Number(d.paid_amount || 0)), 0));
+    setLoading(false);
+  }, []);
 
-        const { data, error } = await supabase.from('expenses').insert(newExp).select().single();
+  useEffect(() => { if (user?.store_id) load(user.store_id); }, [user, load]);
 
-        if (error) {
-            showToast(`❌ Xatolik: ${error.message}`);
-        } else {
-            setExpenses(prev => [{ ...data, date: new Date(data.date).toISOString().split('T')[0], cat: data.category, desc: data.note }, ...prev]);
-            showToast(`✅ Xarajat saqlandi: ${parseInt(amount).toLocaleString()} so'm`);
+  const totalExpenses = useMemo(
+    () => expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0),
+    [expenses]
+  );
+
+  /* Kategoriya bo'yicha taqsimot — kamayish tartibida */
+  const byCategory = useMemo(() => {
+    const map = {};
+    expenses.forEach(e => {
+      const k = e.category || e.cat || 'Boshqa';
+      map[k] = (map[k] || 0) + (Number(e.amount) || 0);
+    });
+    const rows = Object.entries(map).map(([name, sum]) => ({ name, sum }))
+      .sort((a, b) => b.sum - a.sum);
+    const max = rows[0]?.sum || 1;
+    return rows.map((r, i) => ({
+      ...r,
+      pct: Math.round((r.sum / max) * 100),
+      // Eng katta xarajat to'liq akcentda, qolganlari pasayib boradi
+      color: i === 0 ? 'var(--color-accent)' : i < 3 ? 'var(--color-accent-700)' : 'var(--color-accent-800)',
+    }));
+  }, [expenses]);
+
+  return (
+    <Page>
+      <PageHeader title="Moliya" subtitle={`Do‘kon xarajatlari va moliyaviy ko‘rsatkichlar · ${monthLabel}`}>
+        <Btn variant="primary" icon="plus" onClick={() => setShowAdd(true)}>Yangi Xarajat</Btn>
+      </PageHeader>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12 }}>
+        <Tile icon="trend-up" iconColor="var(--color-accent)" label="Daromad (sotuvlar)" value={money(revenue)} />
+        <Tile icon="arrow-circle-down" iconColor="var(--dang)" label="Xarajatlar" value={money(totalExpenses)} />
+        <Tile icon="chart-line-up" iconColor="var(--ok)" label="Sof foyda" value={money(profit)}
+          valueColor={profit >= 0 ? 'var(--ok)' : 'var(--dang)'} />
+        <Tile icon="hand-coins" iconColor="var(--warn)" label="Nasiya qarzlari" value={money(debtTotal)}
+          valueColor="var(--warn)" />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '440px 1fr', gap: 14, alignItems: 'start' }}>
+        <Card padding="var(--space-6)" gap={11}>
+          <div style={{ fontSize: 14, fontWeight: 500 }}>Xarajat kategoriyalari · {MONTHS[now.getMonth()]}</div>
+          {loading ? <SkeletonRows count={5} />
+            : byCategory.length === 0 ? <EmptyState icon="wallet" text="Bu oyda xarajat yo‘q" />
+              : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 9, fontSize: 12 }}>
+                  {byCategory.map(c => (
+                    <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ width: 86, color: 'var(--color-neutral-400)', flex: 'none' }}>{c.name}</span>
+                      <div style={{
+                        flex: 1, height: 9, borderRadius: 5,
+                        background: 'color-mix(in srgb, var(--color-text) 6%, transparent)',
+                      }}>
+                        <div style={{ width: `${c.pct}%`, height: '100%', borderRadius: 5, background: c.color }} />
+                      </div>
+                      <span className="num" style={{ width: 82, textAlign: 'right', flex: 'none' }}>{money(c.sum)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+        </Card>
+
+        <Card padding="var(--space-6)" gap={10}>
+          <SectionHeader title="So‘nggi xarajatlar" hint={`${expenses.length} ta yozuv`} />
+          {loading ? <SkeletonRows count={5} widths={['100%']} />
+            : expenses.length === 0 ? (
+              <EmptyState
+                icon="receipt" text="Xarajatlar yo‘q" sub="Birinchi xarajatni qo‘shing"
+                action={<Btn variant="primary" size="sm" icon="plus" onClick={() => setShowAdd(true)}>Yangi Xarajat</Btn>}
+              />
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table className="table" style={{ fontSize: 12.5 }}>
+                  <thead>
+                    <tr>
+                      <th>Sana</th><th>Kategoriya</th><th>Izoh</th>
+                      <th>Kim</th><th style={{ textAlign: 'right' }}>Summa</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {expenses.map(e => {
+                      const d = new Date(e.date);
+                      return (
+                        <tr key={e.id}>
+                          <td className="num" style={{ color: 'var(--color-neutral-500)' }}>
+                            {String(d.getDate()).padStart(2, '0')}.{String(d.getMonth() + 1).padStart(2, '0')}
+                          </td>
+                          <td><Tag variant="neutral">{e.category || e.cat}</Tag></td>
+                          <td>{e.note || e.desc || '—'}</td>
+                          <td style={{ color: 'var(--color-neutral-500)' }}>{e.cashier || '—'}</td>
+                          <td className="num" style={{ textAlign: 'right' }}>{money(e.amount)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+        </Card>
+      </div>
+
+      {showAdd && (
+        <AddExpenseModal
+          storeId={user?.store_id}
+          cashier={user?.name}
+          onClose={() => setShowAdd(false)}
+          onSaved={(amount) => {
             setShowAdd(false);
-            setAmount(''); setDesc('');
-        }
-    };
+            load(user.store_id);
+            setToast({ msg: `Xarajat saqlandi: ${money(amount)} so‘m`, variant: 'ok' });
+          }}
+          onError={m => setToast({ msg: m, variant: 'dang' })}
+        />
+      )}
 
-    const totalExp = expenses.reduce((a, b) => a + (Number(b.amount) || 0), 0);
-    const catBreakdown = expenses.reduce((acc, exp) => {
-        const catName = exp.category || exp.cat;
-        acc[catName] = (acc[catName] || 0) + (Number(exp.amount) || 0);
-        return acc;
-    }, {});
+      {toast && <Toast message={toast.msg} variant={toast.variant} onClose={() => setToast(null)} />}
+    </Page>
+  );
+}
 
-    const biggestCat = Object.keys(catBreakdown).length > 0 ? Object.keys(catBreakdown).reduce((a, b) => catBreakdown[a] > catBreakdown[b] ? a : b) : '-';
+function Tile({ icon, iconColor, label, value, valueColor }) {
+  return (
+    <Card padding={14} gap={5}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11.5, color: 'var(--color-neutral-500)' }}>
+        <Icon name={icon} size={15} color={iconColor} />
+        {label}
+      </div>
+      <div className="num" style={{ fontSize: 19, fontWeight: 500, color: valueColor }}>{value}</div>
+    </Card>
+  );
+}
 
-    return (
-        <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                    <div style={{ fontSize: 24, fontWeight: 800 }}>Moliya va Xarajatlar</div>
-                    <div style={{ fontSize: 13, color: 'var(--t2)' }}>Kassa xarajatlari nazorati va ko'chirmalar</div>
-                </div>
-                <Btn variant="primary" onClick={() => setShowAdd(true)} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#10B981', borderColor: '#10B981' }}>
-                    <span>💸</span> Yangi Xarajat
-                </Btn>
-            </div>
+/* ── Yangi xarajat ─────────────────────────────────────────────────────── */
+function AddExpenseModal({ storeId, cashier, onClose, onSaved, onError }) {
+  const [amount, setAmount] = useState('');
+  const [category, setCategory] = useState('Boshqa');
+  const [note, setNote] = useState('');
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [saving, setSaving] = useState(false);
 
-            {/* Stats */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
-                <StatCard icon="📉" value={totalExp.toLocaleString()} label="Jami Xarajatlar" accent="#EF4444" />
-                <StatCard icon="📅" value={expenses.length} label="Ushbu oydagi tranzaksiyalar" accent="#3B82F6" />
-                <StatCard icon="🔍" value={biggestCat} label="Eng ko'p xarajat yo'nalishi" accent="#F59E0B" />
-                <StatCard icon="👤" value={user?.name || '-'} label="Mas'ul shaxs" accent="#A78BFA" />
-            </div>
+  const n = Number(amount) || 0;
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20 }}>
+  const save = async () => {
+    setSaving(true);
+    const { error } = await supabase.from('expenses').insert({
+      store_id: storeId,
+      date,
+      category,
+      note: note.trim() || category,
+      amount: n,
+      cashier: cashier || 'Noma\'lum',
+    });
+    setSaving(false);
+    if (error) onError(`Saqlanmadi: ${error.message}`);
+    else onSaved(n);
+  };
 
-                {/* Table */}
-                <div className="glass-card" style={{ borderRadius: 16, padding: 22 }}>
-                    <SectionHeader title="Xarajatlar Tarixi">
-                        <span style={{ fontSize: 12, color: 'var(--t3)' }}>Oxirgi 30 kun</span>
-                    </SectionHeader>
-                    <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                            <thead>
-                                <tr>
-                                    {['Sana', 'Yo\'nalish', 'Izoh / Tafsilot', 'Kim tomonidan', 'Summa'].map(h => (
-                                        <th key={h} style={{ fontSize: 11, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: .8, padding: '0 12px 12px 0', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{h}</th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {[...expenses].map(exp => {
-                                    const catName = exp.category || exp.cat;
-                                    const catObj = CATEGORIES.find(c => c.name === catName) || CATEGORIES[7];
-                                    return (
-                                        <tr key={exp.id} className="fast-transition" style={{ cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                                            <td style={{ padding: '12px 12px 12px 0', fontSize: 12, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{exp.date}</td>
-                                            <td style={{ padding: '12px 12px 12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: catObj.color + '15', color: catObj.color, padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>
-                                                    <span>{catObj.icon}</span> {catName}
-                                                </div>
-                                            </td>
-                                            <td style={{ padding: '12px 12px 12px 0', fontSize: 13, fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{exp.note || exp.desc}</td>
-                                            <td style={{ padding: '12px 12px 12px 0', fontSize: 13, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{exp.cashier}</td>
-                                            <td style={{ padding: '12px 12px 12px 0', fontSize: 14, fontWeight: 800, color: '#EF4444', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                                -{Number(exp.amount).toLocaleString()} <span style={{ fontSize: 10, color: 'var(--t3)' }}>UZS</span>
-                                            </td>
-                                        </tr>
-                                    )
-                                })}
-                            </tbody>
-                        </table>
-                        {expenses.length === 0 && (
-                            <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--t3)', fontSize: 13 }}>Hech qanday xarajat yo'q.</div>
-                        )}
-                    </div>
-                </div>
+  return (
+    <Modal title="Yangi Xarajat" onClose={onClose} actions={
+      <>
+        <Btn variant="secondary" onClick={onClose}>Bekor qilish</Btn>
+        <Btn variant="primary" onClick={save} disabled={n <= 0} loading={saving}>Saqlash</Btn>
+      </>
+    }>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <Field label="Summa">
+          <div className="input" style={{
+            display: 'flex', alignItems: 'center', padding: 0, paddingInline: 10,
+            borderColor: n > 0 ? 'var(--color-accent)' : undefined,
+          }}>
+            <input className="num" autoFocus inputMode="numeric" value={formatInput(amount)}
+              onChange={e => setAmount(e.target.value.replace(/\D/g, ''))} placeholder="0"
+              style={{ flex: 1, background: 'none', border: 0, outline: 'none', color: 'inherit', font: 'inherit', padding: '6px 0' }} />
+            <span style={{ fontSize: 12, color: 'var(--color-neutral-500)' }}>so‘m</span>
+          </div>
+        </Field>
 
-                {/* Small Analytics Sidebar */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    <div className="glass-card" style={{ borderRadius: 16, padding: 20 }}>
-                        <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 16 }}>Tuzilma (Kategoriyalar)</div>
-                        {Object.keys(catBreakdown).map(k => {
-                            const catObj = CATEGORIES.find(c => c.name === k) || CATEGORIES[7];
-                            const pct = ((catBreakdown[k] / totalExp) * 100).toFixed(0);
-                            return (
-                                <div key={k} style={{ marginBottom: 14 }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
-                                        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 14 }}>{catObj.icon}</span> <span style={{ fontWeight: 600 }}>{k}</span></span>
-                                        <span style={{ fontWeight: 800, color: 'var(--t1)' }}>{catBreakdown[k].toLocaleString()}</span>
-                                    </div>
-                                    <div style={{ height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
-                                        <div style={{ height: '100%', width: `${pct}%`, background: catObj.color, borderRadius: 3 }} />
-                                    </div>
-                                </div>
-                            )
-                        })}
-                    </div>
-                </div>
-
-            </div>
-
-            {/* Add Modal */}
-            {showAdd && (
-                <Modal onClose={() => setShowAdd(false)}>
-                    <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span style={{ fontSize: 28, filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))' }}>💸</span> Yangi Xarajat
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                        <div>
-                            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--t2)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Summa (so'm) *</label>
-                            <input type="number" autoFocus value={amount} onChange={e => setAmount(e.target.value)} placeholder="Misol: 50000" style={{ ...inputStyle, fontSize: 16, fontWeight: 700, padding: '12px 14px', background: 'rgba(0,0,0,0.2)' }} onFocus={e => e.target.style.borderColor = '#10B981'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-                        </div>
-
-                        <div>
-                            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--t2)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Yo'nalish (Kategoriya) *</label>
-                            <select value={cat} onChange={e => setCat(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                                {CATEGORIES.map(c => <option key={c.name} value={c.name}>{c.icon} {c.name}</option>)}
-                            </select>
-                        </div>
-
-                        <div>
-                            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--t2)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Izoh yoki Tafsilot</label>
-                            <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Ixtiyoriy yozuv..." style={inputStyle} onFocus={e => e.target.style.borderColor = '#10B981'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-                        </div>
-
-                        <div>
-                            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--t2)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Sana</label>
-                            <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ ...inputStyle, colorscheme: 'dark' }} onFocus={e => e.target.style.borderColor = '#10B981'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-                        </div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
-                        <button onClick={() => setShowAdd(false)} style={{ flex: 1, padding: '12px', background: 'var(--s2)', border: '1px solid var(--border)', borderRadius: 11, color: 'var(--t1)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }}>Bekor qilish</button>
-                        <button onClick={handleAddReturn} disabled={!amount} style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg,#10B981,#059669)', border: 'none', borderRadius: 11, color: '#fff', fontSize: 13, fontWeight: 800, cursor: !amount ? 'not-allowed' : 'pointer', fontFamily: 'Outfit,sans-serif', opacity: !amount ? 0.6 : 1, boxShadow: !amount ? 'none' : '0 4px 16px rgba(16,185,129,0.3)' }}>💾 Saqlash</button>
-                    </div>
-                </Modal>
-            )}
-
-            {toast && (
-                <div style={{ position: 'fixed', bottom: 28, right: 28, background: '#10B981', color: '#fff', padding: '13px 22px', borderRadius: 12, fontSize: 14, fontWeight: 700, zIndex: 9999, boxShadow: '0 8px 24px rgba(16,185,129,0.4)', animation: 'slideUp .3s ease' }}>
-                    {toast}
-                </div>
-            )}
+        <div>
+          <label style={{ fontSize: 12, color: 'var(--color-neutral-400)', display: 'block', marginBottom: 6 }}>
+            Kategoriya
+          </label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+            {CATEGORIES.map(c => {
+              const active = category === c;
+              return (
+                <button key={c} onClick={() => setCategory(c)} style={{
+                  padding: '6px 12px', borderRadius: 14, border: 0, cursor: 'pointer', font: 'inherit',
+                  fontSize: 12, fontWeight: active ? 500 : 400,
+                  background: active ? 'var(--color-accent)' : 'color-mix(in srgb, var(--color-text) 6%, transparent)',
+                  color: active ? 'var(--color-bg)' : 'var(--color-neutral-300)',
+                }}>{c}</button>
+              );
+            })}
+          </div>
         </div>
-    );
+
+        <Field label="Izoh">
+          <input className="input" value={note} onChange={e => setNote(e.target.value)}
+            placeholder="Masalan: Instagram reklama" />
+        </Field>
+
+        <Field label="Sana">
+          <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} />
+        </Field>
+      </div>
+    </Modal>
+  );
 }

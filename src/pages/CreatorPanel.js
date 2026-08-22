@@ -1,476 +1,543 @@
-import React, { useState, useEffect } from 'react';
-import { StatCard, Badge, SectionHeader, Btn, Avatar } from '../components/UI';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  Page, Card, Icon, Btn, Tag, Modal, Field, Avatar, SectionHeader,
+  EmptyState, SkeletonRows, Toast, StatCard,
+} from '../components/UI';
+import { useAuth } from '../context/AuthContext';
 import { supabase } from '../utils/supabaseClient';
 
-const ROLE_LABELS = { owner: "Do'kon Egasi", manager: 'Manager', cashier: 'Kassir', creator: 'Creator' };
-const ROLE_COLORS = { owner: '#3B82F6', manager: '#10B981', cashier: '#A78BFA', creator: '#F59E0B' };
+const money = n => Math.round(Number(n) || 0).toLocaleString('ru-RU');
+const initialsOf = (name = '') =>
+  name.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '??';
 
-export default function CreatorPanel({ page }) {
-  const [showAddStore, setShowAddStore] = useState(false);
-  const [showAddUser, setShowAddUser] = useState(false);
-  const [toast, setToast] = useState(null);
+const PLANS = [
+  { value: 1, label: 'Starter' },
+  { value: 3, label: 'Business' },
+  { value: 10, label: 'Enterprise' },
+];
+const planOf = n => PLANS.slice().reverse().find(p => (n || 1) >= p.value)?.label || 'Starter';
 
-  // Dynamic Data States
+const ROLE_LABEL = { owner: 'Egasi', manager: 'Manager', cashier: 'Sotuvchi', creator: 'Creator' };
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Creator Panel — platforma darajasidagi boshqaruv.
+   Barcha do'konlar va foydalanuvchilar shu yerdan yaratiladi.
+   ══════════════════════════════════════════════════════════════════════ */
+
+export default function CreatorPanel({ page = 'dashboard' }) {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
   const [stores, setStores] = useState([]);
   const [users, setUsers] = useState([]);
+  const [revenue, setRevenue] = useState({});
+  const [search, setSearch] = useState('');
+  const [toast, setToast] = useState(null);
 
-  useEffect(() => {
-    fetchData();
+  const [storeForm, setStoreForm] = useState(null);   // null | 'new' | store
+  const [userForm, setUserForm] = useState(null);
+  const [confirm, setConfirm] = useState(null);       // { type, store }
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [storeRes, userRes, txnRes] = await Promise.all([
+      supabase.from('stores').select('*').order('id'),
+      supabase.from('users').select('*'),
+      supabase.from('transactions').select('store_id, total').eq('status', 'completed'),
+    ]);
+    setStores(storeRes.data || []);
+    setUsers(userRes.data || []);
+
+    const byStore = {};
+    (txnRes.data || []).forEach(t => {
+      byStore[t.store_id] = (byStore[t.store_id] || 0) + (Number(t.total) || 0);
+    });
+    setRevenue(byStore);
+    setLoading(false);
   }, []);
 
-  const fetchData = async () => {
-    try {
-      const { data: storesData } = await supabase.from('stores').select('*');
-      const { data: usersData } = await supabase.from('users').select('*, stores(name)');
+  useEffect(() => { load(); }, [load]);
 
-      // Map data to expected format for UI
-      if (storesData) {
-        setStores(storesData.map(s => {
-          const storeUsersCount = usersData ? usersData.filter(u => u.store_id === s.id && u.role !== 'creator').length : 0;
-          return {
-            id: s.id, name: s.name, owner: s.owner_email, email: s.owner_email,
-            storeType: s.store_type || 'general',
-            plan: s.max_branches > 1 ? (s.max_branches > 3 ? 'Enterprise' : 'Business') : 'Starter',
-            revenue: 0,
-            active: s.is_active, employees: storeUsersCount, color: s.store_type === 'phone' ? '#A78BFA' : '#3B82F6'
-          };
-        }));
-      }
+  const notify = (msg, variant = 'ok') => setToast({ msg, variant });
 
-      if (usersData) {
-        setUsers(usersData.map(u => ({
-          id: u.id, name: u.name, email: u.email, role: u.role, store: u.stores?.name || 'Tizim',
-          active: true, lastLogin: 'Yaqinda', avatar: u.name?.substring(0, 2).toUpperCase() || '??', color: ROLE_COLORS[u.role] || '#888',
-          password: u.password
-        })));
-      }
-    } catch (err) {
-      console.error('Error fetching creator panel data:', err);
-    }
+  const toggleActive = async (s) => {
+    const { error } = await supabase.from('stores').update({ is_active: !s.is_active }).eq('id', s.id);
+    if (error) notify(`O‘zgartirilmadi: ${error.message}`, 'dang');
+    else { load(); notify(`"${s.name}" ${s.is_active ? 'to‘xtatildi' : 'davom ettirildi'}`); }
+    setConfirm(null);
   };
 
-  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2800); fetchData(); };
+  const deleteStore = async (s) => {
+    const { error } = await supabase.from('stores').delete().eq('id', s.id);
+    if (error) notify(`O‘chirilmadi: ${error.message}`, 'dang');
+    else { load(); notify(`"${s.name}" o‘chirildi`); }
+    setConfirm(null);
+  };
 
-  const totalRevenue = stores.reduce((s, st) => s + st.revenue, 0);
+  const totalRevenue = useMemo(
+    () => Object.values(revenue).reduce((s, v) => s + v, 0), [revenue]
+  );
 
-  if (page === 'dashboard') return <CreatorDashboard stores={stores} users={users} totalRevenue={totalRevenue} />;
-  if (page === 'stores') return <StoresPage stores={stores} onAdd={() => setShowAddStore(true)} showToast={showToast} showAddStore={showAddStore} setShowAddStore={setShowAddStore} />;
-  if (page === 'users') return <UsersPage stores={stores} users={users} onAdd={() => setShowAddUser(true)} showToast={showToast} showAddUser={showAddUser} setShowAddUser={setShowAddUser} />;
-  if (page === 'stats') return <StatsPage stores={stores} totalRevenue={totalRevenue} />;
-  if (page === 'settings') return <CreatorSettings />;
-  return null;
-}
+  const filteredStores = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return stores;
+    return stores.filter(s => [s.name, s.owner_email].some(v => String(v || '').toLowerCase().includes(q)));
+  }, [stores, search]);
 
-// ── CREATOR DASHBOARD ───────────────────────────────────────────────
-function CreatorDashboard({ stores, users, totalRevenue }) {
+  const staffCount = users.filter(u => u.role !== 'creator').length;
+
   return (
-    <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <div style={{ background: 'linear-gradient(135deg,rgba(245,158,11,0.08),rgba(59,130,246,0.04))', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 16, padding: '20px 24px', display: 'flex', alignItems: 'center', gap: 16 }}>
-        <span style={{ fontSize: 44 }}>👑</span>
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 800 }}>Creator Paneli</div>
-          <div style={{ fontSize: 13, color: 'var(--t2)' }}>Barcha do'konlar va foydalanuvchilar ustidan nazorat</div>
+    <Page style={{ padding: 0, gap: 0 }}>
+      {/* ── Platforma sarlavhasi ── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 12, padding: '12px 22px',
+        borderBottom: '1px solid var(--color-divider)',
+        background: 'linear-gradient(90deg, var(--color-accent-900), transparent 60%)',
+      }}>
+        <div style={{
+          width: 32, height: 32, borderRadius: 8, flex: 'none',
+          background: 'var(--color-accent)', color: 'var(--color-bg)',
+          display: 'grid', placeItems: 'center',
+        }}>
+          <Icon name="wrench" fill size={17} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 500 }}>Creator Panel</div>
+          <div style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>Platforma va do‘konlar boshqaruvi</div>
+        </div>
+        <Tag variant="accent" icon="shield-star">Platforma darajasi</Tag>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Avatar initials={initialsOf(user?.name)} size={28} />
+          <span style={{ fontSize: 12.5 }}>{user?.name}</span>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
-        <StatCard icon="🏪" value={stores.length} label="Jami do'konlar" accent="#F59E0B" />
-        <StatCard icon="✅" value={stores.filter(s => s.active).length} label="Aktiv do'konlar" accent="#10B981" />
-        <StatCard icon="👥" value={users.length} label="Jami foydalanuvchilar" accent="#3B82F6" />
-        <StatCard icon="💰" value={`${(totalRevenue / 1000000000).toFixed(2)}B`} label="Umumiy daromad" accent="#A78BFA" />
+      <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 15 }}>
+        {page === 'dashboard' || page === 'stats' ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12 }}>
+            <StatCard icon="storefront" label="Jami do‘konlar" value={stores.length} />
+            <StatCard icon="check-circle" label="Aktiv do‘konlar" value={stores.filter(s => s.is_active).length} />
+            <StatCard icon="users-three" label="Foydalanuvchilar" value={staffCount} />
+            <StatCard icon="money" label="Umumiy aylanma" value={money(totalRevenue)} unit="so‘m" />
+          </div>
+        ) : null}
+
+        {/* ── Do'konlar ── */}
+        {(page === 'dashboard' || page === 'stores' || page === 'stats') && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ flex: 1, fontSize: 15, fontWeight: 500 }}>Do‘konlar · {stores.length}</div>
+              <div className="input-icon" style={{ width: 250 }}>
+                <Icon name="magnifying-glass" />
+                <input className="input" value={search} onChange={e => setSearch(e.target.value)}
+                  placeholder="Do‘kon qidirish…" />
+              </div>
+              <Btn variant="primary" icon="plus" onClick={() => setStoreForm('new')}>Yangi Do‘kon</Btn>
+            </div>
+
+            <Card padding="var(--space-6)">
+              {loading ? <SkeletonRows count={4} widths={['100%']} />
+                : filteredStores.length === 0 ? (
+                  <EmptyState icon="storefront" text="Do‘konlar yo‘q"
+                    action={<Btn variant="primary" size="sm" icon="plus" onClick={() => setStoreForm('new')}>Yangi Do‘kon</Btn>} />
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="table" style={{ fontSize: 13 }}>
+                      <thead>
+                        <tr>
+                          <th>Do‘kon</th><th>Egasi</th><th>Tarif</th>
+                          <th style={{ textAlign: 'right' }}>Aylanma</th>
+                          <th>Yaratilgan</th><th>Holat</th><th />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredStores.map(s => (
+                          <tr key={s.id}>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                                <span style={{
+                                  width: 28, height: 28, borderRadius: 7, display: 'grid', placeItems: 'center',
+                                  fontSize: 14, flex: 'none',
+                                  background: 'color-mix(in srgb, var(--color-text) 6%, transparent)',
+                                  filter: s.is_active ? 'none' : 'grayscale(1)',
+                                  opacity: s.is_active ? 1 : 0.6,
+                                }}>
+                                  {s.store_type === 'phone' ? '📱' : '🏬'}
+                                </span>
+                                <span style={{ fontWeight: 500, color: s.is_active ? undefined : 'var(--color-neutral-400)' }}>
+                                  {s.name}
+                                </span>
+                              </div>
+                            </td>
+                            <td style={{ color: s.is_active ? undefined : 'var(--color-neutral-400)' }}>
+                              {users.find(u => u.store_id === s.id && u.role === 'owner')?.name || s.owner_email || '—'}
+                            </td>
+                            <td><Tag variant={s.max_branches > 1 ? 'accent' : 'neutral'}>{planOf(s.max_branches)}</Tag></td>
+                            <td className="num" style={{ textAlign: 'right' }}>{money(revenue[s.id] || 0)}</td>
+                            <td style={{ color: 'var(--color-neutral-500)' }}>
+                              {s.created_at ? new Date(s.created_at).toLocaleDateString('ru-RU') : '—'}
+                            </td>
+                            <td>
+                              {s.is_active
+                                ? <Tag variant="ok" icon="check">Aktiv</Tag>
+                                : <Tag variant="warn" icon="pause">To‘xtatilgan</Tag>}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                                <Btn variant="ghost" iconOnly icon="pencil-simple" title="Tahrirlash"
+                                  onClick={() => setStoreForm(s)} style={{ width: 30, height: 30 }} />
+                                <Btn
+                                  variant="ghost" iconOnly icon={s.is_active ? 'pause' : 'play'}
+                                  title={s.is_active ? 'To‘xtatish' : 'Davom ettirish'}
+                                  onClick={() => s.is_active ? setConfirm({ type: 'pause', store: s }) : toggleActive(s)}
+                                  style={{ width: 30, height: 30, color: s.is_active ? 'var(--warn)' : 'var(--ok)' }}
+                                />
+                                <Btn variant="ghost" iconOnly icon="trash" title="O‘chirish"
+                                  onClick={() => setConfirm({ type: 'delete', store: s })}
+                                  style={{ width: 30, height: 30, color: 'var(--dang)' }} />
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+            </Card>
+          </>
+        )}
+
+        {/* ── Foydalanuvchilar ── */}
+        {(page === 'dashboard' || page === 'users') && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+              <div style={{ flex: 1, fontSize: 15, fontWeight: 500 }}>Foydalanuvchilar · {users.length}</div>
+              <Btn variant="secondary" icon="plus" onClick={() => setUserForm('new')}>Yangi Foydalanuvchi</Btn>
+            </div>
+
+            <Card padding="var(--space-6)">
+              {loading ? <SkeletonRows count={4} widths={['100%']} /> : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="table" style={{ fontSize: 13 }}>
+                    <thead>
+                      <tr><th>Foydalanuvchi</th><th>Do‘kon</th><th>Rol</th><th>Parol</th><th>Holat</th><th /></tr>
+                    </thead>
+                    <tbody>
+                      {users.map(u => (
+                        <UserRow key={u.id} user={u}
+                          store={stores.find(s => s.id === u.store_id)}
+                          onEdit={() => setUserForm(u)} />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+
+            <div style={{ fontSize: 11, color: 'var(--color-neutral-500)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Icon name="shield-warning" size={13} color="var(--warn)" />
+              Parollar bazada ochiq matnda saqlanadi — bu vaqtinchalik yechim, shifrlashga o‘tish rejalashtirilgan.
+            </div>
+          </>
+        )}
+
+        {page === 'settings' && (
+          <Card padding="var(--space-6)" gap={12}>
+            <SectionHeader title="Creator sozlamalari" />
+            <EmptyState icon="gear" text="Platforma sozlamalari tayyorlanmoqda"
+              sub="Tariflar, limitlar va global parametrlar shu yerda bo‘ladi" />
+          </Card>
+        )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14 }}>
-        {stores.map(s => (
-          <div key={s.id} className="glass-card" style={{ border: `1px solid ${s.active ? 'rgba(255,255,255,0.05)' : 'rgba(244,63,94,0.15)'}`, borderRadius: 16, padding: 20, opacity: s.active ? 1 : 0.65 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <div style={{ width: 40, height: 40, borderRadius: 10, background: s.color + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>🏪</div>
-              <Badge type={s.active ? 'success' : 'danger'}>{s.active ? 'Aktiv' : 'Faolsiz'}</Badge>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-              <div style={{ fontSize: 15, fontWeight: 800 }}>{s.name}</div>
-              <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: s.storeType === 'phone' ? 'rgba(167,139,250,0.15)' : 'rgba(59,130,246,0.15)', color: s.storeType === 'phone' ? '#A78BFA' : '#3B82F6' }}>{s.storeType === 'phone' ? '📱 Telefon' : '📦 Oddiy'}</span>
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--t2)', marginBottom: 12 }}>👤 {s.owner} · {s.employees} xodim</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: '#10B981' }}>{(s.revenue / 1000000).toFixed(0)}M so'm</div>
-            <div style={{ fontSize: 11, color: 'var(--t2)', marginBottom: 14 }}>Bu oy daromad</div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <span className="fast-transition" style={{ fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: s.color + '22', color: s.color, cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.2)'} onMouseLeave={e => e.currentTarget.style.filter = 'none'}>{s.plan}</span>
+      {storeForm && (
+        <StoreForm
+          store={storeForm === 'new' ? null : storeForm}
+          onClose={() => setStoreForm(null)}
+          onSaved={(name) => { setStoreForm(null); load(); notify(`"${name}" saqlandi`); }}
+          onError={m => notify(m, 'dang')}
+        />
+      )}
+
+      {userForm && (
+        <UserForm
+          user={userForm === 'new' ? null : userForm}
+          stores={stores}
+          onClose={() => setUserForm(null)}
+          onSaved={(name) => { setUserForm(null); load(); notify(`${name} saqlandi`); }}
+          onError={m => notify(m, 'dang')}
+        />
+      )}
+
+      {confirm?.type === 'pause' && (
+        <Modal onClose={() => setConfirm(null)} actions={
+          <>
+            <Btn variant="secondary" onClick={() => setConfirm(null)}>Bekor qilish</Btn>
+            <Btn variant="primary" icon="pause"
+              style={{ color: 'var(--warn)', borderColor: 'var(--warn)' }}
+              onClick={() => toggleActive(confirm.store)}>
+              To‘xtatish
+            </Btn>
+          </>
+        }>
+          <div style={{ display: 'flex', gap: 11, alignItems: 'flex-start' }}>
+            <Icon name="pause-circle" fill size={20} color="var(--warn)" />
+            <div>
+              <div style={{ fontSize: 14.5, fontWeight: 500 }}>Do‘konni vaqtincha to‘xtatish?</div>
+              <div style={{ fontSize: 12.5, color: 'var(--color-neutral-500)', marginTop: 3 }}>
+                "{confirm.store.name}" xodimlari tizimga kira olmaydi. Ma’lumotlar saqlanib
+                qoladi — istalgan payt davom ettirish mumkin.
+              </div>
             </div>
           </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── STORES PAGE ─────────────────────────────────────────────────────
-function StoresPage({ stores, onAdd, showToast, showAddStore, setShowAddStore }) {
-  const [form, setForm] = useState({ name: '', owner: '', email: '', password: '', plan: 'Starter', storeType: 'general' });
-  const [loading, setLoading] = useState(false);
-  const [editMode, setEditMode] = useState(false);
-  const [editId, setEditId] = useState(null);
-
-  const handleAdd = async () => {
-    if (!form.name || !form.email || (!editMode && !form.password)) return;
-    setLoading(true);
-
-    if (editMode && editId) {
-      // Edit Store logic
-      const { error: storeErr } = await supabase.from('stores').update({ name: form.name, owner_email: form.email }).eq('id', editId);
-      if (storeErr) {
-        showToast(`❌ Xatolik (${storeErr.message})`);
-      } else {
-        showToast(`✅ "${form.name}" do'koni tahrirlandi!`);
-        setShowAddStore(false);
-        setEditMode(false);
-        setEditId(null);
-      }
-    } else {
-      // 1. Create store
-      const { data: storeData, error: storeErr } = await supabase
-        .from('stores')
-        .insert({ name: form.name, owner_email: form.email, store_type: form.storeType, max_branches: form.plan === 'Starter' ? 1 : form.plan === 'Business' ? 3 : 10 })
-        .select()
-        .single();
-
-      if (storeErr || !storeData) {
-        showToast(`❌ Xatolik: Do'kon yaratilmadi (${storeErr?.message})`);
-        setLoading(false);
-        return;
-      }
-
-      // 2. Create owner user
-      const { error: userErr } = await supabase
-        .from('users')
-        .insert({ email: form.email, password: form.password, name: form.owner, role: 'owner', store_id: storeData.id });
-
-      if (userErr) {
-        showToast(`❌ Xatolik: Egasi yaratilmadi (${userErr?.message})`);
-      } else {
-        showToast(`✅ "${form.name}" do'koni va egasi qo'shildi!`);
-        setShowAddStore(false);
-        setForm({ name: '', owner: '', email: '', password: '', plan: 'Starter', storeType: 'general' });
-      }
-    }
-
-    setLoading(false);
-  };
-
-  const handleDeleteStore = async (s) => {
-    const confirm1 = window.confirm(`Siz rostan ham "${s.name}" do'konini o'chirmoqchimisiz?`);
-    if (!confirm1) return;
-    const confirm2 = window.confirm(`Ishonchingiz komilmi? Bu do'kon va uning barcha ma'lumotlari butunlay o'chib ketadi!`);
-    if (!confirm2) return;
-
-    const { error } = await supabase.from('stores').delete().eq('id', s.id);
-    if (error) {
-      showToast(`❌ Xatolik (${error.message})`);
-    } else {
-      showToast(`✅ "${s.name}" do'koni o'chirildi!`);
-    }
-  };
-
-  const handleToggleActive = async (s) => {
-    const { error } = await supabase.from('stores').update({ is_active: !s.active }).eq('id', s.id);
-    if (error) {
-      showToast(`❌ Xatolik: Holat o'zgarmadi (${error.message})`);
-    } else {
-      showToast(`✅ "${s.name}" do'koni o'zgartirildi.`);
-    }
-  };
-
-  const openEdit = (s) => {
-    setEditMode(true);
-    setEditId(s.id);
-    setForm({ name: s.name, owner: s.owner, email: s.email, password: '', plan: s.plan, storeType: s.storeType || 'general' });
-    setShowAddStore(true);
-  };
-
-  const handleOpenAdd = () => {
-    setEditMode(false);
-    setEditId(null);
-    setForm({ name: '', owner: '', email: '', password: '', plan: 'Starter', storeType: 'general' });
-    onAdd();
-  };
-
-  return (
-    <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <div className="glass-card" style={{ borderRadius: 16, padding: 22 }}>
-        <SectionHeader title="Do'konlar Boshqaruvi">
-          <Btn variant="primary" size="sm" onClick={handleOpenAdd}>+ Yangi Do'kon</Btn>
-        </SectionHeader>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {stores.map(s => (
-            <div key={s.id} className="fast-transition" style={{ background: 'rgba(17, 24, 39, 0.4)', borderRadius: 14, padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 16, border: `1px solid ${s.active ? 'rgba(255,255,255,0.05)' : 'rgba(244,63,94,0.15)'}` }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseLeave={e => e.currentTarget.style.background = 'rgba(17, 24, 39, 0.4)'}>
-              <div style={{ width: 44, height: 44, borderRadius: 12, background: s.color + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🏪</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700 }}>{s.name}</div>
-                  <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: s.storeType === 'phone' ? 'rgba(167,139,250,0.15)' : 'rgba(59,130,246,0.15)', color: s.storeType === 'phone' ? '#A78BFA' : '#3B82F6' }}>{s.storeType === 'phone' ? '📱 Telefon' : '📦 Oddiy'}</span>
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--t2)' }}>👤 {s.owner} · ✉️ {s.email}</div>
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 15, fontWeight: 800, color: '#10B981' }}>{(s.revenue / 1000000).toFixed(0)}M so'm</div>
-                <div style={{ fontSize: 10, color: 'var(--t2)' }}>Bu oy</div>
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>{s.employees} ta</div>
-                <div style={{ fontSize: 10, color: 'var(--t2)' }}>Xodimlar</div>
-              </div>
-              <span style={{ fontSize: 10, fontWeight: 700, padding: '4px 12px', borderRadius: 20, background: s.color + '22', color: s.color }}>{s.plan}</span>
-              <Badge type={s.active ? 'success' : 'danger'}>{s.active ? 'Aktiv' : 'Faolsiz'}</Badge>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <Btn variant="subtle" size="sm" onClick={() => openEdit(s)}>✏️ Tahrirlash</Btn>
-                <Btn variant={s.active ? 'danger' : 'green'} size="sm" onClick={() => handleToggleActive(s)}>{s.active ? '⏸ To\'xtatish' : '▶ Faollashtirish'}</Btn>
-                <Btn variant="danger" size="sm" onClick={() => handleDeleteStore(s)}>🗑️ O'chirish</Btn>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {showAddStore && (
-        <Modal onClose={() => setShowAddStore(false)}>
-          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 24 }}>🏪 {editMode ? 'Do\'kon Tahriri' : 'Yangi Do\'kon Qo\'shish'}</div>
-          {[
-            { lbl: "Do'kon nomi *", key: 'name', ph: "Asosiy Do'kon", type: 'text' },
-            { lbl: editMode ? 'Yangi egasi ismi *' : 'Egasi ismi *', key: 'owner', ph: 'Jasur Karimov', type: 'text' },
-            { lbl: editMode ? 'Yangi emaili *' : 'Egasi emaili *', key: 'email', ph: 'egasi@mybazzar.uz', type: 'email' },
-            { lbl: editMode ? 'Parolni o\'zgartirish (Majburiy emas)' : 'Egasi paroli *', key: 'password', ph: 'Kamida 6 belgi', type: 'password' },
-          ].map(f => (
-            <FormField key={f.key} label={f.lbl}>
-              <input type={f.type} value={form[f.key]} onChange={e => setForm({ ...form, [f.key]: e.target.value })} placeholder={f.ph} style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-            </FormField>
-          ))}
-          <FormField label="Do'kon turi">
-            <div style={{ display: 'flex', gap: 10 }}>
-              {[{ val: 'general', icon: '📦', label: 'Oddiy do\'kon' }, { val: 'phone', icon: '📱', label: 'Telefon do\'koni' }].map(t => (
-                <div key={t.val} onClick={() => setForm({ ...form, storeType: t.val })} style={{ flex: 1, padding: '14px 12px', borderRadius: 12, cursor: 'pointer', textAlign: 'center', background: form.storeType === t.val ? (t.val === 'phone' ? 'rgba(167,139,250,0.12)' : 'rgba(59,130,246,0.12)') : 'rgba(17,24,39,0.4)', border: `1px solid ${form.storeType === t.val ? (t.val === 'phone' ? 'rgba(167,139,250,0.4)' : 'rgba(59,130,246,0.4)') : 'rgba(255,255,255,0.05)'}`, transition: 'all .2s' }}>
-                  <div style={{ fontSize: 28, marginBottom: 6 }}>{t.icon}</div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: form.storeType === t.val ? (t.val === 'phone' ? '#A78BFA' : '#3B82F6') : 'var(--t2)' }}>{t.label}</div>
-                </div>
-              ))}
-            </div>
-          </FormField>
-          <FormField label="Tarif rejasi">
-            <select value={form.plan} onChange={e => setForm({ ...form, plan: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}>
-              <option>Starter</option><option>Business</option><option>Enterprise</option>
-            </select>
-          </FormField>
-          <ModalActions onCancel={() => setShowAddStore(false)} onConfirm={handleAdd} confirmLabel={loading ? "Yaratilmoqda..." : editMode ? "💾 Saqlash" : "✅ Do'kon Yaratish"} disabled={!form.name || !form.email || (!editMode && !form.password) || loading} />
         </Modal>
       )}
-    </div>
+
+      {confirm?.type === 'delete' && (
+        <DeleteStoreModal
+          store={confirm.store}
+          onClose={() => setConfirm(null)}
+          onConfirm={() => deleteStore(confirm.store)}
+        />
+      )}
+
+      {toast && <Toast message={toast.msg} variant={toast.variant} onClose={() => setToast(null)} />}
+    </Page>
   );
 }
 
-// ── USERS PAGE ──────────────────────────────────────────────────────
-function UsersPage({ stores = [], users, onAdd, showToast, showAddUser, setShowAddUser }) {
-  const [form, setForm] = useState({ name: '', email: '', role: 'cashier', store: '', password: '' });
-  const [loading, setLoading] = useState(false);
+/* ── Foydalanuvchi qatori (parolni ko'rsatish/nusxalash) ───────────────── */
+function UserRow({ user, store, onEdit }) {
+  const [reveal, setReveal] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  const handleShowPassword = (u) => {
-    window.alert(`Foydalanuvchi: ${u.name}\nRol: ${ROLE_LABELS[u.role] || u.role}\nParol: ${u.password || 'Kiritilmagan'}`);
-  };
-
-  const handleAdd = async () => {
-    if (!form.name || !form.email || !form.password || !form.store) return;
-    setLoading(true);
-
-    const { error } = await supabase
-      .from('users')
-      .insert({ email: form.email, password: form.password, name: form.name, role: form.role, store_id: form.store });
-
-    if (error) {
-      showToast(`❌ Xatolik: Foydalanuvchi yaratilmadi (${error.message})`);
-    } else {
-      showToast(`✅ "${form.name}" foydalanuvchisi yaratildi!`);
-      setShowAddUser(false);
-      setForm({ name: '', email: '', role: 'cashier', store: '', password: '' });
-    }
-    setLoading(false);
-  };
-
-  const handleToggleBlock = async (u) => {
-    if (u.role === 'creator') {
-      showToast(`❌ Creator (tizim yaratuvchisi) akkauntini o'chirib bo'lmaydi!`);
-      return;
-    }
-    const confirm1 = window.confirm(`Siz rostan ham "${u.name}" foydalanuvchisini o'chirmoqchimisiz?`);
-    if (!confirm1) return;
-    const confirm2 = window.confirm(`Ishonchingiz komilmi? Foydalanuvchi butunlay o'chib ketadi!`);
-    if (!confirm2) return;
-
-    const { error } = await supabase.from('users').delete().eq('id', u.id);
-    if (error) {
-      showToast(`❌ Xatolik (${error.message})`);
-    } else {
-      showToast(`✅ "${u.name}" o'chirildi!`);
-    }
+  const copy = () => {
+    navigator.clipboard?.writeText(user.password || '');
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
   };
 
   return (
-    <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <div className="glass-card" style={{ borderRadius: 16, padding: 22 }}>
-        <SectionHeader title="Foydalanuvchilar Boshqaruvi">
-          <Btn variant="primary" size="sm" onClick={onAdd}>+ Yangi Foydalanuvchi</Btn>
-        </SectionHeader>
+    <tr>
+      <td>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+          <Avatar initials={initialsOf(user.name)} size={28}
+            color={user.role === 'owner' || user.role === 'creator' ? undefined : 'var(--color-neutral-800)'} />
+          <div>
+            <div style={{ fontWeight: 500 }}>{user.name}</div>
+            <div style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>{user.email}</div>
+          </div>
+        </div>
+      </td>
+      <td>{store?.name || <span style={{ color: 'var(--color-neutral-500)' }}>Platforma</span>}</td>
+      <td><Tag variant="neutral">{ROLE_LABEL[user.role] || user.role}</Tag></td>
+      <td>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+          <span className={reveal ? 'mono' : ''} style={{ letterSpacing: reveal ? 0 : 2, color: 'var(--color-neutral-400)' }}>
+            {reveal ? user.password : '••••••••'}
+          </span>
+          <Icon name={reveal ? 'eye-slash' : 'eye'} size={14} color="var(--color-neutral-500)"
+            style={{ cursor: 'pointer' }} onClick={() => setReveal(r => !r)} />
+          <Icon name={copied ? 'check' : 'copy'} size={14}
+            color={copied ? 'var(--ok)' : 'var(--color-neutral-500)'}
+            style={{ cursor: 'pointer' }} onClick={copy} />
+        </span>
+      </td>
+      <td>{user.is_active === false ? <Tag variant="neutral">Noaktiv</Tag> : <Tag variant="ok">Aktiv</Tag>}</td>
+      <td style={{ textAlign: 'right' }}>
+        <Btn variant="ghost" iconOnly icon="pencil-simple" onClick={onEdit} style={{ width: 30, height: 30 }} />
+      </td>
+    </tr>
+  );
+}
 
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              {['Foydalanuvchi', "Do'kon", 'Rol', 'Oxirgi kirish', 'Holat', ''].map(h => (
-                <th key={h} style={{ fontSize: 10, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: .8, padding: '0 10px 12px 0', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {users.map(u => (
-              <tr key={u.id} className="fast-transition" style={{ cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                <td style={{ padding: '11px 10px 11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <Avatar initials={u.avatar} color={u.color} size={32} />
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>{u.name}</div>
-                      <div style={{ fontSize: 11, color: 'var(--t2)', fontFamily: 'JetBrains Mono,monospace' }}>{u.email}</div>
-                    </div>
-                  </div>
-                </td>
-                <td style={{ padding: '11px 10px 11px 0', fontSize: 12, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{u.store}</td>
-                <td style={{ padding: '11px 10px 11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: ROLE_COLORS[u.role] + '22', color: ROLE_COLORS[u.role] }}>{ROLE_LABELS[u.role]}</span>
-                </td>
-                <td style={{ padding: '11px 10px 11px 0', fontSize: 12, color: 'var(--t2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{u.lastLogin}</td>
-                <td style={{ padding: '11px 10px 11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}><Badge type={u.active ? 'success' : 'danger'}>{u.active ? 'Aktiv' : 'Faolsiz'}</Badge></td>
-                <td style={{ padding: '11px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <Btn variant="subtle" size="sm" onClick={(e) => { e.stopPropagation(); handleShowPassword(u); }}>🔑 Parol</Btn>
-                    <Btn variant={u.active ? 'danger' : 'green'} size="sm" onClick={(e) => { e.stopPropagation(); handleToggleBlock(u); }}>🗑️ O'chirish</Btn>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+/* ── Do'kon yaratish / tahrirlash ──────────────────────────────────────── */
+function StoreForm({ store, onClose, onSaved, onError }) {
+  const editing = Boolean(store);
+  const [f, setF] = useState({
+    name: store?.name || '',
+    owner_email: store?.owner_email || '',
+    store_type: store?.store_type || 'general',
+    max_branches: store?.max_branches || 1,
+    owner: '', password: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
 
-      {showAddUser && (
-        <Modal onClose={() => setShowAddUser(false)}>
-          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 24 }}>👤 Yangi Foydalanuvchi</div>
-          {[
-            { lbl: 'Ism Familiya *', key: 'name', ph: 'Aziz Karimov', type: 'text' },
-            { lbl: 'Email *', key: 'email', ph: 'aziz@mybazzar.uz', type: 'email' },
-            { lbl: 'Parol *', key: 'password', ph: 'Kamida 6 belgi', type: 'password' },
-          ].map(f => (
-            <FormField key={f.key} label={f.lbl}>
-              <input type={f.type} value={form[f.key]} onChange={e => setForm({ ...form, [f.key]: e.target.value })} placeholder={f.ph} style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'var(--border)'} />
-            </FormField>
-          ))}
-          <FormField label="Rol">
-            <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}>
-              <option value="owner">Do'kon Egasi</option>
-              <option value="manager">Manager</option>
-              <option value="cashier">Kassir</option>
+  const valid = editing
+    ? f.name.trim()
+    : f.name.trim() && f.owner_email.trim() && f.owner.trim() && f.password.trim();
+
+  const save = async () => {
+    setSaving(true);
+    if (editing) {
+      const { error } = await supabase.from('stores').update({
+        name: f.name.trim(), owner_email: f.owner_email.trim(),
+        store_type: f.store_type, max_branches: Number(f.max_branches),
+      }).eq('id', store.id);
+      setSaving(false);
+      return error ? onError(`Saqlanmadi: ${error.message}`) : onSaved(f.name);
+    }
+
+    // Yangi do'kon + uning egasi bir vaqtda yaratiladi
+    const { data, error } = await supabase.from('stores').insert({
+      name: f.name.trim(), owner_email: f.owner_email.trim(),
+      store_type: f.store_type, max_branches: Number(f.max_branches), is_active: true,
+    }).select().single();
+
+    if (error || !data) { setSaving(false); return onError(`Do‘kon yaratilmadi: ${error?.message}`); }
+
+    const { error: userErr } = await supabase.from('users').insert({
+      store_id: data.id, name: f.owner.trim(), email: f.owner_email.trim(),
+      password: f.password, role: 'owner',
+    });
+    setSaving(false);
+    if (userErr) onError(`Do‘kon yaratildi, lekin egasi qo‘shilmadi: ${userErr.message}`);
+    else onSaved(f.name);
+  };
+
+  return (
+    <Modal title={editing ? 'Do‘konni tahrirlash' : 'Yangi Do‘kon'} onClose={onClose} actions={
+      <>
+        <Btn variant="secondary" onClick={onClose}>Bekor qilish</Btn>
+        <Btn variant="primary" onClick={save} disabled={!valid} loading={saving}>Saqlash</Btn>
+      </>
+    }>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <Field label="Do‘kon nomi">
+          <input className="input" autoFocus value={f.name} onChange={e => set('name', e.target.value)}
+            placeholder="Texno Bozor" />
+        </Field>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
+          <Field label="Do‘kon turi" hint="Telefon do‘konida IMEI maydonlari ochiladi">
+            <select className="input" value={f.store_type} onChange={e => set('store_type', e.target.value)}>
+              <option value="general">Oddiy do‘kon</option>
+              <option value="phone">Telefon do‘koni</option>
             </select>
-          </FormField>
-          <FormField label="Do'kon">
-            <select value={form.store} onChange={e => setForm({ ...form, store: e.target.value })} style={{ ...inputStyle, cursor: 'pointer' }}>
-              <option value="">Tanlang...</option>
+          </Field>
+          <Field label="Tarif">
+            <select className="input" value={f.max_branches} onChange={e => set('max_branches', e.target.value)}>
+              {PLANS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+            </select>
+          </Field>
+        </div>
+
+        <Field label="Egasining emaili" hint={editing ? null : 'Egasi shu email bilan tizimga kiradi'}>
+          <input className="input" value={f.owner_email} onChange={e => set('owner_email', e.target.value)}
+            placeholder="egasi@dokon.uz" />
+        </Field>
+
+        {!editing && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
+            <Field label="Egasining ismi">
+              <input className="input" value={f.owner} onChange={e => set('owner', e.target.value)}
+                placeholder="Bekzod Rahimov" />
+            </Field>
+            <Field label="Parol">
+              <input className="input mono" value={f.password} onChange={e => set('password', e.target.value)}
+                placeholder="kamida 8 belgi" />
+            </Field>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+/* ── Foydalanuvchi yaratish / tahrirlash ───────────────────────────────── */
+function UserForm({ user, stores, onClose, onSaved, onError }) {
+  const editing = Boolean(user);
+  const [f, setF] = useState({
+    name: user?.name || '', email: user?.email || '', password: user?.password || '',
+    role: user?.role || 'cashier', store_id: user?.store_id || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+
+  const valid = f.name.trim() && f.email.trim() && f.password.trim() &&
+    (f.role === 'creator' || f.store_id);
+
+  const save = async () => {
+    setSaving(true);
+    const row = {
+      name: f.name.trim(), email: f.email.trim(), password: f.password,
+      role: f.role, store_id: f.role === 'creator' ? null : Number(f.store_id),
+    };
+    const { error } = editing
+      ? await supabase.from('users').update(row).eq('id', user.id)
+      : await supabase.from('users').insert(row);
+    setSaving(false);
+    if (error) onError(`Saqlanmadi: ${error.message}`);
+    else onSaved(row.name);
+  };
+
+  return (
+    <Modal title={editing ? 'Foydalanuvchini tahrirlash' : 'Yangi Foydalanuvchi'} onClose={onClose} actions={
+      <>
+        <Btn variant="secondary" onClick={onClose}>Bekor qilish</Btn>
+        <Btn variant="primary" onClick={save} disabled={!valid} loading={saving}>Saqlash</Btn>
+      </>
+    }>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <Field label="Ism">
+          <input className="input" autoFocus value={f.name} onChange={e => set('name', e.target.value)} />
+        </Field>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
+          <Field label="Email">
+            <input className="input" value={f.email} onChange={e => set('email', e.target.value)} />
+          </Field>
+          <Field label="Parol">
+            <input className="input mono" value={f.password} onChange={e => set('password', e.target.value)} />
+          </Field>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
+          <Field label="Rol">
+            <select className="input" value={f.role} onChange={e => set('role', e.target.value)}>
+              <option value="cashier">Sotuvchi</option>
+              <option value="manager">Manager</option>
+              <option value="owner">Do‘kon egasi</option>
+              <option value="creator">Creator</option>
+            </select>
+          </Field>
+          <Field label="Do‘kon" hint={f.role === 'creator' ? 'Creator do‘konga bog‘lanmaydi' : null}>
+            <select className="input" value={f.store_id} disabled={f.role === 'creator'}
+              onChange={e => set('store_id', e.target.value)}>
+              <option value="">Tanlang…</option>
               {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
-          </FormField>
-          <ModalActions onCancel={() => setShowAddUser(false)} onConfirm={handleAdd} confirmLabel={loading ? "Yaratilmoqda..." : "✅ Yaratish"} disabled={!form.name || !form.email || !form.password || !form.store || loading} />
-        </Modal>
-      )}
-    </div>
+          </Field>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
-// ── STATS PAGE ──────────────────────────────────────────────────────
-function StatsPage({ stores, totalRevenue }) {
-  const maxRev = Math.max(...stores.map(s => s.revenue));
-  return (
-    <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14 }}>
-        <StatCard icon="💰" value={`${(totalRevenue / 1000000000).toFixed(2)}B`} label="Umumiy daromad (so'm)" accent="#F59E0B" />
-        <StatCard icon="🏪" value={stores.filter(s => s.active).length + '/' + stores.length} label="Aktiv do'konlar" accent="#10B981" />
-        <StatCard icon="👥" value={stores.reduce((s, st) => s + st.employees, 0)} label="Jami xodimlar" accent="#3B82F6" />
-      </div>
-      <div className="glass-card" style={{ borderRadius: 16, padding: 22 }}>
-        <SectionHeader title="Do'konlar Bo'yicha Daromad" />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {stores.sort((a, b) => b.revenue - a.revenue).map((s, i) => (
-            <div key={s.id}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'} {s.name}</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: '#10B981' }}>{(s.revenue / 1000000).toFixed(0)}M so'm</span>
-              </div>
-              <div style={{ height: 8, background: 'rgba(255,255,255,0.05)', borderRadius: 4, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${Math.round(s.revenue / maxRev * 100)}%`, background: `linear-gradient(90deg,${s.color},${s.color}99)`, borderRadius: 4, transition: 'width .8s' }} />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
+/* ── Do'konni o'chirish (nomini yozib tasdiqlash) ──────────────────────── */
+function DeleteStoreModal({ store, onClose, onConfirm }) {
+  const [text, setText] = useState('');
+  const match = text.trim() === store.name;
 
-// ── CREATOR SETTINGS ────────────────────────────────────────────────
-function CreatorSettings() {
-  const plans = [
-    { name: 'Starter', price: '$29', stores: 1, employees: 5, color: '#10B981' },
-    { name: 'Business', price: '$59', stores: 3, employees: 15, color: '#3B82F6' },
-    { name: 'Enterprise', price: '$99', stores: 10, employees: 50, color: '#F59E0B' },
-  ];
   return (
-    <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <div className="glass-card" style={{ borderRadius: 16, padding: 22 }}>
-        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 20 }}>💳 Tarif Rejalari</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14 }}>
-          {plans.map(p => (
-            <div key={p.name} className="fast-transition" style={{ background: 'rgba(17, 24, 39, 0.4)', border: `1px solid ${p.color}33`, borderRadius: 14, padding: 20, textAlign: 'center' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'} onMouseLeave={e => e.currentTarget.style.background = 'rgba(17, 24, 39, 0.4)'}>
-              <div style={{ fontSize: 28, fontWeight: 900, color: p.color, marginBottom: 4, filter: `drop-shadow(0 2px 8px ${p.color}44)` }}>{p.price}<span style={{ fontSize: 14, fontWeight: 400, color: 'var(--t2)' }}>/oy</span></div>
-              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 12 }}>{p.name}</div>
-              <div style={{ fontSize: 12, color: 'var(--t2)', marginBottom: 6 }}>🏪 {p.stores} ta do'kon</div>
-              <div style={{ fontSize: 12, color: 'var(--t2)', marginBottom: 16 }}>👥 {p.employees} ta xodim</div>
-              <Btn variant="primary" size="sm" style={{ background: `linear-gradient(135deg,${p.color},${p.color}cc)`, width: '100%', justifyContent: 'center' }}>Tahrirlash</Btn>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="glass-card" style={{ borderRadius: 16, padding: 22 }}>
-        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 16 }}>🔧 Tizim Sozlamalari</div>
-        {[
-          { label: 'Platforma nomi', val: 'MyBazzar' },
-          { label: 'Versiya', val: 'v2.0.0' },
-          { label: 'Texnik email', val: 'support@mybazzar.uz' },
-        ].map(s => (
-          <div key={s.label} style={{ marginBottom: 14 }}>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--t2)', display: 'block', marginBottom: 7, textTransform: 'uppercase', letterSpacing: .8 }}>{s.label}</label>
-            <input defaultValue={s.val} className="fast-transition" style={inputStyle} onFocus={e => e.target.style.borderColor = '#3B82F6'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.05)'} />
+    <Modal onClose={onClose} actions={
+      <>
+        <Btn variant="secondary" onClick={onClose}>Bekor qilish</Btn>
+        <Btn variant="danger" icon="trash" disabled={!match} onClick={onConfirm}>O‘chirish</Btn>
+      </>
+    }>
+      <div style={{ display: 'flex', gap: 11, alignItems: 'flex-start', marginBottom: 12 }}>
+        <Icon name="warning-octagon" fill size={20} color="var(--dang)" />
+        <div>
+          <div style={{ fontSize: 14.5, fontWeight: 500, color: 'var(--dang)' }}>Do‘konni butunlay o‘chirish?</div>
+          <div style={{ fontSize: 12.5, color: 'var(--color-neutral-500)', marginTop: 3 }}>
+            "{store.name}" — barcha tovarlar, sotuvlar va mijozlar bazasi qaytarib
+            bo‘lmas tarzda o‘chiriladi.
           </div>
-        ))}
-        <Btn variant="primary">💾 Saqlash</Btn>
+        </div>
       </div>
-    </div>
+      <Field label="Tasdiqlash uchun do‘kon nomini yozing">
+        <input className="input" autoFocus value={text} onChange={e => setText(e.target.value)}
+          placeholder={store.name} />
+      </Field>
+    </Modal>
   );
 }
-
-// ── Shared ──────────────────────────────────────────────────────────
-function Modal({ children, onClose }) {
-  return (
-    <div className="modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, backdropFilter: 'blur(8px)' }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-content" style={{ background: 'linear-gradient(145deg, rgba(26, 35, 50, 0.95) 0%, rgba(13, 17, 23, 0.98) 100%)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: '32px 30px', width: 420, maxWidth: '92vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 60px rgba(0,0,0,0.4)' }}>
-        {children}
-      </div>
-    </div>
-  );
-}
-function FormField({ label, children }) { return (<div style={{ marginBottom: 14 }}><label style={{ fontSize: 11, fontWeight: 700, color: 'var(--t2)', display: 'block', marginBottom: 7, textTransform: 'uppercase', letterSpacing: .8 }}>{label}</label>{children}</div>); }
-function ModalActions({ onCancel, onConfirm, confirmLabel = 'Tasdiqlash', disabled }) { return (<div style={{ display: 'flex', gap: 10, marginTop: 8 }}><button className="fast-transition" onClick={onCancel} style={{ flex: 1, padding: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 11, color: 'var(--t2)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'} onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}>Bekor</button><button className="btn-primary" onClick={onConfirm} disabled={disabled} style={{ flex: 2, padding: '12px', background: disabled ? 'var(--s2)' : 'linear-gradient(135deg,#3B82F6,#2563EB)', border: 'none', borderRadius: 11, color: disabled ? 'var(--t2)' : '#fff', fontSize: 13, fontWeight: 800, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'Outfit,sans-serif', opacity: disabled ? .45 : 1, boxShadow: disabled ? 'none' : '0 4px 16px rgba(59,130,246,0.28)' }}>{confirmLabel}</button></div>); }
-const inputStyle = { width: '100%', padding: '11px 13px', background: 'rgba(17, 24, 39, 0.4)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, color: 'var(--t1)', fontSize: 13, fontFamily: 'Outfit,sans-serif', outline: 'none', boxSizing: 'border-box' };
-
