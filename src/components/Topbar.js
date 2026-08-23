@@ -40,6 +40,14 @@ export default function Topbar() {
   const offline = pending > 0 || settings?.isOnline === false;
 
   const notifs = [];
+  if (alerts?.newOrders > 0) {
+    notifs.push({
+      icon: 'shopping-bag', color: 'var(--color-accent)', unread: true,
+      text: <>Yangi onlayn buyurtma: <b style={{ fontWeight: 500 }}>{alerts.newOrders} ta</b></>,
+      sub: 'Qabul qilish yoki rad etish kutilmoqda',
+      to: '/orders',
+    });
+  }
   if (alerts?.outOfStock > 0) {
     notifs.push({
       icon: 'warning-circle', color: 'var(--dang)', unread: true,

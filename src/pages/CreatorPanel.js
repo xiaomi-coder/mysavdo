@@ -5,6 +5,8 @@ import {
 } from '../components/UI';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../utils/supabaseClient';
+import { uniqueSlug } from '../utils/slug';
+import { storeUrl } from '../utils/storeHost';
 
 const money = n => Math.round(Number(n) || 0).toLocaleString('ru-RU');
 const initialsOf = (name = '') =>
@@ -252,6 +254,7 @@ export default function CreatorPanel({ page = 'dashboard' }) {
       {storeForm && (
         <StoreForm
           store={storeForm === 'new' ? null : storeForm}
+          takenSlugs={stores.map(s => s.slug)}
           onClose={() => setStoreForm(null)}
           onSaved={(name) => { setStoreForm(null); load(); notify(`"${name}" saqlandi`); }}
           onError={m => notify(m, 'dang')}
@@ -351,17 +354,29 @@ function UserRow({ user, store, onEdit }) {
 }
 
 /* ── Do'kon yaratish / tahrirlash ──────────────────────────────────────── */
-function StoreForm({ store, onClose, onSaved, onError }) {
+function StoreForm({ store, takenSlugs = [], onClose, onSaved, onError }) {
   const editing = Boolean(store);
   const [f, setF] = useState({
     name: store?.name || '',
     owner_email: store?.owner_email || '',
     store_type: store?.store_type || 'general',
     max_branches: store?.max_branches || 1,
+    slug: store?.slug || '',
     owner: '', password: '',
   });
+  const [slugEdited, setSlugEdited] = useState(Boolean(store?.slug));
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+
+  /* Nom yozilganda subdomain o'zi to'ladi — foydalanuvchi qo'lda
+     o'zgartirmagan bo'lsa. Tahrirlashda mavjud slug saqlanadi. */
+  const setName = (v) => {
+    setF(p => ({
+      ...p,
+      name: v,
+      slug: slugEdited ? p.slug : uniqueSlug(v, takenSlugs.filter(x => x !== store?.slug)),
+    }));
+  };
 
   const valid = editing
     ? f.name.trim()
@@ -373,6 +388,7 @@ function StoreForm({ store, onClose, onSaved, onError }) {
       const { error } = await supabase.from('stores').update({
         name: f.name.trim(), owner_email: f.owner_email.trim(),
         store_type: f.store_type, max_branches: Number(f.max_branches),
+        slug: f.slug || null,
       }).eq('id', store.id);
       setSaving(false);
       return error ? onError(`Saqlanmadi: ${error.message}`) : onSaved(f.name);
@@ -381,7 +397,8 @@ function StoreForm({ store, onClose, onSaved, onError }) {
     // Yangi do'kon + uning egasi bir vaqtda yaratiladi
     const { data, error } = await supabase.from('stores').insert({
       name: f.name.trim(), owner_email: f.owner_email.trim(),
-      store_type: f.store_type, max_branches: Number(f.max_branches), is_active: true,
+      store_type: f.store_type, max_branches: Number(f.max_branches),
+      slug: f.slug || uniqueSlug(f.name, takenSlugs), is_active: true,
     }).select().single();
 
     if (error || !data) { setSaving(false); return onError(`Do‘kon yaratilmadi: ${error?.message}`); }
@@ -404,9 +421,32 @@ function StoreForm({ store, onClose, onSaved, onError }) {
     }>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <Field label="Do‘kon nomi">
-          <input className="input" autoFocus value={f.name} onChange={e => set('name', e.target.value)}
+          <input className="input" autoFocus value={f.name} onChange={e => setName(e.target.value)}
             placeholder="Texno Bozor" />
         </Field>
+
+        <Field label="Onlayn do‘kon manzili" hint="Mijozlarga yuboriladigan havola">
+          <div className="input" style={{ display: 'flex', alignItems: 'center', gap: 2, padding: 0, paddingInline: 10 }}>
+            <input
+              className="mono" value={f.slug}
+              onChange={e => { setSlugEdited(true); set('slug', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')); }}
+              placeholder="texno-bozor"
+              style={{
+                flex: 1, minWidth: 0, background: 'none', border: 0, outline: 'none',
+                color: 'var(--color-accent)', font: 'inherit', padding: '6px 0',
+              }}
+            />
+            <span style={{ fontSize: 12, color: 'var(--color-neutral-500)', whiteSpace: 'nowrap' }}>
+              .mybazzar.uz
+            </span>
+          </div>
+        </Field>
+
+        {f.slug && (
+          <div style={{ fontSize: 11, color: 'var(--color-neutral-500)', marginTop: -6 }}>
+            {storeUrl(f.slug)}
+          </div>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
           <Field label="Do‘kon turi" hint="Telefon do‘konida IMEI maydonlari ochiladi">

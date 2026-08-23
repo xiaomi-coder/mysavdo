@@ -4,6 +4,7 @@ import { Icon, Btn, Tag, Seg, Modal, EmptyState, Avatar, Toast, SkeletonRows } f
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../utils/supabaseClient';
 import { printReceipt } from '../utils/receipt';
+import { isLowStock } from '../utils/stock';
 
 /* ── yordamchilar ──────────────────────────────────────────────────────── */
 
@@ -165,7 +166,7 @@ export default function POS() {
         time: new Date().toISOString(),
       });
     } else {
-      const { error } = await supabase.from('transactions').insert({
+      const { data: txn, error } = await supabase.from('transactions').insert({
         store_id: user.store_id,
         customer_id: customer?.id || null,
         receipt_no: `#${receiptNo}`,
@@ -175,11 +176,27 @@ export default function POS() {
         discount: discountTotal,
         payment_method: payMethod,
         status: 'completed',
-      });
+      }).select().single();
 
       if (error) {
         setSaving(false);
         setToast({ msg: `Sotuv saqlanmadi: ${error.message}`, variant: 'dang' });
+        return;
+      }
+
+      // Ombordan yechish bazada bajariladi: qatorlar qulflanadi, qoldiq
+      // yetmasa butun amal bekor bo'ladi va harakat tarixiga yoziladi.
+      const { error: stockErr } = await supabase.rpc('apply_sale', {
+        p_txn: txn.id,
+        p_actor: user.name,
+      });
+
+      if (stockErr) {
+        // Sotuv yozildi, lekin ombor yechilmadi — yozuvni olib tashlaymiz,
+        // aks holda hisobotda mavjud bo'lmagan sotuv qolib ketadi
+        await supabase.from('transactions').delete().eq('id', txn.id);
+        setSaving(false);
+        setToast({ msg: stockErr.message, variant: 'dang' });
         return;
       }
 
@@ -203,10 +220,6 @@ export default function POS() {
         await supabase.rpc('increment_customer_spent', { cid: customer.id, amnt: total });
       }
 
-      // Ombor qoldig'ini kamaytiramiz — hammasi tugagach ro'yxatni yangilaymiz
-      await Promise.all(items.map(i =>
-        supabase.from('products').update({ stock: i.stock - i.qty }).eq('id', i.id)
-      ));
       await load(user.store_id);
       refreshAlerts();
     }
@@ -338,7 +351,7 @@ export default function POS() {
               {filtered.map(p => {
                 const inCart = cart[p.id]?.qty || 0;
                 const out = p.stock <= 0;
-                const low = !out && p.stock <= (p.minStock || 5);
+                const low = isLowStock(p);
                 const sub = isPhone
                   ? [p.phone_memory, p.phone_color].filter(Boolean).join(' · ')
                   : (p.category || p.cat || '');

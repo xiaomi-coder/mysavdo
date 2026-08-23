@@ -89,6 +89,63 @@ systemctl reload nginx
 
 Avtomatik yangilanish certbot timer'i orqali sozlangan.
 
+## Mahsulot rasmlari
+
+```
+POST /api/upload.php   →  php-fpm  →  /var/www/mybazzar-uploads
+GET  /uploads/…        →  nginx statik
+```
+
+Rasm brauzerda 1200px gacha kichraytirilib, JPEG ga o'girilib yuboriladi —
+serverda GD/Imagick yo'q, ya'ni u yerda kichraytirib bo'lmaydi.
+
+Endpoint himoyasi: JWT imzosi tekshiriladi, MIME fayl mazmunidan
+aniqlanadi (faqat jpeg/png/webp), fayl nomi tasodifiy, papkada PHP
+bajarilishi nginx darajasida bloklangan (403), nginx tezlik chegarasi
+daqiqasiga 20 ta so'rov.
+
+Maxfiy kalit: `/var/www/mybazzar-api/secret.php` (640 root:www-data).
+
+## Subdomainlar — qisman tayyor
+
+`*.mybazzar.uz` DNS yozuvi Cloudflare'da qo'shilgan va serverga qaratilgan.
+Frontend subdomainni o'zi taniydi (`src/utils/storeHost.js`) va katalogni
+ochadi. **Qolgani: wildcard SSL sertifikat** — Cloudflare nameserverlari
+faollashgach:
+
+```bash
+apt install python3-certbot-dns-cloudflare
+# /root/.cloudflare.ini ichiga API token, chmod 600
+certbot certonly --dns-cloudflare   --dns-cloudflare-credentials /root/.cloudflare.ini   -d mybazzar.uz -d '*.mybazzar.uz'
+```
+
+Keyin nginx'ga `server_name *.mybazzar.uz` bloki qo'shiladi.
+
+## Tovar harakati (sverka)
+
+`stock_movements` jadvali — har bir qoldiq o'zgarishi yozib boriladi:
+kim, qachon, qanday amal, qanchadan qanchaga.
+
+**Yozish ilovaga emas, bazaga yuklatilgan.** `products` jadvalidagi
+`stock` ustuniga trigger qo'yilgan — qoldiq qanday yo'l bilan
+o'zgarmasin, yozuv qoladi. Amal turi RPC tomonidan sessiya
+o'zgaruvchisiga yoziladi; ko'rsatilmagan bo'lsa harakat `tuzatish`
+deb belgilanadi va hisobotda "sababsiz o'zgarish" bo'lib chiqadi.
+
+Funksiyalar:
+
+| Funksiya | Vazifasi |
+|---|---|
+| `move_stock(product, qty, type, note, actor, txn)` | Qoldiqni sabab bilan o'zgartiradi. Qator qulflanadi, qoldiq yetmasa xato |
+| `apply_sale(txn, actor)` | Sotuv tarkibidagi hamma tovarni bir yo'la yechadi — bittasi yetmasa hech biri yechilmaydi |
+| `revert_sale(txn, actor, note)` | Qaytarish — sotuvni orqaga qaytaradi |
+
+Amal turlari: `boshlangich` · `kirim` · `sotuv` · `qaytarish` ·
+`kochirish` · `taftish` · `tuzatish`.
+
+Ombor jadvalida qoldiq raqami bosilsa o'sha tovarning kartochkasi
+ochiladi. Umumiy hisobot: Hisobotlar → Tovar harakati (sana oralig'i bilan).
+
 ## Bajarilishi kerak
 
 ### Xavfsizlik — hal qilinmagan

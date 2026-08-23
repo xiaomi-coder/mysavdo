@@ -7,6 +7,8 @@ import {
 } from '../components/UI';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../utils/supabaseClient';
+import { isLowStock } from '../utils/stock';
+import { MOVE_TYPES } from '../components/StockHistory';
 
 const MONTHS = ['Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyn', 'Iyl', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
 const MONTHS_FULL = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun',
@@ -29,6 +31,14 @@ export default function Reports() {
   const [extra, setExtra] = useState({ expenses: 0, debt: 0, products: 0, lowStock: 0 });
   const [staffKpi, setStaffKpi] = useState([]);
 
+  /* Tovar harakati hisoboti alohida yuklanadi — sana oralig'i o'zgarganda
+     butun sahifani qayta so'ramaslik uchun */
+  const [moveFrom, setMoveFrom] = useState(() =>
+    new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
+  const [moveTo, setMoveTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [moves, setMoves] = useState(null);
+  const [productNames, setProductNames] = useState({});
+
   const now = new Date();
   const monthLabel = `${MONTHS_FULL[now.getMonth()]} ${now.getFullYear()}`;
 
@@ -42,11 +52,16 @@ export default function Reports() {
         .eq('store_id', storeId).eq('status', 'completed').gte('date', yearStart),
       supabase.from('expenses').select('amount').eq('store_id', storeId).gte('date', monthStart),
       supabase.from('debts').select('amount, paid_amount').eq('store_id', storeId).eq('status', "To'lanmagan"),
-      supabase.from('products').select('stock, minStock').eq('store_id', storeId),
+      supabase.from('products').select('stock, minStock, phone_imei1, phone_serial').eq('store_id', storeId),
     ]);
 
     const all = txnRes.data || [];
     setTxns(all);
+
+    // Harakat hisobotida tovar nomini ko'rsatish uchun
+    const { data: names } = await supabase.from('products')
+      .select('id, name').eq('store_id', storeId);
+    setProductNames(Object.fromEntries((names || []).map(p => [p.id, p.name])));
     setMonthTxns(all.filter(t => new Date(t.date) >= new Date(monthStart)));
 
     const prods = prodRes.data || [];
@@ -54,7 +69,7 @@ export default function Reports() {
       expenses: (expRes.data || []).reduce((s, e) => s + (Number(e.amount) || 0), 0),
       debt: (debtRes.data || []).reduce((s, d) => s + (Number(d.amount) - Number(d.paid_amount || 0)), 0),
       products: prods.length,
-      lowStock: prods.filter(p => (p.stock ?? 0) > 0 && p.stock <= (p.minStock || 5)).length,
+      lowStock: prods.filter(isLowStock).length,
     });
 
     // Kassirlar bo'yicha oylik KPI
@@ -72,6 +87,27 @@ export default function Reports() {
   }, []);
 
   useEffect(() => { if (user?.store_id) load(user.store_id); }, [user, load]);
+
+  useEffect(() => {
+    if (!user?.store_id || view !== 'movement') return;
+    let alive = true;
+    setMoves(null);
+
+    // Oxirgi kun to'liq kirsin uchun ertangi kungacha so'raymiz
+    const to = new Date(moveTo);
+    to.setDate(to.getDate() + 1);
+
+    supabase.from('stock_movements')
+      .select('id, product_id, type, qty, created_at, actor, note')
+      .eq('store_id', user.store_id)
+      .gte('created_at', new Date(moveFrom).toISOString())
+      .lt('created_at', to.toISOString())
+      .order('id', { ascending: false })
+      .limit(2000)
+      .then(({ data }) => { if (alive) setMoves(data || []); });
+
+    return () => { alive = false; };
+  }, [user, view, moveFrom, moveTo]);
 
   /* ── Oylik ko'rsatkichlar ── */
   const kpi = useMemo(() => {
@@ -127,6 +163,7 @@ export default function Reports() {
   const REPORT_TYPES = [
     { id: 'products', label: 'Mahsulotlar', icon: 'package', available: products.length > 0 },
     { id: 'staff', label: 'Xodimlar KPI', icon: 'users-three', available: staffKpi.length > 0 },
+    { id: 'movement', label: 'Tovar harakati', icon: 'arrows-left-right', available: true },
     { id: 'finance', label: 'Moliya', icon: 'wallet', available: true },
     { id: 'forecast', label: 'Prognoz', icon: 'trend-up', available: false, soon: true },
     { id: 'tax', label: 'Soliq 4%', icon: 'percent', available: false, soon: true },
@@ -294,6 +331,15 @@ export default function Reports() {
         </Card>
       )}
 
+      {view === 'movement' && (
+        <MovementReport
+          moves={moves}
+          products={productNames}
+          from={moveFrom} to={moveTo}
+          onFrom={setMoveFrom} onTo={setMoveTo}
+        />
+      )}
+
       {view === 'finance' && (
         <Card padding="var(--space-6)" gap={12}>
           <SectionHeader title={`Moliyaviy xulosa · ${monthLabel}`}>
@@ -358,5 +404,139 @@ function FlowRow({ label, value, color, sign }) {
       <span style={{ color: 'var(--color-neutral-400)' }}>{label}</span>
       <span className="num" style={{ fontWeight: 500, color }}>{sign}{value} so‘m</span>
     </div>
+  );
+}
+
+/* ── Tovar harakati hisoboti ───────────────────────────────────────────── */
+function MovementReport({ moves, products, from, to, onFrom, onTo }) {
+  const typeOf = t => MOVE_TYPES[t] || { label: t, icon: 'dot', color: 'var(--color-neutral-400)' };
+
+  /* Tur bo'yicha yig'indi */
+  const byType = useMemo(() => {
+    const map = {};
+    (moves || []).forEach(m => {
+      if (!map[m.type]) map[m.type] = { type: m.type, qty: 0, count: 0 };
+      map[m.type].qty += Math.abs(m.qty);
+      map[m.type].count += 1;
+    });
+    return Object.values(map).sort((a, b) => b.count - a.count);
+  }, [moves]);
+
+  /* Tovar bo'yicha yig'indi — kirim, chiqim va sof o'zgarish */
+  const byProduct = useMemo(() => {
+    const map = {};
+    (moves || []).forEach(m => {
+      if (m.type === 'boshlangich') return;
+      const key = m.product_id;
+      if (!map[key]) map[key] = { id: key, in: 0, out: 0, net: 0, fixes: 0 };
+      if (m.qty > 0) map[key].in += m.qty; else map[key].out += -m.qty;
+      map[key].net += m.qty;
+      if (m.type === 'tuzatish' || m.type === 'taftish') map[key].fixes += 1;
+    });
+    return Object.values(map).sort((a, b) => (b.in + b.out) - (a.in + a.out));
+  }, [moves]);
+
+  const totals = useMemo(() => {
+    const t = { in: 0, out: 0, unexplained: 0 };
+    (moves || []).forEach(m => {
+      if (m.type === 'boshlangich') return;
+      if (m.qty > 0) t.in += m.qty; else t.out += -m.qty;
+      if (m.type === 'tuzatish') t.unexplained += 1;
+    });
+    return t;
+  }, [moves]);
+
+  return (
+    <Card padding="var(--space-6)" gap={13}>
+      <SectionHeader title="Tovar harakati">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input className="input num" type="date" value={from} max={to}
+            onChange={e => onFrom(e.target.value)} style={{ width: 150 }} />
+          <span style={{ color: 'var(--color-neutral-500)' }}>—</span>
+          <input className="input num" type="date" value={to} min={from}
+            max={new Date().toISOString().slice(0, 10)}
+            onChange={e => onTo(e.target.value)} style={{ width: 150 }} />
+        </div>
+      </SectionHeader>
+
+      {moves === null ? <SkeletonRows count={5} widths={['100%']} />
+        : moves.length === 0 ? (
+          <EmptyState icon="arrows-left-right" text="Bu davrda harakat bo‘lmagan"
+            sub="Boshqa sanalarni tanlab ko‘ring" />
+        ) : (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+              <Card elev={null} padding={13} gap={4}>
+                <div style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>Kirim</div>
+                <div className="num" style={{ fontSize: 20, fontWeight: 500, color: 'var(--ok)' }}>
+                  +{totals.in} dona
+                </div>
+              </Card>
+              <Card elev={null} padding={13} gap={4}>
+                <div style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>Chiqim</div>
+                <div className="num" style={{ fontSize: 20, fontWeight: 500, color: 'var(--dang)' }}>
+                  −{totals.out} dona
+                </div>
+              </Card>
+              <Card elev={null} padding={13} gap={4}>
+                <div style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>Sababsiz o‘zgarish</div>
+                <div className="num" style={{
+                  fontSize: 20, fontWeight: 500,
+                  color: totals.unexplained ? 'var(--dang)' : 'var(--ok)',
+                }}>
+                  {totals.unexplained} ta
+                </div>
+              </Card>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {byType.map(t => {
+                const info = typeOf(t.type);
+                return (
+                  <Tag key={t.type} variant="neutral" icon={info.icon}>
+                    {info.label}: {t.count} marta · {t.qty} dona
+                  </Tag>
+                );
+              })}
+            </div>
+
+            <div style={{ overflowX: 'auto', maxHeight: 420, overflowY: 'auto' }}>
+              <table className="table" style={{ fontSize: 12.5 }}>
+                <thead>
+                  <tr>
+                    <th>Tovar</th>
+                    <th style={{ textAlign: 'right' }}>Kirim</th>
+                    <th style={{ textAlign: 'right' }}>Chiqim</th>
+                    <th style={{ textAlign: 'right' }}>Sof o‘zgarish</th>
+                    <th style={{ textAlign: 'right' }}>Taftish/tuzatish</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byProduct.map(r => (
+                    <tr key={r.id}>
+                      <td style={{ fontWeight: 500 }}>{products[r.id] || `#${r.id}`}</td>
+                      <td className="num" style={{ textAlign: 'right', color: r.in ? 'var(--ok)' : 'var(--color-neutral-500)' }}>
+                        {r.in ? `+${r.in}` : '—'}
+                      </td>
+                      <td className="num" style={{ textAlign: 'right', color: r.out ? 'var(--dang)' : 'var(--color-neutral-500)' }}>
+                        {r.out ? `−${r.out}` : '—'}
+                      </td>
+                      <td className="num" style={{ textAlign: 'right', fontWeight: 600 }}>
+                        {r.net > 0 ? `+${r.net}` : r.net}
+                      </td>
+                      <td className="num" style={{
+                        textAlign: 'right',
+                        color: r.fixes ? 'var(--warn)' : 'var(--color-neutral-500)',
+                      }}>
+                        {r.fixes || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+    </Card>
   );
 }

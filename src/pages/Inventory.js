@@ -6,6 +6,10 @@ import {
 } from '../components/UI';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../utils/supabaseClient';
+import PhotoField from '../components/PhotoField';
+import { imageUrl } from '../utils/upload';
+import { stockStatus } from '../utils/stock';
+import StockHistory from '../components/StockHistory';
 
 /* ── doimiylar ─────────────────────────────────────────────────────────── */
 
@@ -32,13 +36,9 @@ const formatInput = v => {
   return d ? Number(d).toLocaleString('ru-RU') : '';
 };
 
-/** Qoldiq holati — minStock belgilanmagan bo'lsa 5 dona chegara */
-function statusOf(p) {
-  const min = p.minStock || 5;
-  if ((p.stock ?? 0) <= 0) return { key: 'out', label: 'Tugagan', variant: 'dang', icon: 'warning-circle' };
-  if (p.stock <= min) return { key: 'low', label: 'Kam qoldiq', variant: 'warn', icon: 'warning' };
-  return { key: 'ok', label: 'Normal', variant: 'ok', icon: 'check' };
-}
+/* Qoldiq holati umumiy qoidadan olinadi — sidebar badge'i va
+   Dashboard ogohlantirishlari ham aynan shu qoidani ishlatadi. */
+const statusOf = stockStatus;
 
 /* ══════════════════════════════════════════════════════════════════════════
    Ombor
@@ -58,8 +58,10 @@ export default function Inventory() {
   const [statusFilter, setStatusFilter] = useState('all');
 
   const [showAdd, setShowAdd] = useState(false);
+  const [editFor, setEditFor] = useState(null);
   const [kirimFor, setKirimFor] = useState(null);
   const [printFor, setPrintFor] = useState(null);
+  const [historyFor, setHistoryFor] = useState(null);
 
   const notify = (msg, variant = 'ok') => setToast({ msg, variant });
 
@@ -71,6 +73,17 @@ export default function Inventory() {
   }, []);
 
   useEffect(() => { if (user?.store_id) load(user.store_id); }, [user, load]);
+
+  /* Tovarni onlayn katalogda ko'rsatish yoki yashirish */
+  const toggleOnline = async (p) => {
+    const next = p.is_online === false;
+    setProducts(prev => prev.map(x => x.id === p.id ? { ...x, is_online: next } : x));
+    const { error } = await supabase.from('products').update({ is_online: next }).eq('id', p.id);
+    if (error) {
+      setProducts(prev => prev.map(x => x.id === p.id ? { ...x, is_online: !next } : x));
+      notify(`O‘zgartirilmadi: ${error.message}`, 'dang');
+    }
+  };
 
   /* ── statistika va filtrlar ── */
   const stats = useMemo(() => {
@@ -175,7 +188,7 @@ export default function Inventory() {
                   <table className="table" style={{ fontSize: 13 }}>
                     <thead>
                       <tr>
-                        <th>Tovar</th><th>Kategoriya</th><th>Barcode / IMEI</th>
+                        <th>Tovar</th><th>Kategoriya</th><th>Onlayn</th><th>Barcode / IMEI</th>
                         <th style={{ textAlign: 'right' }}>Sotuv narxi</th>
                         <th style={{ textAlign: 'right' }}>Qoldiq</th>
                         <th style={{ textAlign: 'right' }}>Min.</th>
@@ -195,9 +208,25 @@ export default function Inventory() {
                           <tr key={p.id}>
                             <td>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                                <span style={{ fontSize: 17, filter: st.key === 'out' ? 'grayscale(1)' : 'none' }}>
-                                  {p.image || '📦'}
-                                </span>
+                                {p.photo_url ? (
+                                  <img
+                                    src={imageUrl(p.photo_url)} alt=""
+                                    style={{
+                                      width: 30, height: 30, flex: 'none', objectFit: 'cover',
+                                      borderRadius: 6, border: '1px solid var(--color-divider)',
+                                      filter: st.key === 'out' ? 'grayscale(1)' : 'none',
+                                    }}
+                                  />
+                                ) : (
+                                  <span style={{
+                                    width: 30, height: 30, flex: 'none', display: 'grid', placeItems: 'center',
+                                    fontSize: 16, borderRadius: 6,
+                                    background: 'color-mix(in srgb, var(--color-text) 5%, transparent)',
+                                    filter: st.key === 'out' ? 'grayscale(1)' : 'none',
+                                  }}>
+                                    {p.image || '📦'}
+                                  </span>
+                                )}
                                 <div>
                                   <div style={{ fontWeight: 500, color: st.key === 'out' ? 'var(--color-neutral-400)' : undefined }}>
                                     {p.name}
@@ -207,13 +236,31 @@ export default function Inventory() {
                               </div>
                             </td>
                             <td>{p.category || p.cat || '—'}</td>
+                            <td>
+                              <OnlineToggle
+                                on={p.is_online !== false}
+                                hasPhoto={Boolean(p.photo_url)}
+                                onChange={() => toggleOnline(p)}
+                              />
+                            </td>
                             <td className="num" style={{ color: 'var(--color-neutral-400)' }}>{code}</td>
                             <td className="num" style={{ textAlign: 'right' }}>{money(p.price)}</td>
-                            <td className="num" style={{
-                              textAlign: 'right', fontWeight: 600,
-                              color: st.key === 'out' ? 'var(--dang)' : st.key === 'low' ? 'var(--warn)' : undefined,
-                            }}>
-                              {p.stock}
+                            <td style={{ textAlign: 'right' }}>
+                              {/* Qoldiq bosilsa — o'sha tovarning harakat tarixi */}
+                              <button
+                                onClick={() => setHistoryFor(p)}
+                                title="Harakat tarixini ko‘rish"
+                                className="num"
+                                style={{
+                                  background: 'none', border: 0, cursor: 'pointer', padding: '2px 4px',
+                                  font: 'inherit', fontWeight: 600, borderRadius: 4,
+                                  textDecoration: 'underline', textDecorationStyle: 'dotted',
+                                  textUnderlineOffset: 3,
+                                  color: st.key === 'out' ? 'var(--dang)' : st.key === 'low' ? 'var(--warn)' : 'var(--color-text)',
+                                }}
+                              >
+                                {p.stock}
+                              </button>
                             </td>
                             <td className="num" style={{ textAlign: 'right', color: 'var(--color-neutral-500)' }}>
                               {p.minStock || '—'}
@@ -227,6 +274,8 @@ export default function Inventory() {
                                 >
                                   Kirim
                                 </Btn>
+                                <Btn variant="ghost" iconOnly icon="pencil-simple" title="Tahrirlash"
+                                  onClick={() => setEditFor(p)} style={{ width: 28, height: 28 }} />
                                 <Btn variant="ghost" iconOnly icon="printer" title="Barcode chop etish"
                                   onClick={() => setPrintFor(p)} style={{ width: 28, height: 28 }} />
                               </div>
@@ -243,25 +292,35 @@ export default function Inventory() {
       )}
 
       {tab === 'transfer' && (
-        <TransferTab products={products} onApply={(updated, msg) => { setProducts(updated); notify(msg); }} />
+        <TransferTab
+          products={products} actor={user?.name}
+          onDone={(msg) => { load(user.store_id); refreshAlerts(); notify(msg); }}
+          onError={(m) => notify(m, 'dang')}
+        />
       )}
 
       {tab === 'audit' && (
-        <AuditTab products={products} onApply={(updated, msg) => { setProducts(updated); notify(msg); }} />
+        <AuditTab
+          products={products} actor={user?.name}
+          onDone={(msg) => { load(user.store_id); refreshAlerts(); notify(msg); }}
+          onError={(m) => notify(m, 'dang')}
+        />
       )}
 
       {/* ── Modallar ── */}
-      {showAdd && (
-        <AddProductModal
+      {(showAdd || editFor) && (
+        <ProductModal
           storeId={user?.store_id}
           isPhoneStore={isPhoneStore}
           categories={categories}
-          onClose={() => setShowAdd(false)}
+          product={editFor}
+          onClose={() => { setShowAdd(false); setEditFor(null); }}
           onSaved={(name) => {
-            setShowAdd(false);
+            const wasEdit = Boolean(editFor);
+            setShowAdd(false); setEditFor(null);
             load(user.store_id);
             refreshAlerts();
-            notify(`"${name}" qo‘shildi`);
+            notify(`"${name}" ${wasEdit ? 'yangilandi' : 'qo‘shildi'}`);
           }}
           onError={(m) => notify(m, 'dang')}
         />
@@ -270,6 +329,7 @@ export default function Inventory() {
       {kirimFor && (
         <KirimModal
           product={kirimFor}
+          actor={user?.name}
           onClose={() => setKirimFor(null)}
           onSaved={(qty) => {
             setKirimFor(null);
@@ -282,6 +342,8 @@ export default function Inventory() {
       )}
 
       {printFor && <BarcodeModal product={printFor} onClose={() => setPrintFor(null)} />}
+
+      {historyFor && <StockHistory product={historyFor} onClose={() => setHistoryFor(null)} />}
 
       {toast && <Toast message={toast.msg} variant={toast.variant} onClose={() => setToast(null)} />}
     </Page>
@@ -311,7 +373,7 @@ function StatTile({ label, value, unit, icon, color, valueColor, active, onClick
 }
 
 /* ── Kirim modali ──────────────────────────────────────────────────────── */
-function KirimModal({ product, onClose, onSaved, onError }) {
+function KirimModal({ product, actor, onClose, onSaved, onError }) {
   const [qty, setQty] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
@@ -321,8 +383,15 @@ function KirimModal({ product, onClose, onSaved, onError }) {
   const save = async () => {
     if (n <= 0) return;
     setSaving(true);
-    const { error } = await supabase.from('products')
-      .update({ stock: product.stock + n }).eq('id', product.id);
+    // move_stock qoldiqni o'zgartiradi VA harakat tarixiga yozadi —
+    // ikkalasi bitta tranzaksiyada, ya'ni ular hech qachon ajralmaydi
+    const { error } = await supabase.rpc('move_stock', {
+      p_product: product.id,
+      p_qty: n,
+      p_type: 'kirim',
+      p_note: note.trim() || null,
+      p_actor: actor || null,
+    });
     setSaving(false);
     if (error) onError(`Kirim saqlanmadi: ${error.message}`);
     else onSaved(n);
@@ -458,16 +527,36 @@ function BarcodeModal({ product, onClose }) {
 }
 
 /* ── Tovar qo'shish ────────────────────────────────────────────────────── */
-function AddProductModal({ storeId, isPhoneStore, categories, onClose, onSaved, onError }) {
-  const [mode, setMode] = useState(isPhoneStore ? 'phone' : 'simple');
+function ProductModal({ storeId, isPhoneStore, categories, product, onClose, onSaved, onError }) {
+  const editing = Boolean(product);
+  // Tahrirlashda rejim tovarning o'zidan aniqlanadi: IMEI bo'lsa telefon
+  const [mode, setMode] = useState(
+    editing ? (product.phone_model || product.phone_imei1 ? 'phone' : 'simple')
+      : (isPhoneStore ? 'phone' : 'simple')
+  );
   const [saving, setSaving] = useState(false);
   const scannerRef = useRef(null);
 
   const [f, setF] = useState({
-    brand: 'Samsung', model: '', memory: '128GB', color: '',
-    imei1: '', imei2: '', serial: '', condition: 'Yangi',
-    name: '', barcode: '', category: '', emoji: '📦',
-    stock: '', minStock: '', cost: '', price: '',
+    brand: product?.category || 'Samsung',
+    model: product?.phone_model || '',
+    memory: product?.phone_memory || '128GB',
+    color: product?.phone_color || '',
+    imei1: product?.phone_imei1 || '',
+    imei2: product?.phone_imei2 || '',
+    serial: product?.phone_serial || '',
+    condition: product?.phone_condition || 'Yangi',
+    name: product?.name || '',
+    barcode: product?.barcode || '',
+    category: product?.category || '',
+    emoji: product?.image || '📦',
+    stock: product?.stock != null ? String(product.stock) : '',
+    minStock: product?.minStock ? String(product.minStock) : '',
+    cost: product?.cost_price ? String(product.cost_price) : '',
+    price: product?.price ? String(product.price) : '',
+    photoUrl: product?.photo_url || '',
+    description: product?.description || '',
+    isOnline: product ? product.is_online !== false : true,
   });
   const set = (k, v) => setF(prev => ({ ...prev, [k]: v }));
 
@@ -509,10 +598,14 @@ function AddProductModal({ storeId, isPhoneStore, categories, onClose, onSaved, 
       category: isPhoneItem ? f.brand : (f.category || 'Boshqa'),
       cost_price: cost,
       price,
-      // Telefon noyob IMEI bilan keladi — har biri 1 dona
-      stock: isPhoneItem ? 1 : (parseInt(f.stock, 10) || 0),
+      // Telefon noyob IMEI bilan keladi — har biri 1 dona.
+      // Tahrirlashda qoldiqqa tegmaymiz: u Kirim orqali boshqariladi.
+      ...(editing ? {} : { stock: isPhoneItem ? 1 : (parseInt(f.stock, 10) || 0) }),
       minStock: parseInt(f.minStock, 10) || 0,
       image: isPhoneItem ? '📱' : f.emoji,
+      photo_url: f.photoUrl || null,
+      description: f.description.trim() || null,
+      is_online: f.isOnline,
       ...(isPhoneItem ? {
         phone_model: f.model,
         phone_memory: f.memory,
@@ -524,7 +617,10 @@ function AddProductModal({ storeId, isPhoneStore, categories, onClose, onSaved, 
       } : {}),
     };
 
-    const { error } = await supabase.from('products').insert(row);
+    const { error } = editing
+      ? await supabase.from('products').update(row).eq('id', product.id)
+      : await supabase.from('products').insert(row);
+
     setSaving(false);
     if (error) onError(`Saqlanmadi: ${error.message}`);
     else onSaved(name);
@@ -538,22 +634,24 @@ function AddProductModal({ storeId, isPhoneStore, categories, onClose, onSaved, 
   });
 
   return (
-    <Modal title="Tovar Qo‘shish" onClose={onClose} wide actions={
+    <Modal title={editing ? 'Tovarni tahrirlash' : 'Tovar Qo‘shish'} onClose={onClose} wide actions={
       <>
         <Btn variant="secondary" onClick={onClose}>Bekor qilish</Btn>
         <Btn variant="primary" icon="check" onClick={save} disabled={!valid} loading={saving}>Saqlash</Btn>
       </>
     }>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Seg
-          style={{ width: '100%' }}
-          options={[
-            { value: 'phone', label: '📱 Telefon' },
-            { value: 'simple', label: '📦 Oddiy / Aksessuar' },
-          ]}
-          value={mode}
-          onChange={setMode}
-        />
+        {!editing && (
+          <Seg
+            style={{ width: '100%' }}
+            options={[
+              { value: 'phone', label: '📱 Telefon' },
+              { value: 'simple', label: '📦 Oddiy / Aksessuar' },
+            ]}
+            value={mode}
+            onChange={setMode}
+          />
+        )}
 
         {mode === 'phone' ? (
           <>
@@ -677,6 +775,50 @@ function AddProductModal({ storeId, isPhoneStore, categories, onClose, onSaved, 
             </div>
           )}
         </Step>
+
+        <Step n={mode === 'phone' ? 5 : 3} title="Onlayn katalog">
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12, padding: '11px 13px',
+            borderRadius: 9, background: 'color-mix(in srgb, var(--color-text) 4%, transparent)',
+          }}>
+            <Icon name="globe" size={18} color="var(--color-accent)" />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13 }}>Onlayn do‘konda ko‘rsatilsin</div>
+              <div style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>
+                Mijozlarga yuboriladigan havolada shu tovar ko‘rinadi
+              </div>
+            </div>
+            <span
+              role="switch" aria-checked={f.isOnline}
+              onClick={() => set('isOnline', !f.isOnline)}
+              style={{
+                width: 40, height: 23, borderRadius: 12, position: 'relative', flex: 'none',
+                display: 'inline-block', cursor: 'pointer', transition: 'background .15s',
+                background: f.isOnline ? 'var(--color-accent)' : 'var(--color-neutral-700)',
+              }}
+            >
+              <span style={{
+                position: 'absolute', top: 2, left: f.isOnline ? 19 : 2,
+                width: 19, height: 19, borderRadius: '50%', transition: 'left .15s',
+                background: f.isOnline ? 'var(--color-bg)' : 'var(--color-neutral-400)',
+              }} />
+            </span>
+          </div>
+
+          <PhotoField
+            value={f.photoUrl}
+            onChange={v => set('photoUrl', v)}
+            hint="Rasmsiz tovar katalogda emoji bilan chiqadi — mijozga yaxshi ko‘rinmaydi"
+          />
+
+          <Field label="Tavsif" hint="Mijoz katalogda ko‘radi — ixtiyoriy">
+            <textarea
+              className="input" rows={2} value={f.description}
+              onChange={e => set('description', e.target.value)}
+              placeholder="Masalan: original, kafolat 1 yil, quti va zaryadlovchi bilan"
+            />
+          </Field>
+        </Step>
       </div>
     </Modal>
   );
@@ -740,21 +882,29 @@ function MoneyInput({ value, onChange, accent }) {
 }
 
 /* ── Filiallarga ko'chirish ────────────────────────────────────────────── */
-function TransferTab({ products, onApply }) {
+function TransferTab({ products, actor, onDone, onError }) {
   const [branch, setBranch] = useState(BRANCHES[0]);
   const [productId, setProductId] = useState('');
   const [qty, setQty] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const product = products.find(p => String(p.id) === productId);
   const n = parseInt(qty, 10) || 0;
   const valid = product && n > 0 && n <= product.stock;
 
-  const apply = () => {
-    onApply(
-      products.map(p => p.id === product.id ? { ...p, stock: p.stock - n } : p),
-      `${branch} filialiga ${n} dona "${product.name}" ko‘chirildi`
-    );
+  const apply = async () => {
+    setSaving(true);
+    const { error } = await supabase.rpc('move_stock', {
+      p_product: product.id,
+      p_qty: -n,
+      p_type: 'kochirish',
+      p_note: `${branch} filialiga`,
+      p_actor: actor || null,
+    });
+    setSaving(false);
+    if (error) return onError(`Ko‘chirilmadi: ${error.message}`);
     setProductId(''); setQty('');
+    onDone(`${branch} filialiga ${n} dona "${product.name}" ko‘chirildi`);
   };
 
   return (
@@ -814,19 +964,31 @@ function TransferTab({ products, onApply }) {
         </div>
       </div>
 
-      <Btn variant="primary" icon="truck" block disabled={!valid} onClick={apply} style={{ minHeight: 44 }}>
+      <Btn variant="primary" icon="truck" block disabled={!valid} loading={saving}
+        onClick={apply} style={{ minHeight: 44 }}>
         Ko‘chirishni Tasdiqlash
       </Btn>
 
-      <ScreenOnlyWarning text="Hozircha ko‘chirish faqat ekranda aks etadi — bazaga saqlanmaydi. Sahifa yangilanganda qaytadi." />
+      <div style={{
+        display: 'flex', gap: 9, alignItems: 'flex-start',
+        padding: '10px 12px', borderRadius: 8,
+        background: 'color-mix(in srgb, var(--color-text) 4%, transparent)',
+      }}>
+        <Icon name="info" size={14} color="var(--color-neutral-500)" style={{ marginTop: 1 }} />
+        <span style={{ fontSize: 11.5, color: 'var(--color-neutral-500)', lineHeight: 1.45 }}>
+          Ko‘chirish asosiy do‘kon qoldig‘idan yechiladi va harakat tarixiga
+          yoziladi. Filialning o‘z ombori hozircha alohida yuritilmaydi.
+        </span>
+      </div>
     </Card>
   );
 }
 
 /* ── Inventarizatsiya ──────────────────────────────────────────────────── */
-function AuditTab({ products, onApply }) {
+function AuditTab({ products, actor, onDone, onError }) {
   const [counts, setCounts] = useState({});
   const [search, setSearch] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -847,13 +1009,32 @@ function AuditTab({ products, onApply }) {
     return { shortQty, shortVal, overQty, overVal, counted };
   }, [products, counts]);
 
-  const save = () => {
-    const updated = products.map(p => {
-      const c = counts[p.id];
-      return (c === undefined || c === '') ? p : { ...p, stock: Number(c) };
-    });
-    onApply(updated, `Taftish saqlandi: ${totals.counted} ta tovar yangilandi`);
+  const save = async () => {
+    setSaving(true);
+
+    // Har bir farq alohida yozuv bo'ladi — keyin qaysi tovarda qancha
+    // kamomad chiqqani tarixdan ko'rinadi
+    const changes = products
+      .map(p => ({ p, c: counts[p.id] }))
+      .filter(({ p, c }) => c !== undefined && c !== '' && Number(c) !== p.stock);
+
+    const results = await Promise.all(changes.map(({ p, c }) =>
+      supabase.rpc('move_stock', {
+        p_product: p.id,
+        p_qty: Number(c) - p.stock,
+        p_type: 'taftish',
+        p_note: `Sanaldi: ${c}, tizimda: ${p.stock}`,
+        p_actor: actor || null,
+      })
+    ));
+
+    setSaving(false);
+    const failed = results.filter(r => r.error);
+    if (failed.length > 0) {
+      return onError(`${failed.length} ta tovar yangilanmadi: ${failed[0].error.message}`);
+    }
     setCounts({});
+    onDone(`Taftish saqlandi: ${changes.length} ta tovar yangilandi`);
   };
 
   return (
@@ -928,10 +1109,11 @@ function AuditTab({ products, onApply }) {
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <Btn variant="primary" icon="floppy-disk" onClick={save} disabled={totals.counted === 0}>Saqlash</Btn>
-        <span style={{ fontSize: 11.5, color: 'var(--warn)', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Icon name="warning" size={13} />
-          Natijalar hozircha bazaga saqlanmaydi — faqat joriy sessiyada.
+        <Btn variant="primary" icon="floppy-disk" onClick={save} loading={saving}
+          disabled={totals.counted === 0}>Saqlash</Btn>
+        <span style={{ fontSize: 11.5, color: 'var(--color-neutral-500)', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Icon name="info" size={13} />
+          Har bir farq harakat tarixiga sabab bilan yoziladi.
         </span>
       </div>
     </Card>
@@ -950,14 +1132,30 @@ function SummaryBox({ label, value, variant }) {
   );
 }
 
-function ScreenOnlyWarning({ text }) {
+
+
+/* ── Onlayn katalogda ko'rinish tugmasi ─────────────────────────── */
+function OnlineToggle({ on, hasPhoto, onChange }) {
   return (
-    <div style={{
-      display: 'flex', gap: 9, alignItems: 'flex-start',
-      padding: '10px 12px', borderRadius: 8, background: 'var(--warnbg)',
-    }}>
-      <Icon name="warning" fill size={14} color="var(--warn)" style={{ marginTop: 1 }} />
-      <span style={{ fontSize: 11.5, color: 'var(--warn)', lineHeight: 1.45 }}>{text}</span>
-    </div>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+      <span
+        role="switch" aria-checked={on} onClick={onChange}
+        title={on ? 'Onlayn katalogda ko‘rinadi' : 'Katalogda yashirilgan'}
+        style={{
+          width: 32, height: 19, borderRadius: 10, position: 'relative', flex: 'none',
+          display: 'inline-block', cursor: 'pointer', transition: 'background .15s',
+          background: on ? 'var(--color-accent)' : 'var(--color-neutral-700)',
+        }}
+      >
+        <span style={{
+          position: 'absolute', top: 2, left: on ? 15 : 2,
+          width: 15, height: 15, borderRadius: '50%', transition: 'left .15s',
+          background: on ? 'var(--color-bg)' : 'var(--color-neutral-400)',
+        }} />
+      </span>
+      {on && !hasPhoto && (
+        <Icon name="image" size={13} color="var(--warn)" title="Rasm qo‘shilmagan" />
+      )}
+    </span>
   );
 }

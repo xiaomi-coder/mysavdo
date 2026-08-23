@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../utils/supabaseClient';
+import { isLowStock, isOutOfStock } from '../utils/stock';
 
 // Simulated Telegram Toast for global use
 function TelegramToast({ msg, onClose }) {
@@ -66,6 +67,7 @@ export const ROLE_NAV = {
     { to: '/pos', icon: 'cash-register', label: 'pos', perm: 'pos' },
     { to: '/inventory', icon: 'package', label: 'inventory', badge: 'lowStock', perm: 'inventory' },
     { to: '/customers', icon: 'users-three', label: 'crm', perm: 'crm' },
+    { to: '/orders', icon: 'shopping-bag', label: 'Buyurtmalar', badge: 'newOrders', perm: 'crm' },
     { to: '/nasiya', icon: 'hand-coins', label: 'nasiya', badge: 'urgentDebts', perm: 'nasiya' },
     { to: '/finance', icon: 'wallet', label: 'finance', perm: 'finance' },
     { to: '/reports', icon: 'chart-bar', label: 'reports', perm: 'reports' },
@@ -143,20 +145,23 @@ export function AuthProvider({ children }) {
      har biri alohida so'rov yubormasligi uchun. */
   const [alerts, setAlerts] = useState({
     outOfStock: 0, lowStock: 0, urgentDebts: 0, overdueDebts: 0, overdueAmount: 0,
-    outOfStockNames: [], lowStockNames: [],
+    newOrders: 0, outOfStockNames: [], lowStockNames: [],
   });
 
   const refreshAlerts = useCallback(async () => {
     if (!user?.store_id) return;
-    const [prodRes, debtRes] = await Promise.all([
-      supabase.from('products').select('name, stock, minStock').eq('store_id', user.store_id),
+    const [prodRes, debtRes, orderRes] = await Promise.all([
+      supabase.from('products').select('name, stock, minStock, phone_imei1, phone_serial').eq('store_id', user.store_id),
       supabase.from('debts').select('due_date, date, amount, paid_amount').eq('store_id', user.store_id).eq('status', "To'lanmagan"),
+      supabase.from('transactions').select('id', { count: 'exact', head: true })
+        .eq('store_id', user.store_id).eq('status', 'online_pending'),
     ]);
 
     const prods = prodRes.data || [];
-    const out = prods.filter(p => (p.stock ?? 0) <= 0);
-    // Chegara: mahsulotning o'z minStock i, belgilanmagan bo'lsa 5 dona
-    const low = prods.filter(p => (p.stock ?? 0) > 0 && (p.stock ?? 0) <= (p.minStock || 5));
+    // Qoida utils/stock.js da — noyob IMEI li tovar 1 dona bo'lsa
+    // bu normal holat, ogohlantirish emas
+    const out = prods.filter(isOutOfStock);
+    const low = prods.filter(isLowStock);
 
     const now = Date.now();
     const week = 7 * 24 * 60 * 60 * 1000;
@@ -170,6 +175,7 @@ export function AuthProvider({ children }) {
       outOfStock: out.length,
       lowStock: low.length,
       urgentDebts: debts.filter(d => d.due - now <= week).length,
+      newOrders: orderRes.count || 0,
       overdueDebts: overdue.length,
       overdueAmount: overdue.reduce((s, d) => s + d.rest, 0),
       outOfStockNames: out.slice(0, 5).map(p => p.name),
@@ -190,7 +196,7 @@ export function AuthProvider({ children }) {
       // Birinchi users dan qidiramiz
       let { data, error } = await supabase
         .from('users')
-        .select('*, stores(name, store_type)')
+        .select('*, stores(name, store_type, slug)')
         .eq('email', email)
         .single();
 
@@ -258,6 +264,7 @@ export function AuthProvider({ children }) {
         ...data,
         storeName: data.stores?.name,
         storeType: data.stores?.store_type || 'general',
+        storeSlug: data.stores?.slug,
         icon: roleDefaults.icon,
         color: roleDefaults.color,
         label: roleDefaults.label,

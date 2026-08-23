@@ -4,6 +4,7 @@ import {
 } from '../components/UI';
 import { useAuth, useTranslation } from '../context/AuthContext';
 import { supabase } from '../utils/supabaseClient';
+import { storeUrl } from '../utils/storeHost';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Sozlamalar
@@ -47,7 +48,7 @@ export default function Settings() {
       : { msg: 'Do‘kon ma’lumotlari saqlandi', variant: 'ok' });
   };
 
-  const shopUrl = `https://mybazzar.uz/shop/${user?.store_id ?? ''}`;
+  const shopUrl = storeUrl(user?.storeSlug || user?.store_id || '');
   const [copied, setCopied] = useState(false);
   const copyLink = () => {
     navigator.clipboard?.writeText(shopUrl);

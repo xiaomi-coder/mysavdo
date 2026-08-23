@@ -19,6 +19,8 @@ import CreatorPanel from './pages/CreatorPanel';
 import LandingPage from './pages/LandingPage';
 import DealerPortal from './pages/DealerPortal';
 import Storefront from './pages/Storefront';
+import Orders from './pages/Orders';
+import { storeSlugFromHost } from './utils/storeHost';
 
 function PrivateRoute({ children, permission }) {
   const { user, hasPermission } = useAuth();
@@ -71,6 +73,7 @@ function AppRoutes() {
         <Route path="pos" element={<POS />} />
         <Route path="inventory" element={<PrivateRoute permission="inventory"><Inventory /></PrivateRoute>} />
         <Route path="customers" element={<PrivateRoute permission="crm"><CRM /></PrivateRoute>} />
+        <Route path="orders" element={<PrivateRoute permission="crm"><Orders /></PrivateRoute>} />
         <Route path="dealer" element={<PrivateRoute permission="dealer_dashboard"><DealerPortal /></PrivateRoute>} />
         <Route path="nasiya" element={<PrivateRoute permission="nasiya"><Nasiya /></PrivateRoute>} />
         <Route path="finance" element={<PrivateRoute permission="finance"><Finance /></PrivateRoute>} />
@@ -86,6 +89,11 @@ function AppRoutes() {
 }
 
 export default function App() {
+  // texno-bozor.mybazzar.uz kabi manzil ochilsa — to'g'ridan-to'g'ri katalog.
+  // Bunda login ham, sidebar ham kerak emas: bu mijozlar uchun ochiq sahifa.
+  const storeSlug = storeSlugFromHost();
+  if (storeSlug) return <Storefront storeKey={storeSlug} />;
+
   return (
     <BrowserRouter>
       <AuthProvider>
