@@ -3,6 +3,7 @@ import { View, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../ThemeContext';
 import { Tap } from '../ui/base';
+import { useTr } from '../i18n';
 import Icon from '../ui/Icon';
 import { buzz } from '../ui/Feedback';
 
@@ -19,6 +20,7 @@ import { buzz } from '../ui/Feedback';
 
 export default function TabBar({ state, descriptors, navigation, badges = {} }) {
   const { t } = useTheme();
+  const tr = useTr();
   const insets = useSafeAreaInsets();
 
   return (
@@ -62,7 +64,7 @@ export default function TabBar({ state, descriptors, navigation, badges = {} }) 
             </View>
 
             <Text style={{ fontSize: 10.5, fontWeight: '500', color, marginTop: 2 }}>
-              {options.title || route.name}
+              {tr(options.title || route.name)}
             </Text>
 
             {/* Faol bo'lim ostidagi nuqta */}

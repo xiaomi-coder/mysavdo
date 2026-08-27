@@ -4,6 +4,7 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../ThemeContext';
+import { useTr } from '../i18n';
 import { R } from '../theme';
 import { Txt, Tap } from './base';
 import Icon from './Icon';
@@ -63,6 +64,7 @@ export function buzz(kind = 'tap') {
 /* ── Toast ────────────────────────────────────────────────────────────── */
 function Toast({ data }) {
   const { t } = useTheme();
+  const tr = useTr();
   const insets = useSafeAreaInsets();
   const a = useState(() => new Animated.Value(0))[0];
 
@@ -99,7 +101,7 @@ function Toast({ data }) {
         shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 24,
         shadowOffset: { width: 0, height: 8 }, elevation: 8,
       }}>
-        <Txt size={13} weight="500" color={fg} style={{ textAlign: 'center' }}>{data.text}</Txt>
+        <Txt size={13} weight="500" color={fg} style={{ textAlign: 'center' }}>{tr(data.text)}</Txt>
       </View>
     </Animated.View>
   );

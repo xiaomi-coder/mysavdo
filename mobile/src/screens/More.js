@@ -7,6 +7,7 @@ import { useData } from '../DataContext';
 import { useCart } from '../CartContext';
 import { Screen, Card, Txt, Row, Icon, Avatar, Btn } from '../ui';
 import { useFeedback } from '../ui/Feedback';
+import { useTr } from '../i18n';
 import { API_URL } from '../lib/api';
 import { initials } from '../lib/format';
 import DaySheet from '../sheets/DaySheet';
@@ -23,14 +24,15 @@ export default function More({ navigation }) {
   const d = useData();
   const cart = useCart();
   const { notify } = useFeedback();
+  const tr = useTr();
   const [daySheet, setDaySheet] = useState(false);
 
   const version = Constants.expoConfig?.version || '1.0.0';
 
   const logout = () => {
-    Alert.alert('Chiqish', 'Hisobdan chiqasizmi?', [
-      { text: 'Bekor qilish', style: 'cancel' },
-      { text: 'Chiqish', style: 'destructive', onPress: signOut },
+    Alert.alert(tr('Chiqish'), tr('Hisobdan chiqasizmi?'), [
+      { text: tr('Bekor qilish'), style: 'cancel' },
+      { text: tr('Chiqish'), style: 'destructive', onPress: signOut },
     ]);
   };
 
@@ -42,6 +44,12 @@ export default function More({ navigation }) {
     { icon: 'chart', label: 'Moliya', lock: !can('finance'),
       onPress: () => navigation.navigate('Moliya') },
     isOwner && { icon: 'file-text', label: 'Hisobotlar', onPress: () => navigation.navigate('Hisobot') },
+    isOwner && {
+      icon: 'sparkle',
+      label: 'AI Analitika',
+      sub: 'Prognoz, tugash xavfi, foyda tahlili',
+      onPress: () => navigation.navigate('Analitika'),
+    },
     { icon: 'printer', label: 'Chek printer', onPress: () => navigation.navigate('Chek') },
     isOwner && store?.slug && {
       icon: 'globe',

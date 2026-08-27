@@ -11,6 +11,7 @@ import { AuthProvider, useAuth } from './src/AuthContext';
 import { DataProvider, useData } from './src/DataContext';
 import { CartProvider } from './src/CartContext';
 import { FeedbackProvider } from './src/ui/Feedback';
+import { I18nProvider } from './src/i18n';
 
 import TabBar from './src/nav/TabBar';
 import Login from './src/screens/Login';
@@ -25,6 +26,7 @@ import Nasiya from './src/screens/Nasiya';
 import Finance from './src/screens/Finance';
 import Reports from './src/screens/Reports';
 import ChekPrinter from './src/screens/ChekPrinter';
+import Analytics from './src/screens/Analytics';
 import Scanner from './src/screens/Scanner';
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -51,6 +53,7 @@ function MoreNavigator() {
       <MoreStack.Screen name="Nasiya" component={Nasiya} />
       <MoreStack.Screen name="Moliya" component={Finance} />
       <MoreStack.Screen name="Hisobot" component={Reports} />
+      <MoreStack.Screen name="Analitika" component={Analytics} />
       <MoreStack.Screen name="Chek" component={ChekPrinter} />
       <MoreStack.Screen name="Sozlamalar" component={Settings} />
     </MoreStack.Navigator>
@@ -146,12 +149,14 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <FeedbackProvider>
-          <AuthProvider>
-            <Session />
-          </AuthProvider>
-        </FeedbackProvider>
-        <StatusBar style="auto" />
+        <I18nProvider>
+          <FeedbackProvider>
+            <AuthProvider>
+              <Session />
+            </AuthProvider>
+          </FeedbackProvider>
+          <StatusBar style="auto" />
+        </I18nProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );

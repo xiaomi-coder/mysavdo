@@ -9,6 +9,7 @@ import {
 } from '../ui';
 import { useFeedback } from '../ui/Feedback';
 import { ACCENT_LIST, R } from '../theme';
+import { LANGS, useI18n } from '../i18n';
 
 /* Sozlamalar.
 
@@ -20,6 +21,7 @@ const PREFS_KEY = 'mb.prefs';
 
 export default function Settings({ navigation }) {
   const { t, mode, accent, toggleMode, setAccent } = useTheme();
+  const { lang, setLang } = useI18n();
   const { user } = useAuth();
   const { notify } = useFeedback();
 
@@ -90,6 +92,38 @@ export default function Settings({ navigation }) {
               </Tap>
             ))}
           </View>
+        </View>
+      </Card>
+
+      <SectionLabel icon="translate">TIL</SectionLabel>
+      <Card pad={16} style={{ marginBottom: 16 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 13 }}>
+          <Icon name="translate" size={22} color={t.acc} />
+          <View style={{ flex: 1 }}>
+            <Txt size={15}>Interfeys tili</Txt>
+            <Txt size={12} color={t.t3} style={{ marginTop: 2 }}>
+              {LANGS.find((l) => l.key === lang)?.label}
+            </Txt>
+          </View>
+        </View>
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 12, marginLeft: 35 }}>
+          {LANGS.map((l) => (
+            <Tap
+              key={l.key}
+              onPress={() => setLang(l.key)}
+              style={{
+                flex: 1, height: 44, borderRadius: R.md,
+                alignItems: 'center', justifyContent: 'center',
+                borderWidth: 1,
+                borderColor: lang === l.key ? t.acc : t.line2,
+                backgroundColor: lang === l.key ? t.line : 'transparent',
+              }}
+            >
+              <Txt size={13} weight="500" color={lang === l.key ? t.acctext : t.t3}>
+                {l.label}
+              </Txt>
+            </Tap>
+          ))}
         </View>
       </Card>
 

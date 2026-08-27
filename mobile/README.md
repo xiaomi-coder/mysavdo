@@ -17,7 +17,7 @@ React Native + Expo (SDK 57). Android va iOS uchun bitta kod.
 | **Sotuv** | Tez sotuv tugmalari (uzoq bosib almashtiriladi), barcode skaner, qidiruv, savat, chegirma, 4 xil to'lov, qaytim hisoblagichi, narxsiz tovar uchun kalkulyator |
 | **Ombor** | Qidiruv va filtrlar, qatorni surtib tahrir/barcode, kirim, yangi tovar, ko'p tanlab stiker chop etish, tovar harakati tarixi (sverka) |
 | **Buyurtma** | Onlayn do'kondan tushgan buyurtmani qabul qilish yoki rad etish |
-| **Yana** | Kunni yopish, mijozlar, nasiya, moliya, hisobot, chek printer, onlayn do'kon havolasi, sozlamalar |
+| **Yana** | Kunni yopish, mijozlar, nasiya, moliya, hisobot, **AI Analitika**, chek printer, onlayn do'kon havolasi, sozlamalar |
 
 Qo'shimcha:
 
@@ -26,7 +26,32 @@ Qo'shimcha:
 - **Qaytarish** — to'liq yoki qisman. Ombor ortadi, hisobotda minus bo'ladi,
   asl chek o'zgarmaydi.
 - **Ikki mavzu, uch akcent rang** — tungi/kunduzgi, binafsha/yashil/ko'k.
+- **Uch til** — o'zbekcha, ruscha, inglizcha. Sana nomlari va "5 daq oldin"
+  kabi yozuvlar ham tilga qarab o'zgaradi.
 - **Ruxsatlar** — sotuvchiga foyda, tannarx va moliya ko'rinmaydi.
+
+### AI Analitika
+
+Tashqi xizmat yo'q — barcha hisob-kitob telefonning o'zida bajariladi.
+Do'kon ma'lumoti tahlil uchun hech qayerga yuborilmaydi, internetsiz
+ham ishlaydi va hech qanday pullik so'rov yo'q.
+
+Nima hisoblanadi:
+
+| Bo'lim | Nima beradi |
+|---|---|
+| Prognoz | Keyingi 7 kun tushumi. Umumiy yo'nalish + hafta kuni ta'siri (shanba dushanbadan boshqacha) |
+| Tugash xavfi | Har tovar necha kunda tugaydi va bir oyga yetishi uchun qancha kirim kerak |
+| Qotib qolgan pul | 45 kundan beri sotilmagan tovarlarda necha so'm turibdi |
+| Foyda tahlili | Marja, eng ko'p foyda keltirganlar, zararga sotilayotganlar |
+| Ish vaqti | Qaysi soatda va qaysi kunda odam ko'p — kassaga kim kerakligini hal qilish uchun |
+| Mijozlar | Qaytib kelganlar ulushi, yo'qolayotgan doimiy mijozlar |
+| Xavf | Qaytarish, nasiya, chegirma ulushi; sababsiz qoldiq tuzatishlari |
+
+Ekran tepasida **"nimaga e'tibor berish kerak"** turadi: har xulosa
+ortida pul bahosi bor va ro'yxat shu baho bo'yicha tartiblanadi, ya'ni
+eng qimmat masala doim birinchi. Har xulosada kerakli ekranga olib
+boradigan tugma bor.
 
 ---
 
@@ -104,9 +129,11 @@ mobile/
     AuthContext.js       kirish, sessiya, ruxsatlar
     DataContext.js       tovar/mijoz/sotuv/nasiya — bir joyda
     CartContext.js       savat, sotuvni yakunlash, offline navbat
+    i18n/                uz / ru / en lug'atlari va tarjimon
     lib/
       api.js             PostgREST mijozi (supabase-js o'rniga, ~120 qator)
-      format.js          pul, sana, telefon ko'rinishi
+      insights.js        tahlil dvigateli — prognoz, tugash xavfi, foyda
+      format.js          pul, sana, telefon ko'rinishi (tilga bog'liq)
       stock.js           qoldiq holati — veb bilan umumiy qoida
       receipt.js         chek chop etish — veb bilan umumiy shablon
       labels.js          40×30mm narx yorlig'i — veb bilan umumiy
@@ -157,8 +184,27 @@ buni bazadagi tetik qiladi, ilova emas, ya'ni tarixdan qochib bo'lmaydi.
 - Ommaviy SMS (eskiz.uz orqali). Hozir SMS telefonning o'z ilovasidan
   bittalab ketadi — bu mijoz uchun tanish raqamdan kelgani ma'qul,
   lekin yuzta qarzdorga bir yo'la yuborish uchun server tomoni kerak.
-- Ilova ichida til tanlash (rus/ingliz).
 - Filiallar o'rtasida tovar ko'chirish.
+- Telefon do'koni maydonlari (IMEI, model, xotira, rang) — hozir ular
+  faqat veb ilovada tahrirlanadi.
+- Xodimlar bo'limi — yangi sotuvchi qo'shish va ruxsat berish.
+
+## Fiskal chek
+
+Ilovadagi chek — **tovar cheki**, ya'ni do'konning ichki hujjati.
+Sozlamalardagi STIR maydoni shu raqamni chekka bosib chiqaradi, xolos.
+Bu chekni fiskal qilmaydi.
+
+Fiskal chek uchun uchta narsa kerak:
+
+1. Soliq qo'mitasida ro'yxatdan o'tgan onlayn kassa yoki virtual kassa;
+2. Har sotuvni real vaqtda fiskal tizimga yuborish va undan fiskal
+   belgi olish;
+3. Chekda fiskal belgi va tekshirish QR kodini chop etish.
+
+Buning uchun tovar kartochkasiga MXIK (mahsulot tasnif kodi), o'lchov
+birligi va QQS stavkasi qo'shilishi kerak — hozir bu maydonlar yo'q.
+Qaysi provayder orqali ulanish tanlangach, ular qo'shiladi.
 
 ## Ma'lum kamchilik
 

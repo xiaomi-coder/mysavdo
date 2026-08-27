@@ -6,7 +6,7 @@ import { useData } from '../DataContext';
 import {
   Screen, Card, Txt, Tap, Icon, Skeleton, ErrorState, BarChart, EmptyState,
 } from '../ui';
-import { money, dateLong, timeShort, todayStart } from '../lib/format';
+import { money, dateLong, timeShort, todayStart, weekdayShort } from '../lib/format';
 import { alpha, R } from '../theme';
 import ReceiptSheet from '../sheets/ReceiptSheet';
 
@@ -21,8 +21,6 @@ import ReceiptSheet from '../sheets/ReceiptSheet';
    tovar, tugagan tovar, muddati o'tgan nasiya, yangi buyurtma. Ular
    bosiladigan — bosilsa to'g'ridan-to'g'ri kerakli ekranga olib boradi.
    ══════════════════════════════════════════════════════════════════════ */
-
-const KUN = ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh'];
 
 export default function Dashboard({ navigation }) {
   const { t } = useTheme();
@@ -290,7 +288,7 @@ function compute(transactions) {
       const ts = new Date(x.date).getTime();
       return ts >= from && ts < to;
     }));
-    week.push({ label: KUN[new Date(from).getDay()], value: v, active: i === 0 });
+    week.push({ label: weekdayShort(from), value: v, active: i === 0 });
   }
 
   // Bu haftaning eng ko'p sotilgan tovarlari

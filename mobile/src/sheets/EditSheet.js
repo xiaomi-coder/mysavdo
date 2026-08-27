@@ -6,6 +6,7 @@ import { useData } from '../DataContext';
 import { useAuth } from '../AuthContext';
 import { Sheet, Txt, Btn, Input, Tap, PhotoBox, Icon, Toggle } from '../ui';
 import { useFeedback } from '../ui/Feedback';
+import { useTr } from '../i18n';
 import { db } from '../lib/api';
 import { uploadPhoto } from '../lib/upload';
 import { money } from '../lib/format';
@@ -25,6 +26,7 @@ export default function EditSheet({ product, onClose }) {
   const d = useData();
   const { can } = useAuth();
   const { notify } = useFeedback();
+  const tr = useTr();
 
   // Maydonlar oyna ochilganda bir marta to'ldiriladi
   const [f, setF] = useState(() => ({
@@ -98,12 +100,12 @@ export default function EditSheet({ product, onClose }) {
 
   const del = () => {
     Alert.alert(
-      'Tovarni o‘chirish',
-      `${product.name} butunlay o‘chiriladi. Sotuvlar tarixi saqlanib qoladi.`,
+      tr('Tovarni o‘chirish'),
+      tr(`${product.name} butunlay o‘chiriladi. Sotuvlar tarixi saqlanib qoladi.`),
       [
-        { text: 'Bekor qilish', style: 'cancel' },
+        { text: tr('Bekor qilish'), style: 'cancel' },
         {
-          text: 'O‘chirish',
+          text: tr('O‘chirish'),
           style: 'destructive',
           onPress: async () => {
             const { error } = await db.from('products').delete().eq('id', product.id);

@@ -97,7 +97,7 @@ const ACCENTS = {
 export const ACCENT_LIST = [
   { key: 'binafsha', label: 'Binafsha', swatch: '#9184d9' },
   { key: 'yashil',   label: 'Yashil',   swatch: '#52c48d' },
-  { key: 'kok',      label: "Ko'k",     swatch: '#5ea3e8' },
+  { key: 'kok',      label: 'Ko‘k',     swatch: '#5ea3e8' },
 ];
 
 export function buildTheme(mode = 'dark', accent = 'binafsha') {

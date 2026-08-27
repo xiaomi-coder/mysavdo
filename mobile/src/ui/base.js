@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { useTheme } from '../ThemeContext';
 import { alpha, R, TAP, FS } from '../theme';
+import { useTr } from '../i18n';
 import Icon from './Icon';
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -19,9 +20,23 @@ import Icon from './Icon';
    ishlaydi.
    ══════════════════════════════════════════════════════════════════════ */
 
-/* ── Matn ─────────────────────────────────────────────────────────────── */
+/* ── Matn ────────────────────────────────────────────────────────────────
+   Ekranlardagi matn shu yerda tarjima qilinadi. Shu sababli ekran
+   fayllarida birorta t('...') chaqiruvi yo'q — kod o'zbekcha
+   o'qilishda qoladi, lekin ilova uch tilda gapiradi.
+
+   JSX ichida "{count} dona · {sum} so'm" ko'rinishida yozilganda
+   children massiv bo'ladi; matn bo'laklarini alohida tarjima qilamiz
+   va atrofidagi bo'shliqni saqlab qolamiz.                            */
 export function Txt({ children, size = FS.body, weight = '400', color, dim, mono, style, ...rest }) {
   const { t } = useTheme();
+  const tr = useTr();
+  const body = typeof children === 'string'
+    ? tr(children)
+    : Array.isArray(children)
+      ? children.map((c, i) => (typeof c === 'string'
+          ? <React.Fragment key={i}>{tr(c, true)}</React.Fragment> : c))
+      : children;
   return (
     <Text
       {...rest}
@@ -35,7 +50,7 @@ export function Txt({ children, size = FS.body, weight = '400', color, dim, mono
         style,
       ]}
     >
-      {children}
+      {body}
     </Text>
   );
 }
@@ -106,6 +121,7 @@ export function Btn({
   size = 'md', full, disabled, loading, style, textStyle,
 }) {
   const { t } = useTheme();
+  const tr = useTr();
   const H = { sm: 38, md: 46, lg: 54, xl: 56 }[size] || 46;
   const FSZ = { sm: 13, md: 14, lg: 15, xl: 16 }[size] || 14;
   const ISZ = { sm: 16, md: 19, lg: 20, xl: 22 }[size] || 19;
@@ -149,7 +165,7 @@ export function Btn({
           {icon ? <Icon name={icon} size={ISZ} color={V.fg} /> : null}
           {(title || children) ? (
             <Text style={[{ color: V.fg, fontSize: FSZ, fontWeight: '500' }, textStyle]}>
-              {title || children}
+              {tr(title || children)}
             </Text>
           ) : null}
           {iconRight ? <Icon name={iconRight} size={ISZ} color={V.fg} /> : null}
@@ -162,6 +178,7 @@ export function Btn({
 /* ── Chip (filtr / tanlov) ────────────────────────────────────────────── */
 export function Chip({ label, count, active, onPress, icon, color, style }) {
   const { t } = useTheme();
+  const tr = useTr();
   const fg = active ? (color || t.acctext) : t.t3;
   return (
     <Tap
@@ -179,7 +196,7 @@ export function Chip({ label, count, active, onPress, icon, color, style }) {
       }, style]}
     >
       {icon ? <Icon name={icon} size={15} color={fg} /> : null}
-      <Text style={{ fontSize: 13, fontWeight: '500', color: fg }}>{label}</Text>
+      <Text style={{ fontSize: 13, fontWeight: '500', color: fg }}>{tr(label)}</Text>
       {count != null ? (
         <Text style={{ fontSize: 13, fontWeight: '500', color: fg, opacity: 0.65 }}>{count}</Text>
       ) : null}
@@ -189,15 +206,17 @@ export function Chip({ label, count, active, onPress, icon, color, style }) {
 
 /* ── Kiritish maydoni ─────────────────────────────────────────────────── */
 export const Input = React.forwardRef(function Input(
-  { label, hint, hintColor, style, inputStyle, big, right, ...rest }, ref
+  { label, hint, hintColor, style, inputStyle, big, right, placeholder, ...rest }, ref
 ) {
   const { t } = useTheme();
+  const tr = useTr();
   return (
     <View style={style}>
       {label ? <Txt size={12} color={t.t3} style={{ marginBottom: 5 }}>{label}</Txt> : null}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <TextInput
           ref={ref}
+          placeholder={tr(placeholder)}
           placeholderTextColor={t.t4}
           {...rest}
           style={[{
@@ -223,6 +242,7 @@ export const Input = React.forwardRef(function Input(
 /* ── Qidiruv qatori ───────────────────────────────────────────────────── */
 export function SearchBar({ value, onChangeText, placeholder = 'Qidirish', style, onClear }) {
   const { t } = useTheme();
+  const tr = useTr();
   return (
     <View style={[{
       flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -233,7 +253,7 @@ export function SearchBar({ value, onChangeText, placeholder = 'Qidirish', style
       <TextInput
         value={value}
         onChangeText={onChangeText}
-        placeholder={placeholder}
+        placeholder={tr(placeholder)}
         placeholderTextColor={t.t4}
         style={{ flex: 1, color: t.t1, fontSize: 15, padding: 0 }}
         returnKeyType="search"
@@ -420,11 +440,12 @@ export function Skeleton({ height = 76, style }) {
 /* ── Bo'lim sarlavhasi ────────────────────────────────────────────────── */
 export function SectionLabel({ children, color, icon, style }) {
   const { t } = useTheme();
+  const tr = useTr();
   return (
     <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, marginBottom: 8 }, style]}>
       {icon ? <Icon name={icon} size={15} color={color || t.t4} /> : null}
       <Text style={{ fontSize: 12, fontWeight: '500', letterSpacing: 0.4, color: color || t.t4 }}>
-        {children}
+        {typeof children === 'string' ? tr(children) : children}
       </Text>
     </View>
   );
