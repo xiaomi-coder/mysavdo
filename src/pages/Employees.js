@@ -20,6 +20,7 @@ const MODULES = [
   { perm: 'nasiya', label: 'Nasiya' },
   { perm: 'finance', label: 'Moliya' },
   { perm: 'reports', label: 'Hisobot' },
+  { perm: 'analytics', label: 'AI Analitika' },
   { perm: 'chek', label: 'Chek' },
   { perm: 'employees', label: 'Xodimlar' },
   { perm: 'settings', label: 'Sozlamalar' },

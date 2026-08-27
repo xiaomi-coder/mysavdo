@@ -1,0 +1,72 @@
+{
+  "expo": {
+    "name": "MyBazzar",
+    "slug": "mybazzar",
+    "scheme": "mybazzar",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#101120",
+    "primaryColor": "#9184d9",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "uz.mybazzar.app",
+      "buildNumber": "1",
+      "infoPlist": {
+        "CFBundleAllowMixedLocalizations": true,
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "uz.mybazzar.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundColor": "#101120"
+      },
+      "permissions": [
+        "CAMERA",
+        "VIBRATE",
+        "INTERNET"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
+          "backgroundColor": "#101120",
+          "dark": {
+            "backgroundColor": "#101120"
+          }
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Barcode skanerlash uchun kameraga ruxsat bering."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Tovar suratini qo'yish uchun galereyaga ruxsat bering.",
+          "cameraPermission": "Tovar suratini olish uchun kameraga ruxsat bering."
+        }
+      ]
+    ],
+    "extra": {
+      "apiUrl": "https://mybazzar.uz",
+      "anonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoibWJfYW5vbiIsImlzcyI6Im15YmF6emFyIiwiaWF0IjoxNzU1ODAwMDAwLCJleHAiOjIxNDU5MTY4MDB9.d1ifkb9I1P4TzAipfw7hoFMFP-4DNOHSn_G9epwr4ns"
+    }
+  }
+}

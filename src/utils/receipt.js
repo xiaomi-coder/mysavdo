@@ -24,6 +24,8 @@ export const DEFAULT_RECEIPT_SETTINGS = {
 
 export function getReceiptSettings() {
   try {
+    // Mobil ilovada localStorage yo'q — u sozlamalarni o'zi uzatadi
+    if (typeof localStorage === 'undefined') return { ...DEFAULT_RECEIPT_SETTINGS };
     return { ...DEFAULT_RECEIPT_SETTINGS, ...JSON.parse(localStorage.getItem(RECEIPT_SETTINGS_KEY) || '{}') };
   } catch {
     return { ...DEFAULT_RECEIPT_SETTINGS };
@@ -187,16 +189,19 @@ const STYLES = {
 };
 
 /**
- * Chekni yangi oynada ochib chop etadi.
- * Pop-up bloklangan bo'lsa false qaytaradi — chaqiruvchi foydalanuvchini
- * ogohlantirishi kerak.
+ * Chekning to'liq HTML hujjatini yig'adi.
+ *
+ * Bu funksiya brauzerga ham, telefonga ham bog'liq emas — shuning uchun
+ * veb ilova ham, mobil ilova ham shu yerdan foydalanadi va ikkalasidan
+ * bir xil chek chiqadi. Mobil tomon sozlamalarni o'zi uzatadi
+ * (u yerda localStorage yo'q).
  */
-export function printReceipt({
+export function buildReceiptHtml({
   items, subtotal, discount, total, paidAmount = 0,
   payMethod, receiptNo, cashier, customer, storeName, isPhone,
   settings,
 }) {
-  const cfg = settings || getReceiptSettings();
+  const cfg = { ...DEFAULT_RECEIPT_SETTINGS, ...(settings || getReceiptSettings()) };
   const compact = cfg.template === 'compact' || cfg.template === 'standard';
   const scale = FONT_SCALE[cfg.fontSize] || 1;
 
@@ -214,17 +219,31 @@ export function printReceipt({
     dateText: new Date().toLocaleString('uz-UZ'),
   };
 
-  const win = window.open('', '_blank');
-  if (!win) return false;
-
-  win.document.write(`<!DOCTYPE html>
-<html lang="uz"><head><meta charset="utf-8"><title>Chek #${receiptNo}</title>
+  return `<!DOCTYPE html>
+<html lang="uz"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chek #${receiptNo}</title>
 <style>@page { margin: 0; } ${compact ? STYLES.compact : STYLES.detailed}
 body { font-size: ${(compact ? 12 : 11) * scale}px; }
 @media print { body { width: 100%; margin: 0; padding: 0; } }</style>
 </head><body>${compact ? compactHtml(data) : detailedHtml(data)}
-<script>setTimeout(function(){ window.print(); window.close(); }, 400);<\/script>
-</body></html>`);
+</body></html>`;
+}
+
+/**
+ * Chekni yangi oynada ochib chop etadi.
+ * Pop-up bloklangan bo'lsa false qaytaradi — chaqiruvchi foydalanuvchini
+ * ogohlantirishi kerak.
+ */
+export function printReceipt(payload) {
+  const html = buildReceiptHtml(payload);
+  const win = window.open('', '_blank');
+  if (!win) return false;
+
+  win.document.write(html.replace(
+    '</body>',
+    '<script>setTimeout(function(){ window.print(); window.close(); }, 400);<\/script></body>'
+  ));
   win.document.close();
   return true;
 }

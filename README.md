@@ -80,3 +80,17 @@ mybazzar/
 │   └── index.css          # Global stilllar
 └── package.json
 ```
+
+---
+
+## Mobil ilova
+
+`mobile/` papkasida — React Native (Expo). Veb ilovaning qisqartmasi emas,
+to'liq o'rnini bosadi: ba'zi do'konlarda kompyuter yo'q.
+
+Qoldiq qoidasi, chek shabloni va narx yorlig'i ikkala ilovada bitta
+fayldan o'qiladi (`src/utils/stock.js`, `receipt.js`, `labels.js`) —
+nusxa ko'chirilmagan, shuning uchun ular hech qachon bir-biridan
+ajralib ketmaydi.
+
+Batafsil: [mobile/README.md](mobile/README.md)

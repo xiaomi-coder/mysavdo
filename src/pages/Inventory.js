@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import Barcode from 'react-barcode';
 import {
   Page, PageHeader, Card, Icon, Btn, Tag, Seg, Modal, Field,
   EmptyState, SkeletonRows, Toast,
@@ -10,6 +9,7 @@ import PhotoField from '../components/PhotoField';
 import { imageUrl } from '../utils/upload';
 import { stockStatus } from '../utils/stock';
 import StockHistory from '../components/StockHistory';
+import LabelPrint from '../components/LabelPrint';
 
 /* ── doimiylar ─────────────────────────────────────────────────────────── */
 
@@ -62,6 +62,8 @@ export default function Inventory() {
   const [kirimFor, setKirimFor] = useState(null);
   const [printFor, setPrintFor] = useState(null);
   const [historyFor, setHistoryFor] = useState(null);
+  const [selected, setSelected] = useState(() => new Set());
+  const [labelsFor, setLabelsFor] = useState(null);
 
   const notify = (msg, variant = 'ok') => setToast({ msg, variant });
 
@@ -84,6 +86,13 @@ export default function Inventory() {
       notify(`O‘zgartirilmadi: ${error.message}`, 'dang');
     }
   };
+
+  /* ── yorliq chop etish uchun tanlash ── */
+  const toggleSelect = (id) => setSelected(prev => {
+    const n = new Set(prev);
+    n.has(id) ? n.delete(id) : n.add(id);
+    return n;
+  });
 
   /* ── statistika va filtrlar ── */
   const stats = useMemo(() => {
@@ -152,6 +161,28 @@ export default function Inventory() {
               active={statusFilter === 'out'} onClick={() => setStatusFilter('out')} />
           </div>
 
+          {/* Tanlanganda chiqadigan amallar paneli */}
+          {selected.size > 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              padding: '10px 14px', borderRadius: 'var(--radius-md)',
+              background: 'var(--color-accent-900)',
+              boxShadow: '0 0 0 1px var(--color-accent)',
+            }}>
+              <Icon name="check-square" fill size={17} color="var(--color-accent)" />
+              <span style={{ fontSize: 13, flex: 1 }}>
+                <b style={{ fontWeight: 500 }}>{selected.size} ta tovar</b> tanlandi
+              </span>
+              <Btn variant="primary" size="sm" icon="printer"
+                onClick={() => setLabelsFor(products.filter(p => selected.has(p.id)))}>
+                Narx yorliqlarini chop etish
+              </Btn>
+              <Btn variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
+                Bekor qilish
+              </Btn>
+            </div>
+          )}
+
           {/* Qidiruv va filtrlar */}
           <div style={{ display: 'flex', gap: 10 }}>
             <div className="input-icon" style={{ flex: 1 }}>
@@ -188,6 +219,17 @@ export default function Inventory() {
                   <table className="table" style={{ fontSize: 13 }}>
                     <thead>
                       <tr>
+                        <th style={{ width: 34 }}>
+                          <input
+                            type="checkbox"
+                            checked={filtered.length > 0 && filtered.every(p => selected.has(p.id))}
+                            onChange={e => setSelected(e.target.checked
+                              ? new Set(filtered.map(p => p.id))
+                              : new Set())}
+                            title="Hammasini tanlash"
+                            style={{ accentColor: 'var(--color-accent)', width: 15, height: 15, cursor: 'pointer' }}
+                          />
+                        </th>
                         <th>Tovar</th><th>Kategoriya</th><th>Onlayn</th><th>Barcode / IMEI</th>
                         <th style={{ textAlign: 'right' }}>Sotuv narxi</th>
                         <th style={{ textAlign: 'right' }}>Qoldiq</th>
@@ -205,7 +247,19 @@ export default function Inventory() {
                           ? CONDITIONS.find(c => c.value === p.phone_condition)?.label
                           : [p.phone_memory, p.phone_color].filter(Boolean).join(' · ');
                         return (
-                          <tr key={p.id}>
+                          <tr key={p.id} style={{
+                            background: selected.has(p.id)
+                              ? 'color-mix(in srgb, var(--color-accent) 8%, transparent)'
+                              : undefined,
+                          }}>
+                            <td>
+                              <input
+                                type="checkbox"
+                                checked={selected.has(p.id)}
+                                onChange={() => toggleSelect(p.id)}
+                                style={{ accentColor: 'var(--color-accent)', width: 15, height: 15, cursor: 'pointer' }}
+                              />
+                            </td>
                             <td>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                                 {p.photo_url ? (
@@ -341,7 +395,23 @@ export default function Inventory() {
         />
       )}
 
-      {printFor && <BarcodeModal product={printFor} onClose={() => setPrintFor(null)} />}
+      {/* Bitta tovar — jadvaldagi printer tugmasidan */}
+      {printFor && (
+        <LabelPrint
+          products={[printFor]}
+          onClose={() => setPrintFor(null)}
+          onError={(m) => notify(m, 'dang')}
+        />
+      )}
+
+      {/* Bir nechta tovar — tanlash paneli orqali */}
+      {labelsFor && (
+        <LabelPrint
+          products={labelsFor}
+          onClose={() => setLabelsFor(null)}
+          onError={(m) => notify(m, 'dang')}
+        />
+      )}
 
       {historyFor && <StockHistory product={historyFor} onClose={() => setHistoryFor(null)} />}
 
@@ -451,76 +521,6 @@ function KirimModal({ product, actor, onClose, onSaved, onError }) {
             </span>
           </div>
         )}
-      </div>
-    </Modal>
-  );
-}
-
-/* ── Barcode chop etish ────────────────────────────────────────────────── */
-function BarcodeModal({ product, onClose }) {
-  const [copies, setCopies] = useState('1');
-  const previewRef = useRef(null);
-  const code = product.barcode || product.phone_imei1 || String(product.id).padStart(10, '0');
-
-  const print = () => {
-    // Barkod SVG'ini ko'rinishdan olamiz — tashqi xizmatga bog'liq bo'lmaslik uchun
-    const svg = previewRef.current?.querySelector('svg')?.outerHTML || '';
-    const n = Math.min(50, Math.max(1, parseInt(copies, 10) || 1));
-    const label = `
-      <div class="label">
-        <div class="name">${product.name}</div>
-        ${svg}
-        <div class="price">${money(product.price)} so'm</div>
-      </div>`;
-
-    const win = window.open('', '_blank');
-    if (!win) return;
-    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Barcode</title>
-      <style>
-        @page { margin: 0; }
-        body { margin: 0; font-family: Arial, sans-serif; background: #fff; }
-        .label { width: 40mm; height: 30mm; padding: 2mm; box-sizing: border-box;
-                 display: flex; flex-direction: column; align-items: center;
-                 justify-content: center; text-align: center; page-break-after: always; }
-        .name { font-size: 9px; font-weight: bold; line-height: 1.15; margin-bottom: 1mm;
-                max-height: 7mm; overflow: hidden; }
-        .price { font-size: 11px; font-weight: bold; margin-top: 1mm; }
-        svg { max-width: 100%; height: auto; }
-      </style></head><body>
-      ${label.repeat(n)}
-      <script>setTimeout(function(){ window.print(); window.close(); }, 400);<\/script>
-      </body></html>`);
-    win.document.close();
-  };
-
-  return (
-    <Modal title="Barcode chop etish" onClose={onClose}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 11, alignItems: 'center' }}>
-        <div
-          ref={previewRef}
-          style={{
-            width: 240, minHeight: 180, borderRadius: 6, background: '#fdfdfb', color: '#1a1a1a',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            gap: 6, padding: 14, boxShadow: 'var(--shadow-md)',
-          }}
-        >
-          <div style={{ font: '600 12px Inter, sans-serif', textAlign: 'center', lineHeight: 1.25 }}>
-            {product.name}
-          </div>
-          <Barcode value={code} width={1.6} height={46} fontSize={11} margin={0}
-            background="#fdfdfb" lineColor="#1a1a1a" />
-          <div style={{ font: '600 13px Inter, sans-serif' }}>{money(product.price)} so‘m</div>
-        </div>
-
-        <div style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>Stiker o‘lchami: 40 × 30 mm</div>
-
-        <div style={{ display: 'flex', gap: 9, alignItems: 'flex-end', width: '100%' }}>
-          <Field label="Nusxa soni" style={{ flex: 1 }}>
-            <input className="input num" inputMode="numeric" value={copies}
-              onChange={e => setCopies(e.target.value.replace(/\D/g, ''))} />
-          </Field>
-          <Btn variant="primary" icon="printer" onClick={print}>Chop Etish</Btn>
-        </div>
       </div>
     </Modal>
   );

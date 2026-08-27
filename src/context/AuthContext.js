@@ -71,7 +71,9 @@ export const ROLE_NAV = {
     { to: '/nasiya', icon: 'hand-coins', label: 'nasiya', badge: 'urgentDebts', perm: 'nasiya' },
     { to: '/finance', icon: 'wallet', label: 'finance', perm: 'finance' },
     { to: '/reports', icon: 'chart-bar', label: 'reports', perm: 'reports' },
+    { to: '/analytics', icon: 'sparkle', label: 'aiAnalytics', perm: 'analytics' },
     { to: '/employees', icon: 'identification-badge', label: 'employees', perm: 'employees' },
+    { to: '/chek', icon: 'printer', label: 'printer', perm: 'chek' },
     { to: '/settings', icon: 'gear', label: 'settings', perm: 'settings' },
   ],
   manager: [
