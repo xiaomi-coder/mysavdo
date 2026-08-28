@@ -4,6 +4,7 @@ import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { StatusBar } from 'expo-status-bar';
 
 import { ThemeProvider, useTheme } from './src/ThemeContext';
@@ -27,6 +28,11 @@ import Finance from './src/screens/Finance';
 import Reports from './src/screens/Reports';
 import ChekPrinter from './src/screens/ChekPrinter';
 import Analytics from './src/screens/Analytics';
+import Employees from './src/screens/Employees';
+import Product from './src/screens/Product';
+import History from './src/screens/History';
+import BulkReceive from './src/screens/BulkReceive';
+import Suppliers from './src/screens/Suppliers';
 import Scanner from './src/screens/Scanner';
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -54,6 +60,8 @@ function MoreNavigator() {
       <MoreStack.Screen name="Moliya" component={Finance} />
       <MoreStack.Screen name="Hisobot" component={Reports} />
       <MoreStack.Screen name="Analitika" component={Analytics} />
+      <MoreStack.Screen name="Xodimlar" component={Employees} />
+      <MoreStack.Screen name="Taminotchilar" component={Suppliers} />
       <MoreStack.Screen name="Chek" component={ChekPrinter} />
       <MoreStack.Screen name="Sozlamalar" component={Settings} />
     </MoreStack.Navigator>
@@ -120,6 +128,21 @@ function Navigation() {
           <>
             <Root.Screen name="Tabs" component={MainTabs} />
             <Root.Screen
+              name="Tovar"
+              component={Product}
+              options={{ animation: 'slide_from_right' }}
+            />
+            <Root.Screen
+              name="Tarix"
+              component={History}
+              options={{ animation: 'slide_from_right' }}
+            />
+            <Root.Screen
+              name="Kirim"
+              component={BulkReceive}
+              options={{ animation: 'slide_from_right' }}
+            />
+            <Root.Screen
               name="Scanner"
               component={Scanner}
               options={{ presentation: 'fullScreenModal', animation: 'fade' }}
@@ -148,6 +171,10 @@ function Session() {
 export default function App() {
   return (
     <SafeAreaProvider>
+      {/* Klaviatura balandligini kuzatadi. Android edge-to-edge rejimida
+          tizimning o'z "adjustResize" i ishlamaydi — maydonlar klaviatura
+          ostida qolib ketadi. Shu provayder buni hal qiladi. */}
+      <KeyboardProvider>
       <ThemeProvider>
         <I18nProvider>
           <FeedbackProvider>
@@ -158,6 +185,7 @@ export default function App() {
           <StatusBar style="auto" />
         </I18nProvider>
       </ThemeProvider>
+      </KeyboardProvider>
     </SafeAreaProvider>
   );
 }

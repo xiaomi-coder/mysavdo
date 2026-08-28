@@ -39,11 +39,18 @@ export default function TabBar({ state, descriptors, navigation, badges = {} }) 
         const badge = badges[route.name];
 
         const onPress = () => {
-          // tabPress ni e'lon qilamiz: faol bo'limga qayta bosilganda
-          // ichki ekranlardan boshiga qaytarishni navigator o'zi bajaradi
           const e = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
           if (e.defaultPrevented) return;
           if (!active) buzz('tap');
+
+          /* Bo'lim ichida ekranlar bo'lsa (masalan "Yana" → Sozlamalar),
+             doim uning eng boshiga qaytamiz. Aks holda foydalanuvchi
+             "Yana" ni bossa ro'yxat emas, oxirgi ochgan ekrani chiqadi. */
+          const nested = route.state ?? navigation.getState().routes[i]?.state;
+          if (nested && nested.routes?.length > 1) {
+            navigation.navigate(route.name, { screen: nested.routeNames[0], merge: false });
+            return;
+          }
           navigation.navigate(route.name);
         };
 

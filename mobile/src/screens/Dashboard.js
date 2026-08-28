@@ -9,6 +9,7 @@ import {
 import { money, dateLong, timeShort, todayStart, weekdayShort } from '../lib/format';
 import { alpha, R } from '../theme';
 import ReceiptSheet from '../sheets/ReceiptSheet';
+import AlertsSheet from '../sheets/AlertsSheet';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Asosiy ekran
@@ -23,10 +24,11 @@ import ReceiptSheet from '../sheets/ReceiptSheet';
    ══════════════════════════════════════════════════════════════════════ */
 
 export default function Dashboard({ navigation }) {
-  const { t } = useTheme();
+  const { t, mode, toggleMode } = useTheme();
   const { store } = useAuth();
   const d = useData();
   const [receipt, setReceipt] = useState(null);
+  const [alerts, setAlerts] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const stats = useMemo(() => compute(d.transactions), [d.transactions]);
@@ -69,6 +71,9 @@ export default function Dashboard({ navigation }) {
     });
   }
 
+  const alertCount = d.alerts.low.length + d.alerts.out.length
+    + d.alerts.overdue.length + d.pendingOrders.length;
+
   return (
     <Screen onRefresh={refresh} refreshing={refreshing}>
       {/* Sarlavha */}
@@ -82,16 +87,23 @@ export default function Dashboard({ navigation }) {
           </Txt>
           <Txt size={12} color={t.t3} style={{ marginTop: 2 }}>{dateLong()}</Txt>
         </View>
-        <Tap
-          onPress={() => navigation.navigate('Yana', { screen: 'Sozlamalar' })}
-          style={{
-            width: 44, height: 44, borderRadius: R.lg,
-            backgroundColor: t.card, borderWidth: 1, borderColor: t.line,
-            alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <Icon name="gear" size={22} color={t.t2} />
-        </Tap>
+        {/* Dizayndagi ikki tugma: mavzu almashtirish va ogohlantirishlar.
+            Qo'ng'irog'dagi qizil nuqta faqat haqiqatan e'tibor talab
+            qiladigan narsa bo'lganda yonadi. */}
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Tap onPress={toggleMode} style={headBtn(t)}>
+            <Icon name={mode === 'dark' ? 'sun' : 'moon'} size={22} color={t.t2} />
+          </Tap>
+          <Tap onPress={() => setAlerts(true)} style={headBtn(t)}>
+            <Icon name="bell" size={22} color={t.t2} />
+            {alertCount > 0 ? (
+              <View style={{
+                position: 'absolute', top: 10, right: 11,
+                width: 7, height: 7, borderRadius: 4, backgroundColor: t.err,
+              }} />
+            ) : null}
+          </Tap>
+        </View>
       </View>
 
       {d.loading ? (
@@ -223,9 +235,19 @@ export default function Dashboard({ navigation }) {
       )}
 
       {receipt && <ReceiptSheet transaction={receipt} onClose={() => setReceipt(null)} />}
+      {alerts && (
+        <AlertsSheet visible onClose={() => setAlerts(false)} navigation={navigation} />
+      )}
     </Screen>
   );
 }
+
+/* Sarlavhadagi 44px tugma — dizaynda ikkalasi bir xil */
+const headBtn = (t) => ({
+  width: 44, height: 44, borderRadius: R.lg,
+  backgroundColor: t.card, borderWidth: 1, borderColor: t.line,
+  alignItems: 'center', justifyContent: 'center',
+});
 
 function MiniStat({ label, value }) {
   const { t } = useTheme();

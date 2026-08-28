@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Modal, Animated, PanResponder, Dimensions, ScrollView,
-  KeyboardAvoidingView, Platform, StyleSheet,
+  View, Modal, Animated, PanResponder, Dimensions, ScrollView, StyleSheet,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../ThemeContext';
 import { R } from '../theme';
@@ -67,10 +67,7 @@ export default function Sheet({ visible, onClose, title, sub, children, maxHeigh
 
   return (
     <Modal transparent visible animationType="none" onRequestClose={dismiss} statusBarTranslucent>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: t.backdrop, opacity: fade }]}>
           <Animated.View
             style={{ flex: 1 }}

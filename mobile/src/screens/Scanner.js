@@ -10,7 +10,6 @@ import { buzz, useFeedback } from '../ui/Feedback';
 import { money } from '../lib/format';
 import { stockStatus, variantColor } from '../lib/stock';
 import { R } from '../theme';
-import AddSheet from '../sheets/AddSheet';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Barcode skaner
@@ -39,7 +38,6 @@ export default function Scanner({ navigation, route }) {
   const [found, setFound] = useState(null);
   const [missCode, setMissCode] = useState(null);
   const [torch, setTorch] = useState(false);
-  const [adding, setAdding] = useState(false);
   const locked = useRef(false);
 
   const line = useState(() => new Animated.Value(0))[0];
@@ -60,6 +58,15 @@ export default function Scanner({ navigation, route }) {
   const onScan = ({ data: code }) => {
     if (locked.current) return;
     locked.current = true;
+
+    /* "code" rejimi: tovarni izlamaymiz, kodni chaqirgan ekranga
+       qaytaramiz. Tovar kartochkasidagi barcode va IMEI shu yo'l
+       bilan to'ldiriladi. */
+    if (mode === 'code') {
+      buzz('ok');
+      navigation.navigate(route?.params?.returnTo || 'Tovar', { scanned: code });
+      return;
+    }
 
     const p = d.products.find((x) =>
       x.barcode === code || x.phone_imei1 === code || x.phone_serial === code
@@ -126,7 +133,7 @@ export default function Scanner({ navigation, route }) {
         paddingTop: insets.top + 8, paddingHorizontal: 16, paddingBottom: 8,
       }}>
         <Txt size={16} weight="500" color="#fff">
-          {mode === 'add' ? 'Yangi tovar skaneri' : 'Skaner'}
+          {mode === 'code' ? 'Kod skaneri' : 'Skaner'}
         </Txt>
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <RoundBtn icon={torch ? 'sun' : 'moon'} onPress={() => setTorch((v) => !v)} t={t} />
@@ -172,7 +179,16 @@ export default function Scanner({ navigation, route }) {
               <Txt size={12} color={t.t4} mono style={{ marginTop: 2 }}>{missCode}</Txt>
             </View>
           </View>
-          <Btn title="Shu kod bilan yangi tovar qo‘shish" icon="plus" size="lg" full onPress={() => setAdding(true)} />
+          <Btn
+            title="Shu kod bilan yangi tovar qo‘shish"
+            icon="plus"
+            size="lg"
+            full
+            onPress={() => {
+              navigation.goBack();
+              navigation.navigate('Tovar', { scanned: missCode });
+            }}
+          />
           <Btn title="Qayta skanerlash" variant="secondary" full onPress={rescan} />
         </View>
       ) : null}
@@ -207,13 +223,6 @@ export default function Scanner({ navigation, route }) {
         </View>
       ) : null}
 
-      {adding && (
-        <AddSheet
-          prefillBarcode={missCode}
-          onClose={() => { setAdding(false); navigation.goBack(); }}
-          navigation={navigation}
-        />
-      )}
     </View>
   );
 }

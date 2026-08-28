@@ -68,7 +68,8 @@
           "photosPermission": "Tovar suratini qo'yish uchun galereyaga ruxsat bering.",
           "cameraPermission": "Tovar suratini olish uchun kameraga ruxsat bering."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "apiUrl": "https://mybazzar.uz",

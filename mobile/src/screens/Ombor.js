@@ -13,10 +13,7 @@ import { money } from '../lib/format';
 import { stockStatus, variantColor, isLowStock, isOutOfStock } from '../lib/stock';
 import { R } from '../theme';
 import KirimSheet from '../sheets/KirimSheet';
-import EditSheet from '../sheets/EditSheet';
-import AddSheet from '../sheets/AddSheet';
 import StikerSheet from '../sheets/StikerSheet';
-import HistorySheet from '../sheets/HistorySheet';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Ombor
@@ -107,13 +104,24 @@ export default function Ombor({ navigation, route }) {
           justifyContent: 'space-between', marginBottom: 12,
         }}>
           <Txt size={17} weight="500">Ombor</Txt>
-          <Btn
-            title={selMode ? 'Bekor qilish' : 'Stiker'}
-            icon={selMode ? 'x' : 'barcode'}
-            size="sm"
-            variant={selMode ? 'primary' : 'secondary'}
-            onPress={() => (selMode ? exitSel() : setSelMode(true))}
-          />
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {!selMode && can('inventory') ? (
+              <Btn
+                title="Kirim"
+                icon="truck"
+                size="sm"
+                variant="secondary"
+                onPress={() => navigation.navigate('Kirim')}
+              />
+            ) : null}
+            <Btn
+              title={selMode ? 'Bekor qilish' : 'Stiker'}
+              icon={selMode ? 'x' : 'barcode'}
+              size="sm"
+              variant={selMode ? 'primary' : 'secondary'}
+              onPress={() => (selMode ? exitSel() : setSelMode(true))}
+            />
+          </View>
         </View>
 
         <SearchBar value={q} onChangeText={setQ} style={{ marginBottom: 10 }} />
@@ -159,9 +167,9 @@ export default function Ombor({ navigation, route }) {
                 selected={Boolean(sel[p.id])}
                 onSelect={() => toggleSel(p.id)}
                 onKirim={() => setSheet({ type: 'kirim', product: p })}
-                onEdit={() => setSheet({ type: 'edit', product: p })}
+                onEdit={() => navigation.navigate('Tovar', { id: p.id })}
                 onBarcode={() => setSheet({ type: 'stiker', products: [p] })}
-                onOpen={() => setSheet({ type: 'history', product: p })}
+                onOpen={() => navigation.navigate('Tovar', { id: p.id })}
               />
             ))}
           </View>
@@ -171,7 +179,7 @@ export default function Ombor({ navigation, route }) {
       {/* Yangi tovar tugmasi */}
       {!selMode && can('inventory') ? (
         <Tap
-          onPress={() => setSheet({ type: 'add' })}
+          onPress={() => navigation.navigate('Tovar')}
           activeStyle={{ transform: [{ scale: 0.94 }] }}
           style={{
             position: 'absolute', right: 16, bottom: insets.bottom + 18,
@@ -222,20 +230,11 @@ export default function Ombor({ navigation, route }) {
       {sheet?.type === 'kirim' && (
         <KirimSheet product={sheet.product} onClose={() => setSheet(null)} />
       )}
-      {sheet?.type === 'edit' && (
-        <EditSheet product={sheet.product} onClose={() => setSheet(null)} />
-      )}
-      {sheet?.type === 'add' && (
-        <AddSheet onClose={() => setSheet(null)} navigation={navigation} />
-      )}
       {sheet?.type === 'stiker' && (
         <StikerSheet
           products={sheet.products || []}
           onClose={() => { setSheet(null); exitSel(); }}
         />
-      )}
-      {sheet?.type === 'history' && (
-        <HistorySheet product={sheet.product} onClose={() => setSheet(null)} />
       )}
     </>
   );

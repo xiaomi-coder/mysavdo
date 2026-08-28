@@ -38,7 +38,7 @@ export default function More({ navigation }) {
 
   const items = [
     isOwner && { icon: 'cash-register', label: 'Kunni yopish', onPress: () => setDaySheet(true) },
-    { icon: 'users', label: 'Mijozlar', onPress: () => navigation.navigate('Mijozlar') },
+    { icon: 'users', label: 'Mijozlar (CRM)', onPress: () => navigation.navigate('Mijozlar') },
     { icon: 'handshake', label: 'Nasiya', onPress: () => navigation.navigate('Nasiya'),
       badge: d.alerts.overdue.length },
     { icon: 'chart', label: 'Moliya', lock: !can('finance'),
@@ -49,6 +49,18 @@ export default function More({ navigation }) {
       label: 'AI Analitika',
       sub: 'Prognoz, tugash xavfi, foyda tahlili',
       onPress: () => navigation.navigate('Analitika'),
+    },
+    isOwner && {
+      icon: 'truck',
+      label: 'Ta’minotchilar',
+      sub: 'Kimdan olamiz, kimga qarzimiz bor',
+      onPress: () => navigation.navigate('Taminotchilar'),
+    },
+    isOwner && {
+      icon: 'user-gear',
+      label: 'Xodimlar',
+      sub: 'Sotuvchilar va ularning ruxsatlari',
+      onPress: () => navigation.navigate('Xodimlar'),
     },
     { icon: 'printer', label: 'Chek printer', onPress: () => navigation.navigate('Chek') },
     isOwner && store?.slug && {

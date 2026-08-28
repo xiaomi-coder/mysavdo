@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Animated, Keyboard, KeyboardAvoidingView, Platform, StatusBar,
+  View, Animated, Keyboard, Platform, StatusBar,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../ThemeContext';
 import { useAuth } from '../AuthContext';
@@ -51,10 +52,7 @@ export default function Login() {
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={{ flex: 1, backgroundColor: t.shell }}
-    >
+    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: t.shell }}>
       <StatusBar barStyle={t.mode === 'light' ? 'dark-content' : 'light-content'} />
       <View style={{
         flex: 1, justifyContent: 'flex-end',

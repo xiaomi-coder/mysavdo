@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, ScrollView, RefreshControl, StatusBar } from 'react-native';
+import { View, RefreshControl, StatusBar } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../ThemeContext';
 import { Banner, FadeIn } from './Feedback';
@@ -19,9 +20,13 @@ export default function Screen({
   const insets = useSafeAreaInsets();
   const data = useData();
 
+  /* KeyboardAwareScrollView — oddiy ScrollView emas. Sabab: maydonga
+     bosilganda ekran o'zi kerakli joyga suriladi. Android'da edge-to-edge
+     rejimida tizimning o'zi buni qilmaydi. */
   const body = scroll ? (
-    <ScrollView
+    <KeyboardAwareScrollView
       style={{ flex: 1 }}
+      bottomOffset={24}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
       contentContainerStyle={[{
@@ -40,7 +45,7 @@ export default function Screen({
       ) : undefined}
     >
       {children}
-    </ScrollView>
+    </KeyboardAwareScrollView>
   ) : (
     <View style={[{ flex: 1, paddingHorizontal: pad, paddingTop: 8 }, contentStyle]}>
       {children}

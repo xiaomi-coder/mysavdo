@@ -12,15 +12,41 @@ import { db } from './lib/api';
 const Ctx = createContext(null);
 const KEY = 'mb.session';
 
-/* Ekranlarga kirish huquqi. Do'kon egasiga hammasi ochiq;
-   sotuvchiga faqat sotuvga tegishlisi. */
-export const ALL_PERMS = [
-  'dashboard', 'pos', 'inventory', 'orders', 'crm', 'nasiya',
-  'finance', 'reports', 'analytics', 'employees', 'receipt',
-  'storefront', 'settings',
+/* ══════════════════════════════════════════════════════════════════════════
+   Ruxsatlar
+
+   Ruxsat kalitlari bazada `users.permissions` da saqlanadi va ularni
+   do'kon egasi VEB ilovadagi Xodimlar bo'limida belgilaydi. Shuning
+   uchun kalitlar veb bilan AYNAN bir xil bo'lishi shart — aks holda
+   eganing bergan ruxsati telefonda ishlamaydi.
+
+   Veb ro'yxati: src/pages/Employees.js → MODULES
+   ══════════════════════════════════════════════════════════════════════ */
+export const MODULES = [
+  { perm: 'pos', label: 'Sotuv' },
+  { perm: 'dashboard_owner', label: 'Asosiy' },
+  { perm: 'inventory', label: 'Ombor' },
+  { perm: 'crm', label: 'Mijozlar' },
+  { perm: 'nasiya', label: 'Nasiya' },
+  { perm: 'finance', label: 'Moliya' },
+  { perm: 'reports', label: 'Hisobot' },
+  { perm: 'analytics', label: 'AI Analitika' },
+  { perm: 'chek', label: 'Chek' },
+  { perm: 'employees', label: 'Xodimlar' },
+  { perm: 'settings', label: 'Sozlamalar' },
 ];
 
-const CASHIER_PERMS = ['pos', 'inventory', 'orders', 'crm', 'nasiya', 'receipt'];
+/* Ilova ichidagi nomlarni bazadagi kalitga bog'laymi. Ba'zi bo'lim
+   faqat mobilda bor (buyurtmalar), ular yaqin ma'nodagi ruxsatga
+   qarab beriladi. */
+const PERM_ALIAS = {
+  dashboard: 'dashboard_owner',
+  receipt: 'chek',
+  storefront: 'inventory',   // onlayn ko'rsatish — ombor ruxsati bilan
+  orders: 'pos',             // buyurtma qabul qilish — sotuvning bir qismi
+};
+
+const CASHIER_PERMS = ['pos', 'inventory', 'crm', 'nasiya', 'chek'];
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -92,7 +118,7 @@ export function AuthProvider({ children }) {
     const list = Array.isArray(user.permissions) && user.permissions.length
       ? user.permissions
       : CASHIER_PERMS;
-    return list.includes(perm);
+    return list.includes(PERM_ALIAS[perm] || perm);
   }, [user]);
 
   const isOwner = user?.role === 'owner' || user?.role === 'creator' || user?.role === 'admin';

@@ -107,7 +107,19 @@ export default function POS({ navigation }) {
   return (
     <>
       <Screen scroll bottomPad={cart.items.length ? 110 : 24}>
-        <Txt size={17} weight="500" style={{ marginBottom: 10 }}>Sotuv</Txt>
+        <View style={{
+          flexDirection: 'row', alignItems: 'center',
+          justifyContent: 'space-between', marginBottom: 10,
+        }}>
+          <Txt size={17} weight="500">Sotuv</Txt>
+          <Btn
+            title="Tarix"
+            icon="history"
+            size="sm"
+            variant="secondary"
+            onPress={() => navigation.navigate('Tarix')}
+          />
+        </View>
 
         {/* ── Tez sotuv ── */}
         {quick.length > 0 ? (
