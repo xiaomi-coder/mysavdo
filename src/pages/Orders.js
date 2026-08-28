@@ -63,6 +63,7 @@ export default function Orders() {
       // 'completed' bo'ladi va oddiy sotuv kabi hisobotlarga tushadi.
       supabase.from('transactions').select('*').eq('store_id', storeId)
         .eq('payment_method', 'online')
+        .gte('date', new Date(Date.now() - 180 * 86400000).toISOString())
         .order('date', { ascending: false }),
       supabase.from('customers').select('id, name, phone').eq('store_id', storeId),
     ]);

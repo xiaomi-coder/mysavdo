@@ -46,6 +46,7 @@ export default function Employees() {
     const [userRes, txnRes] = await Promise.all([
       supabase.from('users').select('*').eq('store_id', storeId),
       supabase.from('transactions').select('cashier, total').eq('store_id', storeId)
+        .gte('date', new Date(Date.now() - 180 * 86400000).toISOString())
         .eq('status', 'completed').gte('date', monthStart),
     ]);
 

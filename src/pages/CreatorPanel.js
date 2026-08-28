@@ -44,7 +44,8 @@ export default function CreatorPanel({ page = 'dashboard' }) {
     const [storeRes, userRes, txnRes] = await Promise.all([
       supabase.from('stores').select('*').order('id'),
       supabase.from('users').select('*'),
-      supabase.from('transactions').select('store_id, total').eq('status', 'completed'),
+      supabase.from('transactions').select('store_id, total').eq('status', 'completed')
+        .gte('date', new Date(Date.now() - 365 * 86400000).toISOString()),
     ]);
     setStores(storeRes.data || []);
     setUsers(userRes.data || []);

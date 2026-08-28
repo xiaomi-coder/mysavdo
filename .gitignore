@@ -19,3 +19,7 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Telegram bot maxfiy fayli — faqat serverda turadi
+bot/.env
+bot/*.env

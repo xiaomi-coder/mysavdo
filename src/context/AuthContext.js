@@ -66,6 +66,8 @@ export const ROLE_NAV = {
     { to: '/dashboard', icon: 'squares-four', label: 'dashboard', perm: 'dashboard_owner' },
     { to: '/pos', icon: 'cash-register', label: 'pos', perm: 'pos' },
     { to: '/inventory', icon: 'package', label: 'inventory', badge: 'lowStock', perm: 'inventory' },
+    { to: '/kirim', icon: 'truck', label: 'Ommaviy kirim', perm: 'inventory' },
+    { to: '/suppliers', icon: 'handshake', label: 'Ta’minotchilar', perm: 'inventory' },
     { to: '/customers', icon: 'users-three', label: 'crm', perm: 'crm' },
     { to: '/orders', icon: 'shopping-bag', label: 'Buyurtmalar', badge: 'newOrders', perm: 'crm' },
     { to: '/nasiya', icon: 'hand-coins', label: 'nasiya', badge: 'urgentDebts', perm: 'nasiya' },

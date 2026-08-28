@@ -5,11 +5,13 @@ import * as Notifications from 'expo-notifications';
 import { useTheme } from '../ThemeContext';
 import { useAuth } from '../AuthContext';
 import {
-  Screen, Card, Txt, Tap, Header, Row, Toggle, SectionLabel, Icon,
+  Screen, Card, Txt, Tap, Btn, Header, Row, Toggle, SectionLabel, Icon,
 } from '../ui';
 import { useFeedback } from '../ui/Feedback';
-import { ACCENT_LIST, R } from '../theme';
+import { ACCENT_LIST, R, alpha } from '../theme';
 import { LANGS, useI18n } from '../i18n';
+import { db } from '../lib/api';
+import { Linking } from 'react-native';
 
 /* Sozlamalar.
 
@@ -26,6 +28,9 @@ export default function Settings({ navigation }) {
   const { notify } = useFeedback();
 
   const [prefs, setPrefs] = useState({ notif: true, sound: true });
+  const [tgChats, setTgChats] = useState([]);
+  const [tgCode, setTgCode] = useState('');
+  const [tgBusy, setTgBusy] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem(PREFS_KEY).then((raw) => {
@@ -37,6 +42,32 @@ export default function Settings({ navigation }) {
     const next = { ...prefs, [k]: v };
     setPrefs(next);
     AsyncStorage.setItem(PREFS_KEY, JSON.stringify(next)).catch(() => {});
+  };
+
+  /* Telegram bot — ilovada push yo'q, xabar Telegram orqali keladi */
+  const loadTg = React.useCallback(async () => {
+    if (!user?.store_id) return;
+    const { data } = await db.from('telegram_chats').select('*').eq('store_id', user.store_id);
+    setTgChats(data || []);
+  }, [user?.store_id]);
+
+  useEffect(() => { loadTg(); }, [loadTg]);
+
+  const makeTgCode = async () => {
+    setTgBusy(true);
+    const { data, error } = await db.rpc('make_telegram_code', {
+      p_store: user.store_id, p_user: user.id, p_role: 'owner',
+    });
+    setTgBusy(false);
+    if (error) { notify(error.message, 'error'); return; }
+    setTgCode(String(data));
+  };
+
+  const unlinkTg = async (chatId) => {
+    const { error } = await db.from('telegram_chats').delete().eq('chat_id', chatId);
+    if (error) { notify(error.message, 'error'); return; }
+    notify('Uzildi');
+    loadTg();
   };
 
   const toggleNotif = async () => {
@@ -125,6 +156,71 @@ export default function Settings({ navigation }) {
             </Tap>
           ))}
         </View>
+      </Card>
+
+      <SectionLabel icon="chat-text">TELEGRAM BOT</SectionLabel>
+      <Card pad={16} style={{ marginBottom: 16 }}>
+        <Txt size={12.5} color={t.t3} style={{ lineHeight: 18 }}>
+          Yangi buyurtma tushganda darhol xabar keladi. Har kuni kechqurun
+          kunlik xulosa yuboriladi. Botdan hisobot ham so‘rash mumkin.
+        </Txt>
+
+        {tgChats.map((c) => (
+          <View key={c.chat_id} style={{
+            flexDirection: 'row', alignItems: 'center', gap: 10,
+            marginTop: 12, padding: 11, borderRadius: R.md,
+            backgroundColor: alpha(t.okRgb, 0.12),
+          }}>
+            <Icon name="check-circle" size={18} color={t.ok} fill />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Txt size={13.5}>{c.name || 'Telegram'}</Txt>
+              {c.username ? <Txt size={11.5} color={t.t4}>@{c.username}</Txt> : null}
+            </View>
+            <Tap onPress={() => unlinkTg(c.chat_id)} hit={10}>
+              <Txt size={12} color={t.err}>Uzish</Txt>
+            </Tap>
+          </View>
+        ))}
+
+        {tgCode ? (
+          <View style={{
+            marginTop: 12, padding: 14, borderRadius: R.md,
+            borderWidth: 1, borderColor: t.acc, backgroundColor: alpha(t.accRgb, 0.1),
+          }}>
+            <Txt size={12} color={t.t3}>Bog‘lash kodi</Txt>
+            <Txt size={34} weight="700" color={t.acctext}
+              style={{ letterSpacing: 6, marginTop: 2 }}>{tgCode}</Txt>
+            <Txt size={12.5} color={t.t3} style={{ marginTop: 8, lineHeight: 18 }}>
+              1. Telegramda @MyBazzaruzbot ni oching
+            </Txt>
+            <Txt size={12.5} color={t.t3} style={{ lineHeight: 18 }}>
+              2. Start tugmasini bosing
+            </Txt>
+            <Txt size={12.5} color={t.t3} style={{ lineHeight: 18 }}>
+              3. Shu kodni yuboring
+            </Txt>
+            <Btn
+              title="Botni ochish"
+              icon="arrow-right"
+              variant="soft"
+              size="sm"
+              style={{ marginTop: 10, alignSelf: 'flex-start' }}
+              onPress={() => Linking.openURL('https://t.me/MyBazzaruzbot')}
+            />
+            <Txt size={11} color={t.t4} style={{ marginTop: 8 }}>
+              Kod 15 daqiqa amal qiladi va bir marta ishlaydi.
+            </Txt>
+          </View>
+        ) : (
+          <Btn
+            title={tgChats.length ? 'Yana bir hisob bog‘lash' : 'Telegramga bog‘lash'}
+            icon="chat-text"
+            full
+            loading={tgBusy}
+            style={{ marginTop: 12 }}
+            onPress={makeTgCode}
+          />
+        )}
       </Card>
 
       <SectionLabel icon="gear">TIZIM</SectionLabel>

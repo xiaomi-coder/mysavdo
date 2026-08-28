@@ -1,0 +1,36 @@
+# MyBazzar Telegram bot
+#
+# O'rnatish:
+#   sudo cp mybazzar-bot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now mybazzar-bot
+
+[Unit]
+Description=MyBazzar Telegram bot
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/mybazzar-bot
+ExecStart=/usr/bin/node index.js
+
+# Token va parol shu faylda — repoda emas
+EnvironmentFile=/etc/mybazzar/bot.env
+
+Restart=always
+RestartSec=5
+
+# Bot faqat o'z papkasini o'qiydi va tarmoqqa chiqadi
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/mybazzar-bot
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mybazzar-bot
+
+[Install]
+WantedBy=multi-user.target

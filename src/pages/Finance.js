@@ -42,7 +42,8 @@ export default function Finance() {
     const [expRes, txnRes, debtRes] = await Promise.all([
       supabase.from('expenses').select('*').eq('store_id', storeId)
         .gte('date', monthStart).order('date', { ascending: false }),
-      supabase.from('transactions').select('total, items').eq('store_id', storeId)
+      supabase.from('transactions').select('total, items, date').eq('store_id', storeId)
+        .gte('date', new Date(Date.now() - 400 * 86400000).toISOString())
         .eq('status', 'completed').gte('date', monthStart),
       supabase.from('debts').select('amount, paid_amount').eq('store_id', storeId)
         .eq('status', "To'lanmagan"),

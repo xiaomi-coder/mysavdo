@@ -20,6 +20,8 @@ import LandingPage from './pages/LandingPage';
 import DealerPortal from './pages/DealerPortal';
 import Storefront from './pages/Storefront';
 import Orders from './pages/Orders';
+import BulkReceive from './pages/BulkReceive';
+import Suppliers from './pages/Suppliers';
 import { storeSlugFromHost } from './utils/storeHost';
 
 function PrivateRoute({ children, permission }) {
@@ -72,6 +74,8 @@ function AppRoutes() {
         <Route path="dashboard" element={<PrivateRoute permission="dashboard_owner"><Dashboard /></PrivateRoute>} />
         <Route path="pos" element={<POS />} />
         <Route path="inventory" element={<PrivateRoute permission="inventory"><Inventory /></PrivateRoute>} />
+        <Route path="kirim" element={<PrivateRoute permission="inventory"><BulkReceive /></PrivateRoute>} />
+        <Route path="suppliers" element={<PrivateRoute permission="inventory"><Suppliers /></PrivateRoute>} />
         <Route path="customers" element={<PrivateRoute permission="crm"><CRM /></PrivateRoute>} />
         <Route path="orders" element={<PrivateRoute permission="crm"><Orders /></PrivateRoute>} />
         <Route path="dealer" element={<PrivateRoute permission="dealer_dashboard"><DealerPortal /></PrivateRoute>} />

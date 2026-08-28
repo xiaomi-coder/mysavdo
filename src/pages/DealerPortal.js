@@ -27,7 +27,7 @@ export default function DealerPortal() {
     setLoading(true);
     const [txnRes, debtRes] = await Promise.all([
       supabase.from('transactions').select('*').eq('store_id', storeId)
-        .eq('customer_id', dealerId).order('date', { ascending: false }),
+        .eq('customer_id', dealerId).order('date', { ascending: false }).limit(500),
       supabase.from('debts').select('*').eq('store_id', storeId)
         .eq('customer_id', dealerId).order('due_date', { ascending: true }),
     ]);

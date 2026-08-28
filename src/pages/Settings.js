@@ -141,6 +141,9 @@ export default function Settings() {
           </Card>
         </div>
 
+        {/* ── Telegram bot ── */}
+        <TelegramCard user={user} />
+
         {/* ── O'ng ustun: tizim ── */}
         <Card padding="6px 0" gap={0}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 500, padding: '14px 18px 8px' }}>
@@ -244,5 +247,120 @@ function Switch({ on, onChange }) {
         background: on ? 'var(--color-bg)' : 'var(--color-neutral-400)',
       }} />
     </span>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Telegram bot
+
+   Do'kon egasi botni o'z Telegramiga bog'laydi va yangi buyurtma
+   haqida darhol xabar oladi. Ilovada push bildirishnoma yo'q,
+   Telegram esa har kimning telefonida ochiq turadi.
+
+   Bog'lash BIR MARTALIK KOD orqali — botga parol yozilmaydi. Kod
+   15 daqiqa yashaydi va bir marta ishlaydi.
+   ══════════════════════════════════════════════════════════════════════ */
+
+const BOT_USERNAME = 'MyBazzaruzbot';
+
+function TelegramCard({ user }) {
+  const [chats, setChats] = useState([]);
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const load = useCallback(async () => {
+    if (!user?.store_id) return;
+    const { data } = await supabase.from('telegram_chats').select('*')
+      .eq('store_id', user.store_id);
+    setChats(data || []);
+  }, [user]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const makeCode = async () => {
+    setBusy(true);
+    const { data, error } = await supabase.rpc('make_telegram_code', {
+      p_store: user.store_id, p_user: user.id, p_role: 'owner',
+    });
+    setBusy(false);
+    if (error) { setMsg({ msg: error.message, variant: 'dang' }); return; }
+    setCode(data);
+  };
+
+  const unlink = async (chatId) => {
+    const { error } = await supabase.from('telegram_chats').delete().eq('chat_id', chatId);
+    if (error) { setMsg({ msg: error.message, variant: 'dang' }); return; }
+    setMsg({ msg: 'Uzildi', variant: 'ok' });
+    load();
+  };
+
+  return (
+    <Card padding="var(--space-6)" gap={12}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 500 }}>
+        <Icon name="paper-plane-tilt" size={16} color="var(--color-accent)" />
+        Telegram bot
+      </div>
+
+      <div style={{ fontSize: 12.5, color: 'var(--color-neutral-400)', lineHeight: 1.6 }}>
+        Yangi onlayn buyurtma tushganda darhol xabar keladi. Har kuni
+        kechqurun kunlik xulosa yuboriladi. Botdan sotuv, ombor va
+        nasiya bo‘yicha hisobot so‘rash ham mumkin.
+      </div>
+
+      {chats.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {chats.map(c => (
+            <div key={c.chat_id} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '10px 12px', borderRadius: 'var(--radius-md)',
+              background: 'var(--okbg)',
+            }}>
+              <Icon name="check-circle" fill size={17} color="var(--ok)" />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13 }}>{c.name || 'Telegram'}</div>
+                {c.username && (
+                  <div style={{ fontSize: 11.5, color: 'var(--color-neutral-500)' }}>@{c.username}</div>
+                )}
+              </div>
+              <Btn variant="ghost" size="sm" icon="x" onClick={() => unlink(c.chat_id)}
+                style={{ color: 'var(--color-neutral-500)' }}>Uzish</Btn>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {code ? (
+        <div style={{
+          padding: 14, borderRadius: 'var(--radius-md)',
+          border: '1px solid var(--color-accent)', background: 'var(--color-accent-900)',
+        }}>
+          <div style={{ fontSize: 12, color: 'var(--color-neutral-400)' }}>Bog‘lash kodi</div>
+          <div className="num" style={{
+            fontSize: 34, fontWeight: 700, letterSpacing: 6, color: 'var(--color-accent)',
+          }}>
+            {code}
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--color-neutral-400)', marginTop: 8, lineHeight: 1.6 }}>
+            1. Telegramda <b>@{BOT_USERNAME}</b> ni oching<br />
+            2. <b>Start</b> tugmasini bosing<br />
+            3. Shu kodni yuboring
+          </div>
+          <a href={`https://t.me/${BOT_USERNAME}`} target="_blank" rel="noreferrer"
+            style={{ display: 'inline-block', marginTop: 10, fontSize: 13, color: 'var(--color-accent)' }}>
+            Botni ochish →
+          </a>
+          <div style={{ fontSize: 11, color: 'var(--color-neutral-500)', marginTop: 8 }}>
+            Kod 15 daqiqa amal qiladi va bir marta ishlaydi.
+          </div>
+        </div>
+      ) : (
+        <Btn variant="primary" icon="link" onClick={makeCode} loading={busy}>
+          {chats.length ? 'Yana bir hisob bog‘lash' : 'Telegramga bog‘lash'}
+        </Btn>
+      )}
+
+      {msg && <Toast message={msg.msg} variant={msg.variant} onClose={() => setMsg(null)} />}
+    </Card>
   );
 }
