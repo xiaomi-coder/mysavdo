@@ -29,9 +29,10 @@
         "backgroundColor": "#101120"
       },
       "permissions": [
-        "CAMERA",
-        "VIBRATE",
-        "INTERNET"
+        "android.permission.CAMERA",
+        "android.permission.VIBRATE",
+        "android.permission.INTERNET",
+        "android.permission.RECORD_AUDIO"
       ],
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW",
@@ -71,7 +72,11 @@
     ],
     "extra": {
       "apiUrl": "https://mybazzar.uz",
-      "anonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoibWJfYW5vbiIsImlzcyI6Im15YmF6emFyIiwiaWF0IjoxNzU1ODAwMDAwLCJleHAiOjIxNDU5MTY4MDB9.d1ifkb9I1P4TzAipfw7hoFMFP-4DNOHSn_G9epwr4ns"
-    }
+      "anonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoibWJfYW5vbiIsImlzcyI6Im15YmF6emFyIiwiaWF0IjoxNzU1ODAwMDAwLCJleHAiOjIxNDU5MTY4MDB9.d1ifkb9I1P4TzAipfw7hoFMFP-4DNOHSn_G9epwr4ns",
+      "eas": {
+        "projectId": "3c3d12f8-a190-4b6d-8052-04cc9f191f28"
+      }
+    },
+    "owner": "xiaomi-coder"
   }
 }
