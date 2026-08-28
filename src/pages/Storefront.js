@@ -217,6 +217,29 @@ const CSS = `
   animation: shopFade .16s ease-out;
 }
 
+/* ── Galereya ── */
+.shop-gal {
+  display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
+  scrollbar-width: none; border-radius: 14px;
+  border: 1px solid var(--line); background: #fff;
+}
+.shop-gal::-webkit-scrollbar { display: none; }
+.shop-gal > div {
+  flex: none; width: 100%; aspect-ratio: 1;
+  scroll-snap-align: center;
+  display: grid; place-items: center;
+}
+.shop-gal img { width: 100%; height: 100%; object-fit: contain; padding: 14px; }
+.shop-dots { display: flex; justify-content: center; gap: 6px; margin-top: 10px; }
+.shop-dot { width: 7px; height: 7px; border-radius: 4px; background: var(--line); transition: background .15s; }
+.shop-dot[data-on="1"] { background: var(--acc); width: 18px; }
+.shop-count {
+  position: absolute; bottom: 8px; right: 8px;
+  padding: 3px 8px; border-radius: 7px;
+  background: rgba(16,18,29,.62); color: #fff;
+  font-size: 10.5px; font-weight: 600;
+}
+
 .shop-empty { text-align: center; padding: 70px 20px; color: var(--ink3); }
 .shop-skel { background: var(--card); border-radius: 14px; overflow: hidden; }
 .shop-skel::after {
@@ -480,16 +503,7 @@ export default function Storefront({ storeKey: keyFromHost }) {
             </div>
 
             <div className="shop-panel-body">
-              <div style={{
-                aspectRatio: 1, background: '#fff', borderRadius: 14,
-                display: 'grid', placeItems: 'center', overflow: 'hidden',
-                border: '1px solid var(--line)', margin: '12px 0',
-              }}>
-                {detail.photo_url
-                  ? <img src={imageUrl(detail.photo_url)} alt={detail.name}
-                      style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 14 }} />
-                  : <span style={{ fontSize: 72, opacity: .5 }}>{detail.image || '📦'}</span>}
-              </div>
+              <Gallery product={detail} />
 
               <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-.02em' }}>
                 {money(detail.price)} <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink3)' }}>so‘m</span>
@@ -659,6 +673,8 @@ function ProductCard({ p, onOpen, onAdd }) {
           ? <img src={imageUrl(p.photo_url)} alt={p.name} loading="lazy" />
           : <span className="emoji">{p.image || '📦'}</span>}
 
+        {photoCount(p) > 1 && <span className="shop-count">{photoCount(p)} rasm</span>}
+
         <div className="shop-badges">
           {out && <span className="shop-badge" style={{ background: '#8b909c' }}>Tugagan</span>}
           {!out && fresh && <span className="shop-badge" style={{ background: '#6a58c7' }}>Yangi</span>}
@@ -679,6 +695,57 @@ function ProductCard({ p, onOpen, onAdd }) {
         </button>
       </div>
     </article>
+  );
+}
+
+/* Tovarning barcha suratlari. Baza `photo_url` ni doim birinchi
+   suratga teng qilib turadi, shuning uchun eski yozuvlar ham
+   muammosiz ishlaydi. */
+function photosOf(p) {
+  if (Array.isArray(p?.photos) && p.photos.length) return p.photos.filter(Boolean);
+  return p?.photo_url ? [p.photo_url] : [];
+}
+const photoCount = (p) => photosOf(p).length;
+
+/* Surmalab ko'riladigan galereya. Nuqtalar qaysi suratda turganini
+   ko'rsatadi — telefonda bu yagona belgisi. */
+function Gallery({ product }) {
+  const list = photosOf(product);
+  const [at, setAt] = useState(0);
+
+  if (list.length === 0) {
+    return (
+      <div style={{
+        aspectRatio: 1, background: '#fff', borderRadius: 14, margin: '12px 0',
+        display: 'grid', placeItems: 'center', border: '1px solid var(--line)',
+      }}>
+        <span style={{ fontSize: 72, opacity: .5 }}>{product.image || '📦'}</span>
+      </div>
+    );
+  }
+
+  const onScroll = (e) => {
+    const w = e.currentTarget.clientWidth || 1;
+    setAt(Math.round(e.currentTarget.scrollLeft / w));
+  };
+
+  return (
+    <div style={{ margin: '12px 0' }}>
+      <div className="shop-gal" onScroll={onScroll}>
+        {list.map((src, i) => (
+          <div key={src + i}>
+            <img src={imageUrl(src)} alt={`${product.name} ${i + 1}`}
+              loading={i === 0 ? 'eager' : 'lazy'} />
+          </div>
+        ))}
+      </div>
+
+      {list.length > 1 && (
+        <div className="shop-dots">
+          {list.map((src, i) => <span key={i} className="shop-dot" data-on={i === at ? '1' : '0'} />)}
+        </div>
+      )}
+    </div>
   );
 }
 

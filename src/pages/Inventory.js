@@ -554,7 +554,10 @@ function ProductModal({ storeId, isPhoneStore, categories, product, onClose, onS
     minStock: product?.minStock ? String(product.minStock) : '',
     cost: product?.cost_price ? String(product.cost_price) : '',
     price: product?.price ? String(product.price) : '',
-    photoUrl: product?.photo_url || '',
+    // Eski yozuvda bitta surat bo'lishi mumkin — ro'yxatga keltiramiz
+    photos: Array.isArray(product?.photos) && product.photos.length
+      ? product.photos
+      : (product?.photo_url ? [product.photo_url] : []),
     description: product?.description || '',
     isOnline: product ? product.is_online !== false : true,
   });
@@ -603,7 +606,8 @@ function ProductModal({ storeId, isPhoneStore, categories, product, onClose, onS
       ...(editing ? {} : { stock: isPhoneItem ? 1 : (parseInt(f.stock, 10) || 0) }),
       minStock: parseInt(f.minStock, 10) || 0,
       image: isPhoneItem ? '📱' : f.emoji,
-      photo_url: f.photoUrl || null,
+      // photo_url ni baza o'zi birinchi suratdan to'ldiradi
+      photos: f.photos,
       description: f.description.trim() || null,
       is_online: f.isOnline,
       ...(isPhoneItem ? {
@@ -806,8 +810,8 @@ function ProductModal({ storeId, isPhoneStore, categories, product, onClose, onS
           </div>
 
           <PhotoField
-            value={f.photoUrl}
-            onChange={v => set('photoUrl', v)}
+            value={f.photos}
+            onChange={v => set('photos', v)}
             hint="Rasmsiz tovar katalogda emoji bilan chiqadi — mijozga yaxshi ko‘rinmaydi"
           />
 

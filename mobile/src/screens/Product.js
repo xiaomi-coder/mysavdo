@@ -10,7 +10,7 @@ import {
 import { useFeedback, buzz } from '../ui/Feedback';
 import { useTr } from '../i18n';
 import { db } from '../lib/api';
-import { uploadPhoto } from '../lib/upload';
+import { uploadPhoto, imageUrl } from '../lib/upload';
 import { money } from '../lib/format';
 import { PHONE_BRANDS, MEMORIES, CONDITIONS, EMOJIS, isPhoneItem, phoneName, routeScannedCode }
   from '@shared/catalog';
@@ -36,6 +36,8 @@ import HistorySheet from '../sheets/HistorySheet';
    Skaner mobilning ustunligi: IMEI'ni 15 xonali qilib qo'lda terish
    o'rniga quti ustidagi kod o'qiladi.
    ══════════════════════════════════════════════════════════════════════ */
+
+const MAX_PHOTOS = 5;
 
 export default function Product({ navigation, route }) {
   const { t } = useTheme();
@@ -64,7 +66,9 @@ export default function Product({ navigation, route }) {
     cost: String(product?.cost_price ?? ''),
     price: String(product?.price ?? ''),
     description: product?.description || '',
-    photo: product?.photo_url || '',
+    photos: Array.isArray(product?.photos) && product.photos.length
+      ? product.photos
+      : (product?.photo_url ? [product.photo_url] : []),
     online: product ? product.is_online !== false : true,
     // telefon
     brand: product?.category || '',
@@ -110,19 +114,46 @@ export default function Product({ navigation, route }) {
   const title = isPhone ? phoneName(f.model, f.memory) : f.name.trim();
   const valid = isPhone ? Boolean(f.model.trim() && price > 0) : Boolean(f.name.trim() && price > 0);
 
+  /* Bir vaqtda bir nechta surat tanlash mumkin. Yuklash ketma-ket
+     boradi: sekin internetda bir vaqtda yuborilsa ba'zilari uzilib
+     qoladi va do'konchi qaysi biri o'tganini bilmay qoladi. */
   const pickPhoto = async () => {
+    const room = MAX_PHOTOS - f.photos.length;
+    if (room <= 0) { notify(`Ko‘pi bilan ${MAX_PHOTOS} ta rasm`, 'error'); return; }
+
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) { notify('Galereyaga ruxsat berilmadi', 'error'); return; }
+
     const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'], quality: 0.7, allowsEditing: true, aspect: [1, 1],
+      mediaTypes: ['images'],
+      quality: 0.7,
+      allowsMultipleSelection: room > 1,
+      selectionLimit: room,
     });
     if (res.canceled) return;
+
     setUploading(true);
-    const url = await uploadPhoto(res.assets[0].uri, res.assets[0].width);
+    const added = [];
+    for (const a of res.assets.slice(0, room)) {
+      const url = await uploadPhoto(a.uri, a.width);
+      if (url) added.push(url);
+    }
     setUploading(false);
-    if (!url) { notify('Surat yuklanmadi', 'error'); return; }
-    setF((s) => ({ ...s, photo: url }));
+
+    if (added.length === 0) { notify('Surat yuklanmadi', 'error'); return; }
+    if (added.length < res.assets.length) notify('Ba’zi rasmlar yuklanmadi', 'error');
+    setF((s) => ({ ...s, photos: [...s.photos, ...added] }));
   };
+
+  const removePhoto = (i) =>
+    setF((s) => ({ ...s, photos: s.photos.filter((_, k) => k !== i) }));
+
+  /* Birinchi surat asosiy — ro'yxatda, savatda va chekda o'sha ko'rinadi */
+  const makeFirst = (i) => setF((s) => {
+    const next = [...s.photos];
+    const [x] = next.splice(i, 1);
+    return { ...s, photos: [x, ...next] };
+  });
 
   const save = async () => {
     if (!valid) {
@@ -138,7 +169,7 @@ export default function Product({ navigation, route }) {
       cost_price: cost,
       minStock: parseInt(f.minStock, 10) || 0,
       description: f.description.trim() || null,
-      photo_url: f.photo || null,
+      photos: f.photos,   // photo_url ni baza o'zi birinchisidan oladi
       is_online: f.online,
       ...(isPhone ? {
         category: f.brand || 'Boshqa',
@@ -466,27 +497,67 @@ export default function Product({ navigation, route }) {
             <Toggle on={f.online} onPress={() => setF((s) => ({ ...s, online: !s.online }))} />
           </View>
 
-          <Txt size={12} color={t.t3} style={{ marginTop: 14, marginBottom: 7 }}>Rasm</Txt>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <PhotoBox uri={f.photo} emoji={f.emoji} size={84} radius={R.md} />
-            <View style={{ flex: 1, gap: 8 }}>
-              <Btn
-                title={f.photo ? 'Suratni almashtirish' : 'Rasm tanlash'}
-                icon="camera"
-                variant="secondary"
-                size="sm"
-                loading={uploading}
-                onPress={pickPhoto}
-              />
-              {f.photo ? (
-                <Tap onPress={() => setF((s) => ({ ...s, photo: '' }))}>
-                  <Txt size={12} color={t.err}>Suratni olib tashlash</Txt>
+          <Txt size={12} color={t.t3} style={{ marginTop: 14, marginBottom: 7 }}>Rasmlar</Txt>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 10 }}>
+            {f.photos.map((url, i) => (
+              <View key={url + i} style={{ width: 84 }}>
+                <PhotoBox uri={imageUrl(url)} size={84} radius={R.md} />
+
+                {/* Birinchisi asosiy — belgilab qo'yamiz */}
+                {i === 0 ? (
+                  <View style={{
+                    position: 'absolute', top: 5, left: 5,
+                    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
+                    backgroundColor: t.acc,
+                  }}>
+                    <Txt size={9.5} weight="600" color={t.onAcc}>Asosiy</Txt>
+                  </View>
+                ) : (
+                  <Tap onPress={() => makeFirst(i)} hit={8} style={{
+                    position: 'absolute', top: 5, left: 5,
+                    width: 22, height: 22, borderRadius: 6,
+                    backgroundColor: 'rgba(0,0,0,.55)',
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <Txt size={11} color="#fff">★</Txt>
+                  </Tap>
+                )}
+
+                <Tap onPress={() => removePhoto(i)} hit={8} style={{
+                  position: 'absolute', top: 5, right: 5,
+                  width: 22, height: 22, borderRadius: 6,
+                  backgroundColor: 'rgba(0,0,0,.55)',
+                  alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <Txt size={13} color="#fff">×</Txt>
                 </Tap>
-              ) : null}
-            </View>
-          </View>
+              </View>
+            ))}
+
+            {f.photos.length < MAX_PHOTOS ? (
+              <Tap
+                onPress={pickPhoto}
+                disabled={uploading}
+                style={{
+                  width: 84, height: 84, borderRadius: R.md,
+                  borderWidth: 1, borderStyle: 'dashed', borderColor: t.line2,
+                  alignItems: 'center', justifyContent: 'center', gap: 4,
+                }}
+              >
+                <Icon name={uploading ? 'cloud' : 'camera'} size={20} color={t.t4} />
+                <Txt size={11} color={t.t4}>
+                  {uploading ? 'Yuklanmoqda' : (f.photos.length ? 'Yana' : 'Rasm')}
+                </Txt>
+              </Tap>
+            ) : null}
+          </ScrollView>
+
           <Txt size={11.5} color={t.t4} style={{ marginTop: 8, lineHeight: 16 }}>
-            Rasmsiz tovar katalogda emoji bilan chiqadi — mijozga yaxshi ko‘rinmaydi
+            {f.photos.length === 0
+              ? 'Rasmsiz tovar katalogda emoji bilan chiqadi — mijozga yaxshi ko‘rinmaydi'
+              : `${f.photos.length} ta rasm · ko‘pi bilan ${MAX_PHOTOS} ta · birinchisi asosiy`}
           </Txt>
 
           <Input
