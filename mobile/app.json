@@ -32,6 +32,10 @@
         "CAMERA",
         "VIBRATE",
         "INTERNET"
+      ],
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -53,7 +57,8 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Barcode skanerlash uchun kameraga ruxsat bering."
+          "cameraPermission": "Barcode skanerlash uchun kameraga ruxsat bering.",
+          "recordAudioAndroidPermission": false
         }
       ],
       [
