@@ -4,6 +4,12 @@
   "private": true,
   "description": "MyBazzar Telegram bot — do'kon egasiga xabar va statistika",
   "main": "index.js",
-  "scripts": { "start": "node index.js" },
-  "dependencies": { "pg": "^8.13.1" }
+  "scripts": {
+    "start": "node index.js",
+    "worker": "node lock-worker.js"
+  },
+  "dependencies": {
+    "pg": "^8.13.1",
+    "googleapis": "^144.0.0"
+  }
 }

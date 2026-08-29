@@ -33,6 +33,8 @@ import Product from './src/screens/Product';
 import History from './src/screens/History';
 import BulkReceive from './src/screens/BulkReceive';
 import Suppliers from './src/screens/Suppliers';
+import DeviceLock from './src/screens/DeviceLock';
+import DeviceLockNew from './src/screens/DeviceLockNew';
 import Scanner from './src/screens/Scanner';
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -62,6 +64,8 @@ function MoreNavigator() {
       <MoreStack.Screen name="Analitika" component={Analytics} />
       <MoreStack.Screen name="Xodimlar" component={Employees} />
       <MoreStack.Screen name="Taminotchilar" component={Suppliers} />
+      <MoreStack.Screen name="KreditQulf" component={DeviceLock} />
+      <MoreStack.Screen name="KreditYangi" component={DeviceLockNew} />
       <MoreStack.Screen name="Chek" component={ChekPrinter} />
       <MoreStack.Screen name="Sozlamalar" component={Settings} />
     </MoreStack.Navigator>

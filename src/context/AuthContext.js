@@ -71,6 +71,7 @@ export const ROLE_NAV = {
     { to: '/customers', icon: 'users-three', label: 'crm', perm: 'crm' },
     { to: '/orders', icon: 'shopping-bag', label: 'Buyurtmalar', badge: 'newOrders', perm: 'crm' },
     { to: '/nasiya', icon: 'hand-coins', label: 'nasiya', badge: 'urgentDebts', perm: 'nasiya' },
+    { to: '/credit', icon: 'lock-simple', label: 'Kredit telefonlar', perm: 'nasiya' },
     { to: '/finance', icon: 'wallet', label: 'finance', perm: 'finance' },
     { to: '/reports', icon: 'chart-bar', label: 'reports', perm: 'reports' },
     { to: '/analytics', icon: 'sparkle', label: 'aiAnalytics', perm: 'analytics' },

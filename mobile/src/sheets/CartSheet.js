@@ -54,9 +54,17 @@ export default function CartSheet({ visible, onClose, navigation }) {
     ).slice(0, 12);
   }, [d.customers, clientQ]);
 
+  /* Nasiyaga IMEI'li telefon sotilsa — kredit qulf taklif qilamiz.
+     Faqat noyob (IMEI bor) tovar: chexol yoki kabelni qulflab
+     bo'lmaydi. */
+  const creditPhone = cart.payMethod === 'nasiya'
+    && items.find((x) => x.phone_imei1);
+
   const finish = async () => {
     const res = await cart.checkout();
     if (res.error) { notify(res.error, 'error'); return; }
+
+    const phone = creditPhone;   // clear() dan oldin eslab qolamiz
 
     const payLabel = PAY_METHODS.find((m) => m.id === cart.payMethod)?.label;
     const snapshot = {
@@ -83,12 +91,31 @@ export default function CartSheet({ visible, onClose, navigation }) {
       amount: money(res.total),
       actions: (
         <>
-          <Btn
-            title="Chek chop etish"
-            icon="printer"
-            variant="secondary"
-            onPress={() => printReceipt(snapshot).catch(() => notify('Printer topilmadi', 'error'))}
-          />
+          {phone ? (
+            <Btn
+              title="Masofadan qulflashga qo‘shish"
+              icon="lock"
+              variant="secondary"
+              onPress={() => {
+                closeSuccess();
+                navigation.navigate('Yana', {
+                  screen: 'KreditYangi',
+                  params: {
+                    prefillImei: phone.phone_imei1,
+                    prefillModel: phone.name,
+                    prefillCustomer: cart.customer,
+                  },
+                });
+              }}
+            />
+          ) : (
+            <Btn
+              title="Chek chop etish"
+              icon="printer"
+              variant="secondary"
+              onPress={() => printReceipt(snapshot).catch(() => notify('Printer topilmadi', 'error'))}
+            />
+          )}
           <Btn title="Yangi sotuv" size="lg" onPress={closeSuccess} />
         </>
       ),

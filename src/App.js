@@ -22,6 +22,7 @@ import Storefront from './pages/Storefront';
 import Orders from './pages/Orders';
 import BulkReceive from './pages/BulkReceive';
 import Suppliers from './pages/Suppliers';
+import DeviceLock from './pages/DeviceLock';
 import { storeSlugFromHost } from './utils/storeHost';
 
 function PrivateRoute({ children, permission }) {
@@ -76,6 +77,7 @@ function AppRoutes() {
         <Route path="inventory" element={<PrivateRoute permission="inventory"><Inventory /></PrivateRoute>} />
         <Route path="kirim" element={<PrivateRoute permission="inventory"><BulkReceive /></PrivateRoute>} />
         <Route path="suppliers" element={<PrivateRoute permission="inventory"><Suppliers /></PrivateRoute>} />
+        <Route path="credit" element={<PrivateRoute permission="nasiya"><DeviceLock /></PrivateRoute>} />
         <Route path="customers" element={<PrivateRoute permission="crm"><CRM /></PrivateRoute>} />
         <Route path="orders" element={<PrivateRoute permission="crm"><Orders /></PrivateRoute>} />
         <Route path="dealer" element={<PrivateRoute permission="dealer_dashboard"><DealerPortal /></PrivateRoute>} />

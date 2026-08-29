@@ -36,6 +36,8 @@ const MAP = {
   coin: CurrencyCircleDollar, user: User, info: Info,
   'dots-vertical': DotsThreeVertical, funnel: Funnel, 'arrow-right': ArrowRight,
   star: Star, truck: Truck, note: Note,
+  'lock-simple-open': LockSimpleOpen, 'lock-closed': Lock,
+  'qr-code': QrCode, phone_device: DeviceMobile,
 };
 
 export default function Icon({ name, size = 20, color, fill, weight, style }) {

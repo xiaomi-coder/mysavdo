@@ -41,6 +41,12 @@ export default function More({ navigation }) {
     { icon: 'users', label: 'Mijozlar (CRM)', onPress: () => navigation.navigate('Mijozlar') },
     { icon: 'handshake', label: 'Nasiya', onPress: () => navigation.navigate('Nasiya'),
       badge: d.alerts.overdue.length },
+    isOwner && {
+      icon: 'lock',
+      label: 'Kredit telefonlar',
+      sub: 'Nasiya telefonni masofadan qulflash',
+      onPress: () => navigation.navigate('KreditQulf'),
+    },
     { icon: 'chart', label: 'Moliya', lock: !can('finance'),
       onPress: () => navigation.navigate('Moliya') },
     isOwner && { icon: 'file-text', label: 'Hisobotlar', onPress: () => navigation.navigate('Hisobot') },

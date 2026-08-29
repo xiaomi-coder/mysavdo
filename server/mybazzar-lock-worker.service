@@ -1,0 +1,32 @@
+# MyBazzar qulf ijrochisi
+#
+#   sudo cp mybazzar-lock-worker.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now mybazzar-lock-worker
+
+[Unit]
+Description=MyBazzar qulf ijrochisi (device lock worker)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/mybazzar-bot
+ExecStart=/usr/bin/node lock-worker.js
+EnvironmentFile=/etc/mybazzar/bot.env
+
+Restart=always
+RestartSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/mybazzar-bot
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mybazzar-lock
+
+[Install]
+WantedBy=multi-user.target
