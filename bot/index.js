@@ -245,7 +245,138 @@ async function textDebts(storeId) {
   return lines.join('\n');
 }
 
-/** Creator uchun: barcha do'konlar bo'yicha */
+/* ══════════════════════════════════════════════════════════════════════
+   Platforma hisobotlari — creator uchun
+
+   Bu yerda do'konning ichki ishi emas, PLATFORMANING holati
+   ko'rsatiladi: nechta do'kon ishlayapti, qaysilari jim qolgan,
+   aylanma o'syaptimi. Jim qolgan do'kon — bu keyin to'lovni
+   to'xtatadigan do'kon, shuning uchun eng muhim ko'rsatkich.
+   ══════════════════════════════════════════════════════════════════ */
+
+const TARIF = { 1: 'Starter', 3: 'Business', 10: 'Enterprise' };
+
+async function textPlatform() {
+  const s = await one(`
+    SELECT
+      COUNT(*)                                          AS stores,
+      COUNT(*) FILTER (WHERE created_at >= now() - INTERVAL '30 days') AS fresh
+    FROM stores WHERE is_active
+  `);
+
+  const t = await one(`
+    SELECT
+      COALESCE(SUM(total) FILTER (WHERE date >= date_trunc('day', now())), 0) AS today,
+      COUNT(*)           FILTER (WHERE date >= date_trunc('day', now()))      AS today_cnt,
+      COALESCE(SUM(total) FILTER (WHERE date >= now() - INTERVAL '30 days'), 0) AS m30,
+      COALESCE(SUM(total) FILTER (WHERE date >= now() - INTERVAL '60 days'
+                                    AND date <  now() - INTERVAL '30 days'), 0) AS m60,
+      COUNT(DISTINCT store_id) FILTER (WHERE date >= now() - INTERVAL '7 days') AS active7
+    FROM transactions WHERE status IN ('completed','returned')
+  `);
+
+  const growth = Number(t.m60) > 0
+    ? Math.round((Number(t.m30) - Number(t.m60)) / Number(t.m60) * 100)
+    : null;
+
+  const idle = Number(s.stores) - Number(t.active7);
+
+  const tariffs = await many(`
+    SELECT COALESCE(max_branches, 1) AS b, COUNT(*) AS n
+    FROM stores WHERE is_active GROUP BY 1 ORDER BY 1
+  `);
+
+  const lines = [
+    '<b>MyBazzar — umumiy holat</b>',
+    '',
+    `🏬 Do‘konlar: <b>${s.stores}</b>`,
+    `✅ 7 kunda savdo qilgan: <b>${t.active7}</b>`,
+  ];
+  if (idle > 0) lines.push(`😴 Jim qolganlar: <b>${idle}</b>`);
+  if (Number(s.fresh) > 0) lines.push(`🆕 30 kunda qo‘shilgan: <b>${s.fresh}</b>`);
+
+  lines.push('', '<b>Aylanma</b>');
+  lines.push(`  Bugun: ${money(t.today)} so‘m · ${t.today_cnt} chek`);
+  lines.push(`  30 kun: ${money(t.m30)} so‘m`);
+  if (growth != null) {
+    lines.push(`  O‘tgan 30 kunga nisbatan: ${growth >= 0 ? '▲ +' : '▼ '}${growth}%`);
+  }
+
+  if (tariffs.length) {
+    lines.push('', '<b>Tariflar</b>');
+    tariffs.forEach((x) => {
+      lines.push(`  ${TARIF[x.b] || x.b + ' filial'}: ${x.n} ta`);
+    });
+  }
+
+  return lines.join('\n');
+}
+
+/** Uzoq vaqt savdo qilmagan do'konlar — ular ketish arafasida */
+async function textDormant() {
+  const rows = await many(`
+    SELECT s.id, s.name, s.phone, s.owner_email,
+           MAX(t.date) AS last_sale,
+           s.created_at
+    FROM stores s
+    LEFT JOIN transactions t ON t.store_id = s.id AND t.status = 'completed'
+    WHERE s.is_active
+    GROUP BY s.id
+    HAVING MAX(t.date) IS NULL OR MAX(t.date) < now() - INTERVAL '7 days'
+    ORDER BY MAX(t.date) NULLS FIRST
+    LIMIT 20
+  `);
+
+  if (!rows.length) return '✅ Hamma do‘kon ishlayapti — 7 kun ichida savdo bo‘lgan.';
+
+  const lines = ['<b>Jim qolgan do‘konlar</b>',
+    '<i>Bular keyin to‘lovni to‘xtatadigan do‘konlar</i>', ''];
+
+  rows.forEach((r) => {
+    const days = r.last_sale
+      ? Math.round((Date.now() - new Date(r.last_sale)) / 86400000)
+      : null;
+    lines.push(`🏬 <b>${esc(r.name)}</b>`);
+    lines.push(days == null
+      ? '   hech qachon savdo qilmagan'
+      : `   oxirgi savdo ${days} kun oldin`);
+    if (r.phone) lines.push(`   ${esc(r.phone)}`);
+    else if (r.owner_email) lines.push(`   ${esc(r.owner_email)}`);
+  });
+
+  return lines.join('\n');
+}
+
+/** Yangi qo'shilgan do'konlar */
+async function textNewStores() {
+  const rows = await many(`
+    SELECT s.id, s.name, s.created_at, s.phone,
+           COUNT(t.id) AS sales,
+           COUNT(p.id) AS products
+    FROM stores s
+    LEFT JOIN transactions t ON t.store_id = s.id AND t.status = 'completed'
+    LEFT JOIN products p ON p.store_id = s.id
+    WHERE s.is_active AND s.created_at >= now() - INTERVAL '30 days'
+    GROUP BY s.id
+    ORDER BY s.created_at DESC
+    LIMIT 20
+  `);
+
+  if (!rows.length) return 'Oxirgi 30 kunda yangi do‘kon qo‘shilmadi.';
+
+  const lines = ['<b>Yangi do‘konlar</b> · 30 kun', ''];
+  rows.forEach((r) => {
+    const days = Math.round((Date.now() - new Date(r.created_at)) / 86400000);
+    lines.push(`🏬 <b>${esc(r.name)}</b> — ${days} kun oldin`);
+    lines.push(`   ${r.products} tovar · ${r.sales} sotuv`);
+    // Tovar qo'ymagan do'kon ishlatishni boshlamagan degani
+    if (Number(r.products) === 0) lines.push('   ⚠️ hali tovar kiritmagan');
+    else if (Number(r.sales) === 0) lines.push('   ⚠️ hali sotuv qilmagan');
+  });
+  return lines.join('\n');
+}
+
+/** Do'konlar ro'yxati — aylanma bo'yicha */
 async function textAllStores() {
   const rows = await many(`
     SELECT s.id, s.name,
@@ -284,12 +415,15 @@ const MENU = {
   resize_keyboard: true,
 };
 
-/* Creator barcha do'konlarni ko'radi — unga qo'shimcha tugma */
+/* Creator — platforma egasi, do'kon egasi emas.
+   Unga bitta do'konning kassasi kerak emas: qancha do'kon ishlayapti,
+   qaysilari jim qolgan, umumiy aylanma qanday — savol shu.
+   Muayyan do'kon kesimi kerak bo'lsa /dokon buyrug'i bor. */
 const MENU_CREATOR = {
   keyboard: [
-    [{ text: '🏬 Do‘konlar' }],
-    [{ text: '📊 Bugun' }, { text: '📅 Hafta' }],
-    [{ text: '📦 Ombor' }, { text: '🤝 Nasiya' }],
+    [{ text: '📈 Umumiy holat' }],
+    [{ text: '🏬 Do‘konlar' }, { text: '🆕 Yangilari' }],
+    [{ text: '😴 Jim qolganlar' }],
     [{ text: '⚙️ Sozlamalar' }],
   ],
   resize_keyboard: true,
@@ -366,21 +500,67 @@ async function onMessage(msg) {
 
   await db.query('UPDATE telegram_chats SET last_seen = now() WHERE chat_id = $1', [chatId]);
 
-  /* Creator hisobiga do'kon biriktirilmagan bo'lishi mumkin — u
-     tizim egasi, muayyan do'konga bog'lanmagan. Do'kon kesimidagi
-     buyruqlar ishlashi uchun birinchi faol do'konni olamiz. */
-  const store = link.store_id
-    || (await one('SELECT id FROM stores WHERE is_active ORDER BY id LIMIT 1'))?.id;
   const cmd = text.toLowerCase();
+  const isCreator = link.role === 'creator';
 
-  if (!store) {
-    await send(chatId, 'Do‘kon topilmadi. Ilovadan bog‘lash kodini oling.');
+  /* ── CREATOR ──────────────────────────────────────────────────────
+     Platforma egasiga bitta do'konning kassasi kerak emas. Unga
+     kerak: nechta do'kon ishlayapti, qaysilari jim qolgan, aylanma
+     o'syaptimi. Muayyan do'kon kesimi /dokon buyrug'i orqali. */
+  if (isCreator) {
+    if (cmd.startsWith('/start') || cmd.startsWith('/help') || cmd.startsWith('/yordam')) {
+      await send(chatId, HELP_CREATOR, { reply_markup: MENU_CREATOR });
+
+    } else if (cmd.startsWith('/umumiy') || cmd.includes('umumiy')) {
+      await send(chatId, await textPlatform());
+
+    } else if (cmd.startsWith('/dokonlar') || cmd.includes('do‘konlar') || cmd.includes('dokonlar')) {
+      await send(chatId, await textAllStores());
+
+    } else if (cmd.startsWith('/jim') || cmd.includes('jim qolgan')) {
+      await send(chatId, await textDormant());
+
+    } else if (cmd.startsWith('/yangi') || cmd.includes('yangilari')) {
+      await send(chatId, await textNewStores());
+
+    } else if (cmd.startsWith('/dokon ')) {
+      // Muayyan do'kon kesimi — qo'llab-quvvatlash uchun
+      const key = text.slice(7).trim();
+      const st = await one(`
+        SELECT id, name FROM stores
+        WHERE id::TEXT = $1 OR name ILIKE '%' || $1 || '%'
+        ORDER BY id LIMIT 1`, [key]);
+      if (!st) { await send(chatId, `"${esc(key)}" bo‘yicha do‘kon topilmadi.`); return; }
+      await send(chatId, await textSales(st.id, "now() - INTERVAL '30 days'", 'oxirgi 30 kun'));
+
+    } else if (cmd.startsWith('/sozlamalar') || cmd.includes('sozlamalar')) {
+      await send(chatId, [
+        '<b>Xabarlar</b>',
+        '',
+        `${link.notify_orders ? '✅' : '❌'} Yangi buyurtma — /buyurtma`,
+        `${link.notify_daily ? '✅' : '❌'} Kunlik xulosa — /kunlik`,
+        '',
+        'Yoqish yoki o‘chirish uchun buyruqni bosing.',
+      ].join('\n'));
+
+    } else if (cmd.startsWith('/buyurtma') || cmd.startsWith('/kunlik') || cmd.startsWith('/ogoh')) {
+      const col = cmd.startsWith('/buyurtma') ? 'notify_orders'
+        : cmd.startsWith('/kunlik') ? 'notify_daily' : 'notify_alerts';
+      const r = await one(
+        `UPDATE telegram_chats SET ${col} = NOT ${col} WHERE chat_id = $1 RETURNING ${col} AS v`,
+        [chatId]);
+      await send(chatId, r.v ? '✅ Yoqildi' : '❌ O‘chirildi');
+
+    } else {
+      await send(chatId, HELP_CREATOR, { reply_markup: MENU_CREATOR });
+    }
     return;
   }
 
-  // ── Creator uchun alohida ko'rinish ──
-  if (link.role === 'creator' && (cmd.startsWith('/dokonlar') || cmd.includes('do‘konlar'))) {
-    await send(chatId, await textAllStores());
+  /* ── DO'KON EGASI ────────────────────────────────────────────────── */
+  const store = link.store_id;
+  if (!store) {
+    await send(chatId, 'Do‘kon topilmadi. Ilovadan bog‘lash kodini oling.');
     return;
   }
 
@@ -482,16 +662,20 @@ async function maybeDigest() {
   /* Creator do'konga bog'lanmagan bo'lsa birinchi faol do'kon
      bo'yicha xulosa oladi — aks holda unga hech narsa kelmaydi. */
   const chats = await many(`
-    SELECT c.chat_id,
-           COALESCE(c.store_id,
-                    (SELECT id FROM stores WHERE is_active ORDER BY id LIMIT 1)) AS store_id
+    SELECT c.chat_id, c.store_id, c.role
     FROM telegram_chats c
     WHERE c.notify_daily
   `);
 
   for (const c of chats) {
-    if (!c.store_id) continue;
     try {
+      // Platforma egasiga do'kon kassasi emas, umumiy holat yuboriladi
+      if (c.role === 'creator') {
+        await send(c.chat_id, `<b>Kun yakuni · ${sana()}</b>\n\n` + await textPlatform());
+        continue;
+      }
+      if (!c.store_id) continue;
+
       let text = await textSales(c.store_id, "date_trunc('day', now())", `kun yakuni · ${sana()}`);
 
       // Ertaga e'tibor talab qiladigan narsalar
