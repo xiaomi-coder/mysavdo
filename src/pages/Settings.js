@@ -288,6 +288,14 @@ function TelegramCard({ user }) {
     setCode(data);
   };
 
+  const setHour = async (chatId, hour) => {
+    setChats(list => list.map(c => (c.chat_id === chatId ? { ...c, digest_hour: hour } : c)));
+    const { error } = await supabase.from('telegram_chats')
+      .update({ digest_hour: hour }).eq('chat_id', chatId);
+    if (error) { setMsg({ msg: error.message, variant: 'dang' }); load(); return; }
+    setMsg({ msg: `Kun yakuni ${String(hour).padStart(2, '0')}:00 da keladi`, variant: 'ok' });
+  };
+
   const unlink = async (chatId) => {
     const { error } = await supabase.from('telegram_chats').delete().eq('chat_id', chatId);
     if (error) { setMsg({ msg: error.message, variant: 'dang' }); return; }
@@ -309,22 +317,48 @@ function TelegramCard({ user }) {
       </div>
 
       {chats.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {chats.map(c => (
             <div key={c.chat_id} style={{
-              display: 'flex', alignItems: 'center', gap: 10,
               padding: '10px 12px', borderRadius: 'var(--radius-md)',
               background: 'var(--okbg)',
             }}>
-              <Icon name="check-circle" fill size={17} color="var(--ok)" />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13 }}>{c.name || 'Telegram'}</div>
-                {c.username && (
-                  <div style={{ fontSize: 11.5, color: 'var(--color-neutral-500)' }}>@{c.username}</div>
-                )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Icon name="check-circle" fill size={17} color="var(--ok)" />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13 }}>{c.name || 'Telegram'}</div>
+                  {c.username && (
+                    <div style={{ fontSize: 11.5, color: 'var(--color-neutral-500)' }}>@{c.username}</div>
+                  )}
+                </div>
+                <Btn variant="ghost" size="sm" icon="x" onClick={() => unlink(c.chat_id)}
+                  style={{ color: 'var(--color-neutral-500)' }}>Uzish</Btn>
               </div>
-              <Btn variant="ghost" size="sm" icon="x" onClick={() => unlink(c.chat_id)}
-                style={{ color: 'var(--color-neutral-500)' }}>Uzish</Btn>
+
+              {/* Kun yakuni qachon kelsin. Do'konlar har xil yopiladi —
+                  yopilmasdan kelgan xulosa noto'g'ri raqam beradi. */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10, marginTop: 10,
+                paddingTop: 10, borderTop: '1px solid var(--color-divider)',
+              }}>
+                <Icon name="clock" size={16} color="var(--color-neutral-400)" />
+                <div style={{ flex: 1, fontSize: 12.5, color: 'var(--color-neutral-400)' }}>
+                  Kun yakuni qachon kelsin
+                  <div style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>
+                    Do‘kon yopilgandan keyingi vaqtni tanlang
+                  </div>
+                </div>
+                <select
+                  className="input"
+                  value={c.digest_hour ?? 21}
+                  onChange={e => setHour(c.chat_id, Number(e.target.value))}
+                  style={{ width: 96, minHeight: 34 }}
+                >
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>
+                  ))}
+                </select>
+              </div>
             </div>
           ))}
         </div>

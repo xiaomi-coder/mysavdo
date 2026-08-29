@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View } from 'react-native';
+import { View, ScrollView } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { useTheme } from '../ThemeContext';
@@ -20,6 +20,10 @@ import { Linking } from 'react-native';
    ishonchni yo'qotadi. */
 
 const PREFS_KEY = 'mb.prefs';
+
+/* Do'kon odatda kunduzi yopilmaydi — ro'yxatni shu oraliq bilan
+   cheklaymiz, 24 ta tugma orasidan tanlash noqulay. */
+const HOURS = [15, 16, 17, 18, 19, 20, 21, 22, 23];
 
 export default function Settings({ navigation }) {
   const { t, mode, accent, toggleMode, setAccent } = useTheme();
@@ -61,6 +65,14 @@ export default function Settings({ navigation }) {
     setTgBusy(false);
     if (error) { notify(error.message, 'error'); return; }
     setTgCode(String(data));
+  };
+
+  const setTgHour = async (chatId, hour) => {
+    setTgChats((l) => l.map((c) => (c.chat_id === chatId ? { ...c, digest_hour: hour } : c)));
+    const { error } = await db.from('telegram_chats')
+      .update({ digest_hour: hour }).eq('chat_id', chatId);
+    if (error) { notify(error.message, 'error'); loadTg(); return; }
+    notify(`Kun yakuni ${String(hour).padStart(2, '0')}:00 da keladi`, 'ok');
   };
 
   const unlinkTg = async (chatId) => {
@@ -167,18 +179,68 @@ export default function Settings({ navigation }) {
 
         {tgChats.map((c) => (
           <View key={c.chat_id} style={{
-            flexDirection: 'row', alignItems: 'center', gap: 10,
             marginTop: 12, padding: 11, borderRadius: R.md,
             backgroundColor: alpha(t.okRgb, 0.12),
           }}>
-            <Icon name="check-circle" size={18} color={t.ok} fill />
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Txt size={13.5}>{c.name || 'Telegram'}</Txt>
-              {c.username ? <Txt size={11.5} color={t.t4}>@{c.username}</Txt> : null}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Icon name="check-circle" size={18} color={t.ok} fill />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Txt size={13.5}>{c.name || 'Telegram'}</Txt>
+                {c.username ? <Txt size={11.5} color={t.t4}>@{c.username}</Txt> : null}
+              </View>
+              <Tap onPress={() => unlinkTg(c.chat_id)} hit={10}>
+                <Txt size={12} color={t.err}>Uzish</Txt>
+              </Tap>
             </View>
-            <Tap onPress={() => unlinkTg(c.chat_id)} hit={10}>
-              <Txt size={12} color={t.err}>Uzish</Txt>
-            </Tap>
+
+            {/* Kun yakuni qachon kelsin. Do'konlar har xil yopiladi —
+                yopilmasdan kelgan xulosa noto'g'ri raqam beradi. */}
+            <View style={{
+              marginTop: 10, paddingTop: 10,
+              borderTopWidth: 1, borderTopColor: t.line,
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+                <Icon name="clock" size={16} color={t.t4} />
+                <View style={{ flex: 1 }}>
+                  <Txt size={12.5} color={t.t2}>Kun yakuni qachon kelsin</Txt>
+                  <Txt size={11} color={t.t4} style={{ marginTop: 1 }}>
+                    Do‘kon yopilgandan keyingi vaqt
+                  </Txt>
+                </View>
+                <Txt size={16} weight="600" color={t.acctext}>
+                  {String(c.digest_hour ?? 21).padStart(2, '0')}:00
+                </Txt>
+              </View>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ marginTop: 10 }}
+                contentContainerStyle={{ gap: 6 }}
+              >
+                {HOURS.map((h) => {
+                  const on = (c.digest_hour ?? 21) === h;
+                  return (
+                    <Tap
+                      key={h}
+                      onPress={() => setTgHour(c.chat_id, h)}
+                      style={{
+                        width: 52, height: 38, borderRadius: R.sm,
+                        alignItems: 'center', justifyContent: 'center',
+                        borderWidth: 1,
+                        borderColor: on ? t.acc : t.line2,
+                        backgroundColor: on ? t.line : 'transparent',
+                      }}
+                    >
+                      <Txt size={13} weight={on ? '600' : '400'}
+                        color={on ? t.acctext : t.t3}>
+                        {String(h).padStart(2, '0')}:00
+                      </Txt>
+                    </Tap>
+                  );
+                })}
+              </ScrollView>
+            </View>
           </View>
         ))}
 

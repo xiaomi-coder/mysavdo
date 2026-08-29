@@ -30,7 +30,9 @@ const https = require('https');
 const TOKEN = process.env.BOT_TOKEN;
 const DB = process.env.DATABASE_URL;
 const CREATOR_ID = Number(process.env.CREATOR_CHAT_ID || 0);
-const DIGEST_HOUR = Number(process.env.DIGEST_HOUR || 21);   // mahalliy vaqt
+/* Yangi bog'langan chat uchun standart vaqt. Keyin har kim
+   o'zi /vaqt bilan yoki ilova sozlamalaridan o'zgartiradi. */
+const DIGEST_HOUR = Number(process.env.DIGEST_HOUR || 21);
 
 if (!TOKEN || !DB) {
   console.error('BOT_TOKEN yoki DATABASE_URL berilmagan');
@@ -438,7 +440,8 @@ const HELP = [
   '/oy — 30 kunlik hisobot',
   '/ombor — kam qolgan va tugagan tovarlar',
   '/nasiya — qarzdorlar, muddati o‘tganlari',
-  '/sozlamalar — xabarlarni yoqish yoki o‘chirish',
+  '/sozlamalar — xabarlar va xulosa vaqti',
+  '/vaqt 19 — kunlik xulosa vaqtini o‘zgartirish',
   '/uzish — do‘kondan uzish',
   '',
   'Yangi onlayn buyurtma tushsa darhol xabar keladi.',
@@ -540,8 +543,21 @@ async function onMessage(msg) {
         `${link.notify_orders ? '✅' : '❌'} Yangi buyurtma — /buyurtma`,
         `${link.notify_daily ? '✅' : '❌'} Kunlik xulosa — /kunlik`,
         '',
+        `🕐 Kunlik xulosa vaqti: <b>${String(link.digest_hour).padStart(2, '0')}:00</b>`,
+        'O‘zgartirish: /vaqt 19',
+        '',
         'Yoqish yoki o‘chirish uchun buyruqni bosing.',
       ].join('\n'));
+
+    } else if (cmd.startsWith('/vaqt')) {
+      const h = parseInt(text.replace(/[^0-9]/g, ''), 10);
+      if (!Number.isInteger(h) || h < 0 || h > 23) {
+        await send(chatId, 'Soatni 0 dan 23 gacha yozing. Masalan: <code>/vaqt 19</code>');
+        return;
+      }
+      await db.query('UPDATE telegram_chats SET digest_hour = $2 WHERE chat_id = $1', [chatId, h]);
+      await send(chatId,
+        `🕐 Kunlik xulosa endi soat <b>${String(h).padStart(2, '0')}:00</b> da keladi.`);
 
     } else if (cmd.startsWith('/buyurtma') || cmd.startsWith('/kunlik') || cmd.startsWith('/ogoh')) {
       const col = cmd.startsWith('/buyurtma') ? 'notify_orders'
@@ -590,8 +606,21 @@ async function onMessage(msg) {
       `${link.notify_daily ? '✅' : '❌'} Kunlik xulosa — /kunlik`,
       `${link.notify_alerts ? '✅' : '❌'} Ogohlantirishlar — /ogoh`,
       '',
+      `🕐 Kunlik xulosa vaqti: <b>${String(link.digest_hour).padStart(2, '0')}:00</b>`,
+      'O‘zgartirish: /vaqt 19',
+      '',
       'Yoqish yoki o‘chirish uchun buyruqni bosing.',
     ].join('\n'));
+
+  } else if (cmd.startsWith('/vaqt')) {
+    const h = parseInt(text.replace(/\D/g, ''), 10);
+    if (!Number.isInteger(h) || h < 0 || h > 23) {
+      await send(chatId, 'Soatni 0 dan 23 gacha yozing. Masalan: <code>/vaqt 19</code>');
+      return;
+    }
+    await db.query('UPDATE telegram_chats SET digest_hour = $2 WHERE chat_id = $1', [chatId, h]);
+    await send(chatId,
+      `🕐 Kunlik xulosa endi soat <b>${String(h).padStart(2, '0')}:00</b> da keladi.`);
 
   } else if (cmd.startsWith('/buyurtma') || cmd.startsWith('/kunlik') || cmd.startsWith('/ogoh')) {
     const col = cmd.startsWith('/buyurtma') ? 'notify_orders'
@@ -651,20 +680,18 @@ async function announceOrder(txnId) {
 
 /* ── Kunlik xulosa ────────────────────────────────────────────────────── */
 
-let lastDigest = '';
+/* Kunlik xulosa har chatning O'Z vaqtida ketadi: do'konlar har xil
+   yopiladi va yopilmasdan kelgan "kun yakuni" noto'g'ri raqam beradi.
 
+   Yuborilgani bazada belgilanadi (last_digest), xotirada emas —
+   shunda bot qayta ishga tushsa ham bir kunda ikki marta yubormaydi. */
 async function maybeDigest() {
-  const now = new Date();
-  const key = `${now.toDateString()}`;
-  if (now.getHours() !== DIGEST_HOUR || lastDigest === key) return;
-  lastDigest = key;
-
-  /* Creator do'konga bog'lanmagan bo'lsa birinchi faol do'kon
-     bo'yicha xulosa oladi — aks holda unga hech narsa kelmaydi. */
   const chats = await many(`
-    SELECT c.chat_id, c.store_id, c.role
-    FROM telegram_chats c
-    WHERE c.notify_daily
+    SELECT chat_id, store_id, role
+    FROM telegram_chats
+    WHERE notify_daily
+      AND digest_hour = EXTRACT(HOUR FROM now())::INT
+      AND (last_digest IS NULL OR last_digest < current_date)
   `);
 
   for (const c of chats) {
@@ -697,6 +724,8 @@ async function maybeDigest() {
       if (extra.length) text += `\n\n<b>Ertaga e’tibor bering</b>\n${extra.map((x) => '  ' + x).join('\n')}`;
 
       await send(c.chat_id, text);
+      await db.query('UPDATE telegram_chats SET last_digest = current_date WHERE chat_id = $1',
+        [c.chat_id]);
     } catch (e) {
       console.error('digest', c.chat_id, e.message);
     }
