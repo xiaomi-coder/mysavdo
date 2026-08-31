@@ -20,7 +20,8 @@ function formatDate(d) {
 export default function Topbar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, pendingTxns, alerts, settings } = useAuth();
+  const { user, pendingTxns, alerts, settings, toggleSetting } = useAuth();
+  const dark = settings?.dark !== false;
   const { t } = useTranslation();
   const [showNotif, setShowNotif] = useState(false);
   const notifRef = useRef(null);
@@ -136,6 +137,28 @@ export default function Topbar() {
         <Icon name="calendar-blank" size={15} />
         {formatDate(new Date())}
       </div>
+
+      {/* Mavzu almashtirgich (oy/quyosh) */}
+      <button
+        onClick={() => toggleSetting('dark')}
+        title={dark ? 'Yorug‘ rejim' : 'Qorong‘i rejim'}
+        aria-label={dark ? 'Yorug‘ rejim' : 'Qorong‘i rejim'}
+        style={{
+          position: 'relative', width: 56, height: 28, flex: 'none', padding: 0,
+          borderRadius: 16, cursor: 'pointer',
+          border: '1px solid var(--color-divider)', background: 'var(--color-bg)',
+        }}
+      >
+        <Icon name="sun" fill size={13} color="var(--warn)"
+          style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', zIndex: 2, opacity: dark ? 0.35 : 1 }} />
+        <Icon name="moon" fill size={12} color="var(--color-accent)"
+          style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', zIndex: 2, opacity: dark ? 1 : 0.35 }} />
+        <span style={{
+          position: 'absolute', top: 3, left: dark ? 31 : 3, width: 22, height: 22, zIndex: 1,
+          borderRadius: '50%', background: 'var(--color-surface)', boxShadow: '0 2px 6px rgba(0,0,0,.4)',
+          transition: 'left .25s cubic-bezier(.2,.8,.2,1)',
+        }} />
+      </button>
 
       {/* Bildirishnomalar */}
       <div style={{ position: 'relative' }} ref={notifRef}>

@@ -46,7 +46,7 @@ export default function DeviceLock({ navigation }) {
 
   const load = useCallback(async () => {
     if (!d.storeId) return;
-    const { data } = await db.from('credit_devices').select('*')
+    const { data } = await db.from('credit_device_view').select('*')
       .eq('store_id', d.storeId).order('created_at', { ascending: false }).limit(500);
     setRows(data || []);
   }, [d.storeId]);
@@ -72,6 +72,19 @@ export default function DeviceLock({ navigation }) {
   const lockedCount = lists.locked.length;
   const warnedCount = (rows || []).filter((x) => x.status === 'warned').length;
 
+  const totals = useMemo(() => {
+    const managed = (rows || []).filter((x) => x.status !== 'released');
+    const sum = (k) => managed.reduce((s, x) => s + Number(x[k] || 0), 0);
+    const now = new Date();
+    const dueThisMonth = managed.reduce((s, x) => {
+      if (!x.next_due_date) return s;
+      const dt = new Date(x.next_due_date);
+      return dt.getMonth() === now.getMonth() && dt.getFullYear() === now.getFullYear()
+        ? s + Number(x.next_due_amount || 0) : s;
+    }, 0);
+    return { outstanding: sum('sched_left'), overdue: sum('overdue_amount'), dueThisMonth };
+  }, [rows]);
+
   return (
     <Screen onRefresh={refresh} refreshing={refreshing}>
       <Header
@@ -81,7 +94,26 @@ export default function DeviceLock({ navigation }) {
           onPress={() => navigation.navigate('KreditYangi')} />}
       />
 
-      {/* Xulosa */}
+      {/* Moliyaviy xulosa */}
+      {rows && rows.length > 0 ? (
+        <Card pad={14} style={{ marginBottom: 12, flexDirection: 'row' }}>
+          <View style={{ flex: 1 }}>
+            <Txt size={11} color={t.t4}>Qolgan qarz</Txt>
+            <Txt size={16} weight="700" mono style={{ marginTop: 2 }}>{money(totals.outstanding)}</Txt>
+          </View>
+          <View style={{ flex: 1, borderLeftWidth: 1, borderLeftColor: t.line, paddingLeft: 12 }}>
+            <Txt size={11} color={t.t4}>Bu oy</Txt>
+            <Txt size={16} weight="700" mono style={{ marginTop: 2 }}>{money(totals.dueThisMonth)}</Txt>
+          </View>
+          <View style={{ flex: 1, borderLeftWidth: 1, borderLeftColor: t.line, paddingLeft: 12 }}>
+            <Txt size={11} color={t.t4}>Muddati o‘tgan</Txt>
+            <Txt size={16} weight="700" mono color={totals.overdue ? t.err : t.t2}
+              style={{ marginTop: 2 }}>{money(totals.overdue)}</Txt>
+          </View>
+        </Card>
+      ) : null}
+
+      {/* Ogohlantirish */}
       {(lockedCount > 0 || warnedCount > 0) ? (
         <Card pad={14} border={lockedCount ? t.err : t.warn} style={{ marginBottom: 14 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -140,6 +172,12 @@ export default function DeviceLock({ navigation }) {
 function DeviceRow({ device, t, onPress }) {
   const st = STATUS[device.status] || STATUS.active;
   const color = st.color === 'dim' ? t.t4 : ({ ok: t.ok, warn: t.warn, dang: t.err, blue: t.blue }[st.color]);
+  const od = Number(device.overdue_count || 0) > 0;
+  const left = Number(device.sched_left || 0);
+  const mp = Number(device.months_paid || 0);
+  const mt = Number(device.months_total || 0);
+  const released = device.status === 'released';
+
   return (
     <Card pad={12} onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
       <View style={{
@@ -154,10 +192,27 @@ function DeviceRow({ device, t, onPress }) {
         <Txt size={12} color={t.t3} numberOfLines={1} style={{ marginTop: 1 }}>
           {device.client_name || '—'} · {phoneFmt(device.client_phone)}
         </Txt>
-        <Txt size={11} color={t.t4} mono style={{ marginTop: 1 }}>IMEI {device.imei}</Txt>
+        {/* Moliyaviy holat */}
+        {released ? (
+          <Txt size={11.5} color={t.ok} style={{ marginTop: 3 }}>To‘liq to‘landi</Txt>
+        ) : od ? (
+          <Txt size={11.5} color={t.err} weight="500" style={{ marginTop: 3 }}>
+            {device.overdue_days} kun kechikdi · {money(device.overdue_amount)}
+          </Txt>
+        ) : device.next_due_date ? (
+          <Txt size={11.5} color={t.t4} style={{ marginTop: 3 }}>
+            Keyingi: {money(device.next_due_amount)} · {dateShort(device.next_due_date)}
+          </Txt>
+        ) : (
+          <Txt size={11} color={t.t4} mono style={{ marginTop: 3 }}>IMEI {device.imei}</Txt>
+        )}
       </View>
-      <View style={{ alignItems: 'flex-end' }}>
-        <Txt size={12} weight="500" color={color}>{st.label}</Txt>
+      <View style={{ alignItems: 'flex-end', gap: 2 }}>
+        {!released && (
+          <Txt size={14} weight="600" mono>{money(left)}</Txt>
+        )}
+        <Txt size={11} color={t.t4}>{mp}/{mt} oy</Txt>
+        <Txt size={11.5} weight="500" color={color}>{st.label}</Txt>
       </View>
     </Card>
   );
@@ -188,6 +243,8 @@ function DeviceSheet({ device, onClose, onChanged }) {
   const paid = (schedule || []).reduce((s, x) => s + Number(x.paid_amount || 0), 0);
   const total = (schedule || []).reduce((s, x) => s + Number(x.amount || 0), 0);
   const left = total - paid;
+  // Eng eski to'lanmagan oy — "To'lov qabul qilish" shu oyni ochadi
+  const nextUnpaid = (schedule || []).find(s => Number(s.paid_amount || 0) < Number(s.amount || 0));
 
   /* Qo'lda qulflash/ochish — buyruq navbatga tushadi, ijrochi
      provayderga uzatadi */
@@ -266,11 +323,15 @@ function DeviceSheet({ device, onClose, onChanged }) {
           <Stat label="Qolgan" value={money(left)} color={left > 0 ? t.warn : t.ok} t={t} />
         </View>
 
-        {/* Qulf boshqaruvi */}
+        {/* To'lov va qulf boshqaruvi */}
         {device.status !== 'released' ? (
-          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+          <View style={{ gap: 10, marginBottom: 16 }}>
+            {nextUnpaid ? (
+              <Btn title="To‘lov qabul qilish" icon="hand-coins" size="xl" full
+                onPress={() => setPayFor(nextUnpaid)} />
+            ) : null}
             {device.status === 'locked' ? (
-              <Btn title="Telefonni ochish" icon="lock-simple-open" variant="ok" size="lg"
+              <Btn title="Telefonni ochish" icon="lock-simple-open" variant="secondary" size="lg"
                 full loading={busy} onPress={() => command('unlock', 'Qo‘lda ochildi')} />
             ) : (
               <Btn title="Telefonni qulflash" icon="lock" variant="danger" size="lg"

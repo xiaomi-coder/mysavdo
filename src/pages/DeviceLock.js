@@ -42,7 +42,7 @@ export default function DeviceLock() {
 
   const load = useCallback(async (storeId) => {
     setLoading(true);
-    const { data } = await supabase.from('credit_devices').select('*')
+    const { data } = await supabase.from('credit_device_view').select('*')
       .eq('store_id', storeId).order('created_at', { ascending: false }).limit(1000);
     setRows(data || []);
     setLoading(false);
@@ -59,11 +59,22 @@ export default function DeviceLock() {
   }), [rows]);
 
   const stats = useMemo(() => {
-    const active = rows.filter(x => x.status !== 'released');
+    const managed = rows.filter(x => x.status !== 'released');
+    const sum = (arr, k) => arr.reduce((s, x) => s + Number(x[k] || 0), 0);
+    const now = new Date();
+    const dueThisMonth = managed.reduce((s, x) => {
+      if (!x.next_due_date) return s;
+      const dt = new Date(x.next_due_date);
+      return dt.getMonth() === now.getMonth() && dt.getFullYear() === now.getFullYear()
+        ? s + Number(x.next_due_amount || 0) : s;
+    }, 0);
     return {
-      active: active.length,
+      open: lists.open.length,
       locked: lists.locked.length,
       warned: rows.filter(x => x.status === 'warned').length,
+      outstanding: sum(managed, 'sched_left'),
+      overdue: sum(managed, 'overdue_amount'),
+      dueThisMonth,
     };
   }, [rows, lists]);
 
@@ -76,10 +87,11 @@ export default function DeviceLock() {
         <Btn variant="primary" icon="plus" onClick={() => setForm(true)}>Yangi kredit telefon</Btn>
       </PageHeader>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-        <StatCard label="Faol" value={stats.active} unit="ta" icon="device-mobile" />
-        <StatCard label="Ogohlantirilgan" value={stats.warned} unit="ta" icon="warning"
-          accent={stats.warned ? 'var(--warn)' : undefined} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
+        <StatCard label="Qolgan qarz" value={money(stats.outstanding)} unit="so‘m" icon="wallet" />
+        <StatCard label="Bu oy kutilmoqda" value={money(stats.dueThisMonth)} unit="so‘m" icon="calendar" />
+        <StatCard label="Muddati o‘tgan" value={money(stats.overdue)} unit="so‘m" icon="warning"
+          accent={stats.overdue ? 'var(--dang)' : undefined} />
         <StatCard label="Qulflangan" value={stats.locked} unit="ta" icon="lock-simple"
           accent={stats.locked ? 'var(--dang)' : undefined} />
       </div>
@@ -111,8 +123,9 @@ export default function DeviceLock() {
                 <tr>
                   <th>Telefon</th>
                   <th>Mijoz</th>
-                  <th>IMEI</th>
-                  <th style={{ textAlign: 'right' }}>Oylik</th>
+                  <th style={{ textAlign: 'right' }}>Qolgan qarz</th>
+                  <th>Keyingi to‘lov</th>
+                  <th>Muddat</th>
                   <th>Holat</th>
                   <th />
                 </tr>
@@ -120,14 +133,55 @@ export default function DeviceLock() {
               <tbody>
                 {list.map(x => {
                   const st = STATUS[x.status] || STATUS.active;
-                  const monthly = x.months > 0
-                    ? Math.ceil((x.price - x.down_payment) / x.months / 1000) * 1000 : 0;
+                  const od = Number(x.overdue_count || 0) > 0;
                   return (
                     <tr key={x.id} onClick={() => setDetail(x)} style={{ cursor: 'pointer' }}>
-                      <td style={{ fontWeight: 500 }}>{x.model || 'Telefon'}</td>
-                      <td>{x.client_name || '—'}</td>
-                      <td className="num" style={{ color: 'var(--color-neutral-500)' }}>{x.imei}</td>
-                      <td className="num" style={{ textAlign: 'right' }}>{money(monthly)}</td>
+                      <td>
+                        <div style={{ fontWeight: 500 }}>{x.model || 'Telefon'}</div>
+                        <div className="num" style={{ fontSize: 11.5, color: 'var(--color-neutral-500)' }}>
+                          {x.imei}
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ fontSize: 13 }}>{x.client_name || '—'}</div>
+                        {x.client_phone && (
+                          <div className="num" style={{ fontSize: 11.5, color: 'var(--color-neutral-500)' }}>
+                            {x.client_phone}
+                          </div>
+                        )}
+                      </td>
+                      <td className="num" style={{ textAlign: 'right', fontWeight: 500 }}>
+                        {money(x.sched_left)}
+                        <div style={{ fontSize: 11, color: 'var(--color-neutral-500)', fontWeight: 400 }}>
+                          / {money(x.sched_total)}
+                        </div>
+                      </td>
+                      <td>
+                        {x.status === 'released' ? (
+                          <span style={{ color: 'var(--ok)', fontSize: 12.5 }}>Yakunlangan</span>
+                        ) : od ? (
+                          <div>
+                            <div className="num" style={{ color: 'var(--dang)', fontWeight: 500 }}>
+                              {money(x.overdue_amount)}
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--dang)' }}>
+                              {x.overdue_days} kun kechikdi
+                            </div>
+                          </div>
+                        ) : x.next_due_date ? (
+                          <div>
+                            <div className="num" style={{ fontWeight: 500 }}>{money(x.next_due_amount)}</div>
+                            <div style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>
+                              {dateFmt(x.next_due_date)}
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ color: 'var(--color-neutral-500)', fontSize: 12.5 }}>—</span>
+                        )}
+                      </td>
+                      <td>
+                        <MonthsBar paid={x.months_paid} total={x.months_total} />
+                      </td>
                       <td>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: st.color }}>
                           <Icon name={st.icon} size={15} color={st.color} />
@@ -177,8 +231,27 @@ function DeviceForm({ user, onClose, onSaved, onError }) {
   });
   const [saving, setSaving] = useState(false);
   const [qr, setQr] = useState(null);
+  const [enrollQr, setEnrollQr] = useState(null);
+  const [enrolled, setEnrolled] = useState(false);
 
   const set = (k, v) => setF(s => ({ ...s, [k]: v }));
+
+  /* QR ekrani ochilgach worker AMAPI'dan haqiqiy QR tayyorlaydi va
+     telefon skanerlab ro'yxatdan o'tishini kutamiz */
+  useEffect(() => {
+    if (!qr) return undefined;
+    let alive = true;
+    const tick = async () => {
+      const { data } = await supabase.from('credit_devices')
+        .select('enroll_qr, enrollment_id, status').eq('id', qr.id).single();
+      if (!alive || !data) return;
+      if (data.enroll_qr) setEnrollQr(data.enroll_qr);
+      if (data.status === 'active' || data.enrollment_id) { setEnrolled(true); alive = false; }
+    };
+    tick();
+    const iv = setInterval(tick, 3000);
+    return () => { alive = false; clearInterval(iv); };
+  }, [qr]);
 
   const plan = useMemo(() => {
     const price = parseInt(f.price, 10) || 0;
@@ -230,13 +303,40 @@ function DeviceForm({ user, onClose, onSaved, onError }) {
   };
 
   if (qr) {
-    const payload = JSON.stringify({ mb: 'device-enroll', id: qr.id, imei: qr.imei, store: qr.store });
+    const done = () => { onSaved('Kredit telefon qo‘shildi'); onClose(); };
+
+    if (enrolled) {
+      return (
+        <Modal title="Ro‘yxatga olindi" onClose={done}
+          actions={<Btn variant="primary" onClick={done}>Tayyor</Btn>}>
+          <div style={{ textAlign: 'center', padding: '12px 0' }}>
+            <Icon name="shield-check" size={48} color="var(--ok)" />
+            <div style={{ fontSize: 16, fontWeight: 600, marginTop: 10 }}>Telefon ro‘yxatdan o‘tdi</div>
+            <div style={{ fontSize: 13, color: 'var(--color-neutral-400)', marginTop: 6, lineHeight: 1.6 }}>
+              {qr.model} endi MyBazzar boshqaruvida. To‘lov kechiksa masofadan
+              qulflanadi, to‘langach avtomatik ochiladi.
+            </div>
+          </div>
+        </Modal>
+      );
+    }
+
     return (
-      <Modal title="Telefonni ro‘yxatga olish" onClose={() => { onSaved('Kredit telefon qo‘shildi'); onClose(); }}
-        actions={<Btn variant="primary" onClick={() => { onSaved('Kredit telefon qo‘shildi'); onClose(); }}>Tayyor</Btn>}>
+      <Modal title="Telefonni ro‘yxatga olish" onClose={done}
+        actions={<Btn variant="primary" onClick={done}>Keyinroq</Btn>}>
         <div style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
-          <div style={{ padding: 14, background: '#fff', borderRadius: 12, flex: 'none' }}>
-            <QRCodeSVG value={payload} size={190} />
+          <div style={{
+            padding: 14, background: '#fff', borderRadius: 12, flex: 'none',
+            width: 218, height: 218, display: 'grid', placeItems: 'center',
+          }}>
+            {enrollQr ? (
+              <QRCodeSVG value={enrollQr} size={190} level="L" />
+            ) : (
+              <div style={{ textAlign: 'center', color: '#999' }}>
+                <Icon name="spinner-gap" size={26} color="#999" />
+                <div style={{ fontSize: 12, marginTop: 8 }}>QR tayyorlanmoqda…</div>
+              </div>
+            )}
           </div>
           <div>
             <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 4 }}>{qr.model}</div>
@@ -249,8 +349,8 @@ function DeviceForm({ user, onClose, onSaved, onError }) {
               <li>Shu QR kodni skanerlang</li>
             </ol>
             <div style={{ fontSize: 11.5, color: 'var(--color-neutral-500)', marginTop: 14, lineHeight: 1.6 }}>
-              Google Cloud ulanmaguncha bu QR do‘kon ichki hisobi uchun.
-              Ulangach telefon to‘g‘ridan-to‘g‘ri MyBazzar boshqaruviga qo‘shiladi.
+              Skanerlangach telefon to‘g‘ridan-to‘g‘ri MyBazzar boshqaruviga
+              qo‘shiladi. Bu oyna ochiq tursin — ro‘yxatdan o‘tishi o‘zi tasdiqlanadi.
             </div>
           </div>
         </div>
@@ -361,6 +461,8 @@ function DeviceDetail({ device, user, onClose, onChanged, onError }) {
   const paid = (schedule || []).reduce((s, x) => s + Number(x.paid_amount || 0), 0);
   const total = (schedule || []).reduce((s, x) => s + Number(x.amount || 0), 0);
   const left = total - paid;
+  // Eng eski to'lanmagan oy — "To'lov qabul qilish" shu oyni ochadi
+  const nextUnpaid = (schedule || []).find(s => Number(s.paid_amount || 0) < Number(s.amount || 0));
 
   const command = async (action, reason) => {
     setBusy(true);
@@ -385,12 +487,21 @@ function DeviceDetail({ device, user, onClose, onChanged, onError }) {
         actions={
           device.status === 'released' ? (
             <Btn variant="secondary" onClick={onClose}>Yopish</Btn>
-          ) : device.status === 'locked' ? (
-            <Btn variant="primary" icon="lock-simple-open" onClick={() => command('unlock', 'Qo‘lda ochildi')}
-              loading={busy}>Telefonni ochish</Btn>
           ) : (
-            <Btn variant="danger" icon="lock-simple" onClick={() => command('lock', 'Qo‘lda qulflandi')}
-              loading={busy}>Telefonni qulflash</Btn>
+            <>
+              {nextUnpaid && (
+                <Btn variant="primary" icon="hand-coins" onClick={() => setPayFor(nextUnpaid)}>
+                  To‘lov qabul qilish
+                </Btn>
+              )}
+              {device.status === 'locked' ? (
+                <Btn variant="secondary" icon="lock-simple-open" onClick={() => command('unlock', 'Qo‘lda ochildi')}
+                  loading={busy}>Ochish</Btn>
+              ) : (
+                <Btn variant="danger" icon="lock-simple" onClick={() => command('lock', 'Qo‘lda qulflandi')}
+                  loading={busy}>Qulflash</Btn>
+              )}
+            </>
           )
         }>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
@@ -495,6 +606,26 @@ function DeviceDetail({ device, user, onClose, onChanged, onError }) {
           onError={onError} />
       )}
     </>
+  );
+}
+
+function MonthsBar({ paid, total }) {
+  const p = Number(paid || 0);
+  const t = Number(total || 0);
+  const pct = t > 0 ? Math.round((p / t) * 100) : 0;
+  return (
+    <div style={{ minWidth: 70 }}>
+      <div style={{ fontSize: 12, marginBottom: 4 }}>
+        <span style={{ fontWeight: 500 }}>{p}</span>
+        <span style={{ color: 'var(--color-neutral-500)' }}> / {t} oy</span>
+      </div>
+      <div style={{ height: 4, borderRadius: 2, background: 'var(--color-divider)', overflow: 'hidden' }}>
+        <div style={{
+          width: `${pct}%`, height: '100%', borderRadius: 2,
+          background: pct >= 100 ? 'var(--ok)' : 'var(--color-accent)',
+        }} />
+      </div>
+    </div>
   );
 }
 

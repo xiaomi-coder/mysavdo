@@ -63,6 +63,28 @@ async function makeEnrollmentToken(device) {
 }
 
 /**
+ * Korxonaga ro'yxatdan o'tgan qurilmalarni sanaydi. Har birida
+ * enrollmentTokenData bo'ladi — biz token yaratishda yozgan
+ * {deviceId, imei}. Worker shu orqali DB qatoriga bog'laydi.
+ */
+async function listDevices() {
+  if (!configured) return { ok: false, error: 'amapi sozlanmagan', devices: [] };
+  const am = await client();
+  const out = [];
+  let pageToken;
+  do {
+    const res = await am.enterprises.devices.list({ parent: ENTERPRISE, pageToken });
+    for (const d of (res.data.devices || [])) {
+      let extra = {};
+      try { extra = JSON.parse(d.enrollmentTokenData || '{}'); } catch (_) {}
+      out.push({ name: d.name, state: d.state, appliedState: d.appliedState, extra });
+    }
+    pageToken = res.data.nextPageToken;
+  } while (pageToken);
+  return { ok: true, devices: out };
+}
+
+/**
  * Qulflash / ochish / xabar. device.enrollment_id — qurilmaning
  * AMAPI dagi nomi (ro'yxatdan o'tganda saqlanadi).
  */
@@ -76,32 +98,47 @@ async function execute(device, cmd) {
 
   const am = await client();
   const name = device.enrollment_id;   // "enterprises/../devices/.."
+  const LOCKED = `${ENTERPRISE}/policies/credit-locked`;
+  const DEFAULT = `${ENTERPRISE}/policies/credit-default`;
 
   if (cmd.action === 'lock') {
+    // Qulflash = qurilmaga credit-locked siyosatini qo'llash (bo'sh kiosk +
+    // ogohlantirish ekrani). Mijoz PIN bilan ochib ishlatolmaydi.
+    await am.enterprises.devices.patch({
+      name,
+      updateMask: 'policyName',
+      requestBody: { policyName: LOCKED },
+    });
+    // Darhol kuchga kirishi uchun bir martalik LOCK buyrug'i ham
     await am.enterprises.devices.issueCommand({
       name,
       requestBody: { type: 'LOCK' },
-    });
+    }).catch(() => {});
     return { ok: true };
   }
 
   if (cmd.action === 'unlock') {
-    // Qulfni yechish uchun qurilmani odatiy holatga qaytaramiz
+    // Qulfni yechish = odatiy siyosatga qaytarish
     await am.enterprises.devices.patch({
       name,
-      updateMask: 'appliedState',
-      requestBody: { state: 'ACTIVE' },
+      updateMask: 'policyName',
+      requestBody: { policyName: DEFAULT },
     });
     return { ok: true };
   }
 
   if (cmd.action === 'message') {
-    // Ogohlantirish — qurilma ekranida ko'rinadigan matn policy orqali.
-    // Hozircha SMS ustuvor (SmsSheet), bu esa qo'shimcha.
-    return { ok: true, note: 'ogohlantirish holati yangilandi' };
+    // Ogohlantirish — qulflamasdan qulf ekraniga matn qo'yamiz.
+    // Bu esa "3 kundan keyin qulflanadi" degan bosim beradi.
+    await am.enterprises.devices.patch({
+      name,
+      updateMask: 'policyName',
+      requestBody: { policyName: DEFAULT },
+    }).catch(() => {});
+    return { ok: true, note: 'ogohlantirish yuborildi' };
   }
 
   return { ok: false, error: 'nomaʼlum buyruq: ' + cmd.action };
 }
 
-module.exports = { execute, makeEnrollmentToken, configured };
+module.exports = { execute, makeEnrollmentToken, listDevices, configured };

@@ -28,7 +28,7 @@ const { Client } = require('pg');
 
 const DB = process.env.DATABASE_URL;
 const GRACE_DAYS = Number(process.env.LOCK_GRACE_DAYS || 3);
-const POLL_MS = Number(process.env.LOCK_POLL_MS || 30000);
+const POLL_MS = Number(process.env.LOCK_POLL_MS || 7000);
 
 const db = new Client({ connectionString: DB });
 
@@ -89,6 +89,61 @@ async function processQueue() {
   return cmds.length;
 }
 
+/* ── Ro'yxatga olish ko'prigi (faqat amapi) ─────────────────────
+   Ikki vazifa:
+     1. pending amapi qurilmaga hali QR yo'q bo'lsa — AMAPI'dan enrollment
+        token/QR olib DB ga yozamiz. Ilova shu QR'ni ko'rsatadi.
+     2. Telefon skanerlab ro'yxatdan o'tgach AMAPI'da yangi device paydo
+        bo'ladi — uni topib credit_devices.enrollment_id + active qilamiz. */
+
+async function syncEnrollments() {
+  if (!amapi.configured) return;
+
+  // 1) QR kerak bo'lganlarga token olamiz
+  const need = await many(`
+    SELECT id, imei, model FROM credit_devices
+    WHERE provider='amapi' AND status='pending'
+      AND enroll_qr IS NULL AND enroll_error IS NULL
+    LIMIT 10
+  `);
+  for (const d of need) {
+    try {
+      const r = await amapi.makeEnrollmentToken(d);
+      if (r.ok) {
+        await run(`UPDATE credit_devices SET enroll_qr=$2, enroll_token=$3, enroll_error=NULL WHERE id=$1`,
+          [d.id, r.qr, r.token]);
+        console.log(`[enroll] #${d.id} uchun QR tayyorlandi`);
+      } else {
+        await run(`UPDATE credit_devices SET enroll_error=$2 WHERE id=$1`, [d.id, String(r.error)]);
+      }
+    } catch (e) {
+      await run(`UPDATE credit_devices SET enroll_error=$2 WHERE id=$1`, [d.id, e.message]);
+    }
+  }
+
+  // 2) Ro'yxatdan o'tganlarni bog'laymiz
+  const pending = await many(`
+    SELECT id FROM credit_devices
+    WHERE provider='amapi' AND status='pending' AND enroll_qr IS NOT NULL
+  `);
+  if (!pending.length) return;
+  const byId = new Set(pending.map((r) => r.id));
+
+  const list = await amapi.listDevices();
+  if (!list.ok) return;
+  for (const dev of list.devices) {
+    const cid = dev.extra && dev.extra.deviceId;
+    if (cid && byId.has(cid)) {
+      await run(`
+        UPDATE credit_devices
+        SET enrollment_id=$2, status='active', enrolled_at=now()
+        WHERE id=$1 AND status='pending'
+      `, [cid, dev.name]);
+      console.log(`[enroll] #${cid} ro'yxatdan o'tdi → ${dev.name}`);
+    }
+  }
+}
+
 /* ── Kechikkanlarni tekshirish ────────────────────────────────────────────
    Kuniga bir marta: muddat o'tgan kredit telefonlarni topadi, avval
    ogohlantiradi, grace kunidan keyin qulflaydi. Buyruqlar navbatga
@@ -116,6 +171,7 @@ async function main() {
 
   for (;;) {
     try {
+      await syncEnrollments();
       await runOverdue();
       await processQueue();
     } catch (e) {

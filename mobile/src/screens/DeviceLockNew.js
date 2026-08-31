@@ -43,6 +43,8 @@ export default function DeviceLockNew({ navigation, route }) {
   });
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState(null);   // yaratilgandan keyin QR
+  const [enrollQr, setEnrollQr] = useState(null); // worker tayyorlagan haqiqiy QR
+  const [enrolled, setEnrolled] = useState(false);// telefon ro'yxatdan o'tdimi
 
   const set = (k) => (v) => setF((s) => ({ ...s, [k]: v }));
   const num = (k) => (v) => setF((s) => ({ ...s, [k]: v.replace(/\D/g, '').slice(0, 12) }));
@@ -58,6 +60,25 @@ export default function DeviceLockNew({ navigation, route }) {
       notify('IMEI yozildi', 'ok');
     }
   }, [route?.params?.scanned]);
+
+
+  /* Yaratilgach: worker AMAPI'dan haqiqiy QR tayyorlaydi va telefon
+     skanerlab ro'yxatdan o'tishini kutamiz. Har 3 soniyada tekshiramiz. */
+  useEffect(() => {
+    if (!created) return undefined;
+    let alive = true;
+    const tick = async () => {
+      const { data } = await db.from('credit_devices')
+        .select('enroll_qr, enroll_error, enrollment_id, status')
+        .eq('id', created.id).single();
+      if (!alive || !data) return;
+      if (data.enroll_qr && !enrollQr) setEnrollQr(data.enroll_qr);
+      if (data.status === 'active' || data.enrollment_id) { setEnrolled(true); alive = false; }
+    };
+    tick();
+    const iv = setInterval(tick, 3000);
+    return () => { alive = false; clearInterval(iv); };
+  }, [created]);
 
   const plan = useMemo(() => {
     const price = parseInt(f.price, 10) || 0;
@@ -113,15 +134,32 @@ export default function DeviceLockNew({ navigation, route }) {
     setCreated(dev);
   };
 
+  /* Telefon ro'yxatdan o'tib bo'ldi — masofadan qulflash tayyor */
+  if (created && enrolled) {
+    return (
+      <Screen>
+        <Header title="Ro'yxatga olindi" onBack={() => navigation.navigate('KreditQulf')} />
+        <Card pad={22} style={{ alignItems: 'center' }}>
+          <Icon name="shield" size={46} color={t.ok} fill />
+          <Txt size={18} weight="700" style={{ marginTop: 12 }}>Telefon ro'yxatdan o'tdi</Txt>
+          <Txt size={13} color={t.t3} style={{ marginTop: 6, textAlign: 'center', lineHeight: 20 }}>
+            {created.model} endi MyBazzar boshqaruvida. To'lov kechiksa masofadan
+            qulflanadi, to'langach avtomatik ochiladi.
+          </Txt>
+        </Card>
+        <Btn title="Tayyor" size="xl" full style={{ marginTop: 18 }}
+          onPress={() => navigation.navigate('KreditQulf')} />
+      </Screen>
+    );
+  }
+
   /* ── Yaratilgandan keyin: ro'yxatga olish QR ── */
   if (created) {
     /* QR ichida qurilma ID va IMEI. Haqiqiy enrollment token Google
        Cloud sozlangach amapi.makeEnrollmentToken'dan keladi — u yerda
        Google'ning tayyor QR JSON'i bo'ladi. Shu paytgacha QR do'kon
        ichki ro'yxatga olish uchun. */
-    const payload = JSON.stringify({
-      mb: 'device-enroll', id: created.id, imei: created.imei, store: d.storeId,
-    });
+    const qrValue = enrollQr;   // worker AMAPI'dan tayyorlagan haqiqiy Google QR
 
     return (
       <Screen>
@@ -139,7 +177,14 @@ export default function DeviceLockNew({ navigation, route }) {
 
         <Card pad={18} style={{ alignItems: 'center' }}>
           <View style={{ padding: 14, backgroundColor: '#fff', borderRadius: R.md }}>
-            <QRCode value={payload} size={200} />
+            {qrValue
+              ? <QRCode value={qrValue} size={240} ecl="L" />
+              : (
+                <View style={{ width: 240, height: 240, alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name="refresh" size={26} color="#999" />
+                  <Txt size={12} color="#999" style={{ marginTop: 8 }}>QR tayyorlanmoqda…</Txt>
+                </View>
+              )}
           </View>
           <Txt size={13} color={t.t2} style={{ marginTop: 14, textAlign: 'center', lineHeight: 20 }}>
             1. Telefonni <Txt weight="600">zavod holatida</Txt> yoqing{'\n'}
@@ -151,9 +196,9 @@ export default function DeviceLockNew({ navigation, route }) {
         <Card pad={13} border={t.accdim} style={{ marginTop: 12, flexDirection: 'row', gap: 10 }}>
           <Icon name="info" size={17} color={t.acc} />
           <Txt size={11.5} color={t.t3} style={{ flex: 1, lineHeight: 17 }}>
-            Google Cloud ulanmaguncha bu QR do‘kon ichki hisobi uchun. Ulangach
-            u telefonni to‘g‘ridan-to‘g‘ri MyBazzar boshqaruviga qo‘shadi va
-            masofadan qulflash ishlaydi.
+            Skanerlangach telefon to‘g‘ridan-to‘g‘ri MyBazzar boshqaruviga
+            qo‘shiladi. Shu ekran ochiq tursin — ro‘yxatdan o‘tishi o‘zi
+            tasdiqlanadi.
           </Txt>
         </Card>
 
