@@ -4,6 +4,17 @@ O'zbekiston do'konlari uchun savdo boshqaruv platformasi. Bitta backend'da
 ishlaydigan **veb ilova** va **mobil ilova**, ustiga **Telegram bot** va
 **masofadan telefon qulflash** tizimi.
 
+> ## 📌 Bu fayl — tirik jurnal
+>
+> Har bir ish tugagach shu faylga yoziladi:
+> - bajarilgani → **§9 Bajarilgan ishlar** (sana bilan)
+> - qolgani / yangi kelishilgani → **§10 Qilinishi kerak** (ustuvorligi bilan)
+> - topilgan tuzoq yoki xato sababi → **§8 Tuzoqlar** (takrorlanmasligi uchun)
+>
+> Ish tugagach uni §10 dan olib §9 ga ko'chiring.
+> **Maxfiy qiymat yozilmaydi** — token, parol, kalit faqat serverdagi joyi
+> ko'rsatiladi (bu fayl GitHub'ga ketadi).
+
 ---
 
 ## 1. Texnik asos
@@ -192,17 +203,71 @@ psql -d mybazzar -c "NOTIFY pgrst, 'reload schema';"
 
 ---
 
-## 9. Ochiq ishlar
+## 9. Bajarilgan ishlar
 
-1. **Qulflashni haqiqiy telefonda sinash** — server tomoni to'liq sinalgan,
-   lekin zavod holatidagi Android hali skanerlanmagan. Tizimning asosiy
-   va'dasi shunda.
+### 2026-08-31
+
+**Masofadan qulflash (AMAPI) — noldan oxirigacha**
+- Google Cloud loyihasi `mybazzar-507001`, AMAPI yoqildi, xizmat hisobi
+  yaratildi va unga Owner roli berildi (`signupUrls.create` shuni talab qildi)
+- Korxona yaratildi: **`enterprises/LC01xcdxh0`** (Managed Google Play)
+- Ikkita siyosat: `credit-default` va `credit-locked`
+- Qulflash **siyosat almashtirishga** o'tkazildi (bir martalik `LOCK`
+  buyrug'i yaramasdi — mijoz PIN bilan ochib ishlatardi)
+- `lock-worker` ga enrollment ko'prigi qo'shildi: pending qurilmaga AMAPI'dan
+  haqiqiy QR olib beradi, telefon ro'yxatdan o'tgach `enrollment_id` +
+  `active` qiladi. Sinovda tasdiqlandi (`[enroll] #4 uchun QR tayyorlandi`)
+- Ilova endi **haqiqiy Google QR** ko'rsatadi (avval soxta ichki QR edi),
+  ro'yxatdan o'tishni o'zi kuzatib tasdiqlaydi
+- Worker javob tezligi 30s → 7s
+
+**Kredit telefonlar ekrani boyitildi**
+- `credit_device_view` yaratildi (qoldiq, kechikish, keyingi to'lov, oy progressi)
+- Veb va mobil: qolgan qarz, keyingi to'lov/kechikish, N/M oy, moliyaviy xulosa
+- **"To'lov qabul qilish"** tugmasi qo'shildi (ilgari faqat jadval oyiga
+  bosish kerak edi — egasi topa olmadi)
+- "Faol" kartasi qulflanganni ham sanayotgani tuzatildi
+
+**Landing sahifa qayta yozildi**
+- Mahsulot maketi (brauzer oynasi ichida dashboard), 3 ta spotlight bo'lim
+  (IMEI, qulflash, AI), scroll-animatsiya, mobil-responsive
+- Oy/quyosh almashtirgich — landing va ilova yuqori panelida
+
+**Creator paneli**
+- Foydalanuvchilar **do'kon direktori ostida guruhlandi**, xodimlar tugma
+  bilan ochiladi
+- **IMEI Block** menyusi: do'kon kesimida IMEI soni × narx = summa, davr
+  filtri, do'kon bo'yicha tafsilot
+- `platform_settings` jadvali + sozlamalarda IMEI narxi
+- Hisob asosi: **qulflashga ro'yxatdan o'tgan har IMEI bir marta**
+
+**Do'kon turi**
+- `storeType` bo'yicha menyu va marshrut filtri qo'shildi — "Kredit
+  telefonlar" faqat telefon do'konida (veb + mobil)
+- Tovar qo'shishdagi "Telefon" tabi oddiy do'konda yashirildi
+
+**Tuzatilgan xatolar**
+- **AI Analitika qora ekrani** — `forecast` "tayyor emas" holatda `history`
+  qaytarmasdi, `undefined.map()` butun ilovani o'chirardi. Har yangi do'konda
+  takrorlanardi. Qaytish shakli bir xillashtirildi
+- **`PageErrorBoundary`** qo'shildi — endi sahifa xatosi butun ilovani
+  o'chirmaydi, menyu tirik qoladi
+- **⚙️ tugmasi** `/settings` ga qattiq bog'langan edi — creator o'z
+  sozlamalariga kira olmasdi. Endi `ROLE_NAV` dan olinadi
+
+---
+
+## 10. Qilinishi kerak
+
+1. **Qulflashni haqiqiy telefonda sinash** ⚠️ — server tomoni to'liq
+   sinalgan, lekin zavod holatidagi Android hali skanerlanmagan. Tizimning
+   asosiy va'dasi shunda. Kerak: yangi yoki tozalangan Android telefon
 2. **Tovar variantlari** (`o'lcham × rang`, har biriga barcode) — kiyim
    do'koni uchun eng katta yetishmovchilik. Hozir har variant alohida tovar
-   sifatida kiritiladi: ishlaydi, lekin ko'p yozish kerak.
+   sifatida kiritiladi: ishlaydi, lekin ko'p yozish kerak
 3. **O'lchov birligi + kasrli qoldiq** (kg, metr, litr) — qurilish va
-   oziq-ovqatni ochadi.
+   oziq-ovqatni ochadi (`products.stock` hozir butun son)
 4. **Seriya raqami har turga** — hozir S/N faqat telefon rejimida
-   (quyosh paneli, maishiy texnika kafolati uchun kerak).
+   (quyosh paneli, maishiy texnika kafolati uchun kerak)
 5. **Parollar bazada ochiq matnda** — shifrlashga o'tish kerak (ilovaning
-   o'zi bu haqda ogohlantiradi).
+   o'zi bu haqda ogohlantiradi)
