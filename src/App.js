@@ -25,10 +25,14 @@ import Suppliers from './pages/Suppliers';
 import DeviceLock from './pages/DeviceLock';
 import { storeSlugFromHost } from './utils/storeHost';
 
-function PrivateRoute({ children, permission }) {
+function PrivateRoute({ children, permission, storeType }) {
   const { user, hasPermission } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
   if (permission && !hasPermission(permission)) return <Navigate to="/no-access" replace />;
+  // Do'kon turiga bog'liq bo'lim (masalan kredit telefonlar — faqat telefon do'koni)
+  if (storeType && (user.storeType || 'general') !== storeType) {
+    return <Navigate to="/no-access" replace />;
+  }
   return children;
 }
 
@@ -69,6 +73,7 @@ function AppRoutes() {
         <Route path="creator" element={<PrivateRoute permission="dashboard_creator"><CreatorPanel page="dashboard" /></PrivateRoute>} />
         <Route path="creator/stores" element={<PrivateRoute permission="dashboard_creator"><CreatorPanel page="stores" /></PrivateRoute>} />
         <Route path="creator/users" element={<PrivateRoute permission="dashboard_creator"><CreatorPanel page="users" /></PrivateRoute>} />
+        <Route path="creator/imei" element={<PrivateRoute permission="dashboard_creator"><CreatorPanel page="imei" /></PrivateRoute>} />
         <Route path="creator/stats" element={<PrivateRoute permission="dashboard_creator"><CreatorPanel page="stats" /></PrivateRoute>} />
         <Route path="creator/settings" element={<PrivateRoute permission="dashboard_creator"><CreatorPanel page="settings" /></PrivateRoute>} />
         {/* Owner + Manager */}
@@ -77,7 +82,7 @@ function AppRoutes() {
         <Route path="inventory" element={<PrivateRoute permission="inventory"><Inventory /></PrivateRoute>} />
         <Route path="kirim" element={<PrivateRoute permission="inventory"><BulkReceive /></PrivateRoute>} />
         <Route path="suppliers" element={<PrivateRoute permission="inventory"><Suppliers /></PrivateRoute>} />
-        <Route path="credit" element={<PrivateRoute permission="nasiya"><DeviceLock /></PrivateRoute>} />
+        <Route path="credit" element={<PrivateRoute permission="nasiya" storeType="phone"><DeviceLock /></PrivateRoute>} />
         <Route path="customers" element={<PrivateRoute permission="crm"><CRM /></PrivateRoute>} />
         <Route path="orders" element={<PrivateRoute permission="crm"><Orders /></PrivateRoute>} />
         <Route path="dealer" element={<PrivateRoute permission="dealer_dashboard"><DealerPortal /></PrivateRoute>} />

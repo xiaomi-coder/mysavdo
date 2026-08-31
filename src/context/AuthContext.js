@@ -59,6 +59,7 @@ export const ROLE_NAV = {
     { to: '/creator', icon: 'squares-four', label: 'dashboard' },
     { to: '/creator/stores', icon: 'storefront', label: "Do'konlar" },
     { to: '/creator/users', icon: 'users-three', label: 'Foydalanuvchilar' },
+    { to: '/creator/imei', icon: 'lock-simple', label: 'IMEI Block' },
     { to: '/creator/stats', icon: 'chart-bar', label: 'Umumiy Statistika' },
     { to: '/creator/settings', icon: 'gear', label: 'settings' },
   ],
@@ -71,7 +72,8 @@ export const ROLE_NAV = {
     { to: '/customers', icon: 'users-three', label: 'crm', perm: 'crm' },
     { to: '/orders', icon: 'shopping-bag', label: 'Buyurtmalar', badge: 'newOrders', perm: 'crm' },
     { to: '/nasiya', icon: 'hand-coins', label: 'nasiya', badge: 'urgentDebts', perm: 'nasiya' },
-    { to: '/credit', icon: 'lock-simple', label: 'Kredit telefonlar', perm: 'nasiya' },
+    // Faqat telefon do'konida — IMEI/qulflash oddiy do'konga keraksiz
+    { to: '/credit', icon: 'lock-simple', label: 'Kredit telefonlar', perm: 'nasiya', storeType: 'phone' },
     { to: '/finance', icon: 'wallet', label: 'finance', perm: 'finance' },
     { to: '/reports', icon: 'chart-bar', label: 'reports', perm: 'reports' },
     { to: '/analytics', icon: 'sparkle', label: 'aiAnalytics', perm: 'analytics' },

@@ -19,7 +19,15 @@ export default function Sidebar() {
   );
 
   // Xodimga berilgan ruxsatlarga ko'ra menyu qisqaradi
-  const nav = (ROLE_NAV[user?.role] || []).filter(i => !i.perm || hasPermission(i.perm));
+  /* Menyu roli, ruxsati va do'kon turiga qarab filtrlanadi.
+     storeType belgilangan bo'lim faqat o'sha turdagi do'konda ko'rinadi. */
+  const nav = (ROLE_NAV[user?.role] || []).filter(i =>
+    (!i.perm || hasPermission(i.perm))
+    && (!i.storeType || i.storeType === (user?.storeType || 'general')));
+  /* Pastdagi ⚙️ — rolning o'z sozlamalar sahifasiga. Creator uchun bu
+     /creator/settings, do'kon egasi uchun /settings. Roli sozlamasiz
+     bo'lsa (masalan sotuvchi) tugma umuman ko'rsatilmaydi. */
+  const settingsPath = nav.find(i => String(i.to).endsWith('settings'))?.to;
 
   const toggle = () => {
     setCollapsed(c => {
@@ -151,11 +159,13 @@ export default function Sidebar() {
               <div style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>{user?.label}</div>
             </div>
             <div style={{ display: 'flex', gap: 2 }}>
-              <Btn
-                variant="ghost" iconOnly icon="gear" title="Sozlamalar"
-                onClick={() => navigate('/settings')}
-                style={{ width: 30, height: 30, color: 'var(--color-neutral-400)' }}
-              />
+              {settingsPath && (
+                <Btn
+                  variant="ghost" iconOnly icon="gear" title="Sozlamalar"
+                  onClick={() => navigate(settingsPath)}
+                  style={{ width: 30, height: 30, color: 'var(--color-neutral-400)' }}
+                />
+              )}
               <Btn
                 variant="ghost" iconOnly icon="sign-out" title="Chiqish"
                 onClick={handleLogout}

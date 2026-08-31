@@ -92,12 +92,13 @@ export default function Analytics() {
   const thin = r.salesCount < 8;
 
   /* Prognoz grafigi: o'tgan 14 kun + keyingi 7 kun bitta chiziqda */
+  const history = r.forecast.history || [];
   const chart = [
-    ...r.forecast.history.map(h => ({
+    ...history.map(h => ({
       label: new Date(h.ts).getDate() + '',
       actual: h.value,
     })),
-    ...r.forecast.days.map(d => ({
+    ...(r.forecast.days || []).map(d => ({
       label: new Date(d.ts).getDate() + '',
       forecast: d.value,
     })),
@@ -189,7 +190,7 @@ export default function Analytics() {
                       borderRadius: 8, fontSize: 12,
                     }}
                   />
-                  <ReferenceLine x={chart[r.forecast.history.length - 1]?.label}
+                  <ReferenceLine x={chart[history.length - 1]?.label}
                     stroke="var(--color-accent)" strokeDasharray="3 3" />
                   <Bar dataKey="actual" fill="var(--color-neutral-700)" radius={[3, 3, 0, 0]} />
                   <Line type="monotone" dataKey="forecast" stroke="var(--color-accent)"

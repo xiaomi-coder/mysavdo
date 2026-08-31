@@ -28,6 +28,8 @@ export default function More({ navigation }) {
   const [daySheet, setDaySheet] = useState(false);
 
   const version = Constants.expoConfig?.version || '1.0.0';
+  // IMEI/qulflash bo'limlari faqat telefon do'konida ma'noga ega
+  const isPhoneStore = store?.store_type === 'phone';
 
   const logout = () => {
     Alert.alert(tr('Chiqish'), tr('Hisobdan chiqasizmi?'), [
@@ -41,7 +43,7 @@ export default function More({ navigation }) {
     { icon: 'users', label: 'Mijozlar (CRM)', onPress: () => navigation.navigate('Mijozlar') },
     { icon: 'handshake', label: 'Nasiya', onPress: () => navigation.navigate('Nasiya'),
       badge: d.alerts.overdue.length },
-    isOwner && {
+    isOwner && isPhoneStore && {
       icon: 'lock',
       label: 'Kredit telefonlar',
       sub: 'Nasiya telefonni masofadan qulflash',

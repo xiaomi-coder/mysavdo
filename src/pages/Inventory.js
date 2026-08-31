@@ -645,7 +645,9 @@ function ProductModal({ storeId, isPhoneStore, categories, product, onClose, onS
       </>
     }>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {!editing && (
+        {/* Rejim tanlash faqat telefon do'konida — u telefon ham, aksessuar
+            ham sotadi. Oddiy do'konda "Telefon" varianti keraksiz. */}
+        {!editing && isPhoneStore && (
           <Seg
             style={{ width: '100%' }}
             options={[

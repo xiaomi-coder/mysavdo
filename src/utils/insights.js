@@ -99,7 +99,13 @@ function forecast(transactions, now) {
   const active = hist.filter((d) => d.value !== 0);
 
   if (active.length < 5) {
-    return { ready: false, reason: 'kam', days: [], week: 0 };
+    // Shakl "ready" holat bilan bir xil bo'lishi kerak — chaqiruvchi
+    // history/days ni shartsiz o'qiydi, kalit yo'qolsa ekran qulaydi.
+    return {
+      ready: false, reason: 'kam', days: [], week: 0,
+      history: [], lastWeek: 0, change: null, confidence: 'past',
+      band: 0, trend: 'flat',
+    };
   }
 
   // Hafta kuni koeffitsienti

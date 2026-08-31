@@ -39,16 +39,27 @@ export default function CreatorPanel({ page = 'dashboard' }) {
   const [userForm, setUserForm] = useState(null);
   const [confirm, setConfirm] = useState(null);       // { type, store }
 
+  /* IMEI Block — qulflash xizmati hisob-kitobi */
+  const [imeis, setImeis] = useState([]);
+  const [price, setPrice] = useState(0);
+  const [period, setPeriod] = useState('month');      // month | prev | all
+  const [imeiStore, setImeiStore] = useState(null);   // tafsilot uchun do'kon
+
   const load = useCallback(async () => {
     setLoading(true);
-    const [storeRes, userRes, txnRes] = await Promise.all([
+    const [storeRes, userRes, txnRes, imeiRes, cfgRes] = await Promise.all([
       supabase.from('stores').select('*').order('id'),
       supabase.from('users').select('*'),
       supabase.from('transactions').select('store_id, total').eq('status', 'completed')
         .gte('date', new Date(Date.now() - 365 * 86400000).toISOString()),
+      supabase.from('imei_billing_view').select('*')
+        .order('created_at', { ascending: false }).limit(5000),
+      supabase.from('platform_settings').select('value').eq('key', 'imei_price'),
     ]);
     setStores(storeRes.data || []);
     setUsers(userRes.data || []);
+    setImeis(imeiRes.data || []);
+    setPrice(Number(cfgRes.data?.[0]?.value) || 0);
 
     const byStore = {};
     (txnRes.data || []).forEach(t => {
@@ -87,6 +98,39 @@ export default function CreatorPanel({ page = 'dashboard' }) {
   }, [stores, search]);
 
   const staffCount = users.filter(u => u.role !== 'creator').length;
+
+  /* ── IMEI Block hisob-kitobi ────────────────────────────────────────────
+     Har bir qulflash tizimiga ro'yxatdan o'tgan IMEI bir marta hisoblanadi. */
+  const periodImeis = useMemo(() => {
+    if (period === 'all') return imeis;
+    const now = new Date();
+    const from = new Date(now.getFullYear(), now.getMonth() - (period === 'prev' ? 1 : 0), 1);
+    const to = new Date(now.getFullYear(), now.getMonth() - (period === 'prev' ? 1 : 0) + 1, 1);
+    return imeis.filter(x => {
+      const d = new Date(x.created_at);
+      return d >= from && d < to;
+    });
+  }, [imeis, period]);
+
+  const billing = useMemo(() => {
+    const byStore = new Map();
+    periodImeis.forEach(x => {
+      const cur = byStore.get(x.store_id) || { store_id: x.store_id, name: x.store_name, count: 0, last: null };
+      cur.count += 1;
+      if (!cur.last || new Date(x.created_at) > new Date(cur.last)) cur.last = x.created_at;
+      byStore.set(x.store_id, cur);
+    });
+    const rows = [...byStore.values()]
+      .map(r => ({ ...r, amount: r.count * price }))
+      .sort((a, b) => b.count - a.count);
+    return {
+      rows,
+      count: periodImeis.length,
+      amount: periodImeis.length * price,
+      allCount: imeis.length,
+      allAmount: imeis.length * price,
+    };
+  }, [periodImeis, imeis, price]);
 
   return (
     <Page style={{ padding: 0, gap: 0 }}>
@@ -219,20 +263,7 @@ export default function CreatorPanel({ page = 'dashboard' }) {
 
             <Card padding="var(--space-6)">
               {loading ? <SkeletonRows count={4} widths={['100%']} /> : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="table" style={{ fontSize: 13 }}>
-                    <thead>
-                      <tr><th>Foydalanuvchi</th><th>Do‘kon</th><th>Rol</th><th>Parol</th><th>Holat</th><th /></tr>
-                    </thead>
-                    <tbody>
-                      {users.map(u => (
-                        <UserRow key={u.id} user={u}
-                          store={stores.find(s => s.id === u.store_id)}
-                          onEdit={() => setUserForm(u)} />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <UserGroups users={users} stores={stores} onEdit={setUserForm} />
               )}
             </Card>
 
@@ -243,12 +274,98 @@ export default function CreatorPanel({ page = 'dashboard' }) {
           </>
         )}
 
+        {page === 'imei' && (
+          <>
+            {/* Xulosa */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
+              <StatCard label="Davr bo‘yicha IMEI" value={billing.count} unit="ta" icon="lock-simple" />
+              <StatCard label="Davr bo‘yicha summa" value={money(billing.amount)} unit="so‘m"
+                icon="wallet" accent="var(--color-accent)" />
+              <StatCard label="Bitta IMEI narxi" value={money(price)} unit="so‘m" icon="tag" />
+              <StatCard label="Jami (butun davr)" value={billing.allCount} unit="ta" icon="chart-bar" />
+            </div>
+
+            {/* Davr tanlash */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {[['month', 'Bu oy'], ['prev', 'O‘tgan oy'], ['all', 'Hammasi']].map(([v, l]) => (
+                  <button key={v} onClick={() => setPeriod(v)}
+                    style={{
+                      padding: '7px 14px', borderRadius: 16, cursor: 'pointer', font: 'inherit', fontSize: 12.5,
+                      border: `1px solid ${period === v ? 'var(--color-accent)' : 'var(--color-divider)'}`,
+                      background: period === v ? 'var(--color-accent-900)' : 'transparent',
+                      color: period === v ? 'var(--color-accent)' : 'var(--color-neutral-400)',
+                    }}>{l}</button>
+                ))}
+              </div>
+              <div style={{ flex: 1 }} />
+              <div style={{ fontSize: 12, color: 'var(--color-neutral-500)' }}>
+                Har bir qulflashga ro‘yxatdan o‘tgan IMEI bir marta hisoblanadi
+              </div>
+            </div>
+
+            {/* Do'konlar kesimida */}
+            <Card padding={0}>
+              {loading ? <SkeletonRows count={4} widths={['100%']} /> : billing.rows.length === 0 ? (
+                <div style={{ padding: 20 }}>
+                  <EmptyState icon="lock-simple" text="Bu davrda IMEI yo‘q"
+                    sub="Do‘kon qulflash tizimiga telefon qo‘shsa shu yerda ko‘rinadi" />
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="table" style={{ fontSize: 13 }}>
+                    <thead>
+                      <tr>
+                        <th>Do‘kon</th>
+                        <th style={{ textAlign: 'right' }}>IMEI</th>
+                        <th style={{ textAlign: 'right' }}>Narx</th>
+                        <th style={{ textAlign: 'right' }}>Summa</th>
+                        <th>Oxirgi</th>
+                        <th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {billing.rows.map(r => (
+                        <tr key={r.store_id} style={{ cursor: 'pointer' }}
+                          onClick={() => setImeiStore(r)}>
+                          <td style={{ fontWeight: 500 }}>{r.name}</td>
+                          <td className="num" style={{ textAlign: 'right' }}>{r.count}</td>
+                          <td className="num" style={{ textAlign: 'right', color: 'var(--color-neutral-500)' }}>
+                            {money(price)}
+                          </td>
+                          <td className="num" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--color-accent)' }}>
+                            {money(r.amount)}
+                          </td>
+                          <td style={{ color: 'var(--color-neutral-500)', fontSize: 12 }}>
+                            {r.last ? new Date(r.last).toLocaleDateString('uz-UZ') : '—'}
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <Icon name="caret-right" size={15} color="var(--color-neutral-500)" />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ borderTop: '2px solid var(--color-divider)' }}>
+                        <td style={{ fontWeight: 600 }}>Jami</td>
+                        <td className="num" style={{ textAlign: 'right', fontWeight: 600 }}>{billing.count}</td>
+                        <td />
+                        <td className="num" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--color-accent)' }}>
+                          {money(billing.amount)}
+                        </td>
+                        <td colSpan={2} />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </Card>
+          </>
+        )}
+
         {page === 'settings' && (
-          <Card padding="var(--space-6)" gap={12}>
-            <SectionHeader title="Creator sozlamalari" />
-            <EmptyState icon="gear" text="Platforma sozlamalari tayyorlanmoqda"
-              sub="Tariflar, limitlar va global parametrlar shu yerda bo‘ladi" />
-          </Card>
+          <PriceSettings price={price} onSaved={(v) => { setPrice(v); notify('Narx saqlandi'); }}
+            onError={m => notify(m, 'dang')} />
         )}
       </div>
 
@@ -270,6 +387,51 @@ export default function CreatorPanel({ page = 'dashboard' }) {
           onSaved={(name) => { setUserForm(null); load(); notify(`${name} saqlandi`); }}
           onError={m => notify(m, 'dang')}
         />
+      )}
+
+      {imeiStore && (
+        <Modal title={`${imeiStore.name} — IMEI ro‘yxati`} onClose={() => setImeiStore(null)} wide
+          actions={<Btn variant="secondary" onClick={() => setImeiStore(null)}>Yopish</Btn>}>
+          <div style={{
+            display: 'flex', gap: 20, marginBottom: 14, paddingBottom: 14,
+            borderBottom: '1px solid var(--color-divider)',
+          }}>
+            <div>
+              <div style={{ fontSize: 12, color: 'var(--color-neutral-500)' }}>IMEI soni</div>
+              <div className="num" style={{ fontSize: 20, fontWeight: 600 }}>{imeiStore.count}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: 'var(--color-neutral-500)' }}>Bitta narxi</div>
+              <div className="num" style={{ fontSize: 20, fontWeight: 600 }}>{money(price)}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: 'var(--color-neutral-500)' }}>Jami to‘lov</div>
+              <div className="num" style={{ fontSize: 20, fontWeight: 700, color: 'var(--color-accent)' }}>
+                {money(imeiStore.amount)}
+              </div>
+            </div>
+          </div>
+          <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+            <table className="table" style={{ fontSize: 12.5 }}>
+              <thead>
+                <tr><th>IMEI</th><th>Model</th><th>Mijoz</th><th>Sana</th><th>Holat</th></tr>
+              </thead>
+              <tbody>
+                {periodImeis.filter(x => x.store_id === imeiStore.store_id).map(x => (
+                  <tr key={x.id}>
+                    <td className="num">{x.imei}</td>
+                    <td>{x.model || '—'}</td>
+                    <td>{x.client_name || '—'}</td>
+                    <td style={{ color: 'var(--color-neutral-500)' }}>
+                      {new Date(x.created_at).toLocaleDateString('uz-UZ')}
+                    </td>
+                    <td style={{ color: 'var(--color-neutral-400)' }}>{x.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Modal>
       )}
 
       {confirm?.type === 'pause' && (
@@ -309,8 +471,168 @@ export default function CreatorPanel({ page = 'dashboard' }) {
   );
 }
 
+/* ── Foydalanuvchilar: do'kon direktori ostida guruhlangan ─────────────────
+   Yuqori qatorda direktor (do'kon egasi) turadi, uning xodimlari esa
+   tugma bosilganda ochiladi. Creator alohida "Platforma" guruhida. */
+function UserGroups({ users, stores, onEdit }) {
+  const platform = users.filter(u => u.role === 'creator');
+  const groups = stores.map(s => ({
+    store: s,
+    director: users.find(u => u.store_id === s.id && u.role === 'owner'),
+    staff: users.filter(u => u.store_id === s.id && u.role !== 'owner'),
+  })).filter(g => g.director || g.staff.length);
+  const orphans = users.filter(u =>
+    u.role !== 'creator' && !stores.some(s => s.id === u.store_id));
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table className="table" style={{ fontSize: 13 }}>
+        <thead>
+          <tr><th>Foydalanuvchi</th><th>Do‘kon</th><th>Rol</th><th>Parol</th><th>Holat</th><th /></tr>
+        </thead>
+        <tbody>
+          {platform.length > 0 && (
+            <>
+              <GroupHeader label="Platforma" icon="crown-simple" />
+              {platform.map(u => (
+                <UserRow key={u.id} user={u} store={null} onEdit={() => onEdit(u)} />
+              ))}
+            </>
+          )}
+
+          {groups.map(g => (
+            <StoreGroup key={g.store.id} group={g} onEdit={onEdit} />
+          ))}
+
+          {orphans.length > 0 && (
+            <>
+              <GroupHeader label="Do‘konsiz" icon="warning-circle" />
+              {orphans.map(u => (
+                <UserRow key={u.id} user={u} store={null} onEdit={() => onEdit(u)} />
+              ))}
+            </>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function GroupHeader({ label, icon, right }) {
+  return (
+    <tr>
+      <td colSpan={6} style={{
+        padding: '10px 12px', background: 'color-mix(in srgb, var(--color-text) 4%, transparent)',
+        borderTop: '1px solid var(--color-divider)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Icon name={icon} size={14} color="var(--color-accent)" />
+          <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.03em' }}>{label}</span>
+          <div style={{ flex: 1 }} />
+          {right}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function StoreGroup({ group, onEdit }) {
+  const { store, director, staff } = group;
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <GroupHeader
+        label={store.name}
+        icon="storefront"
+        right={staff.length > 0 ? (
+          <button
+            onClick={() => setOpen(v => !v)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+              font: 'inherit', fontSize: 12, padding: '4px 10px', borderRadius: 14,
+              border: `1px solid ${open ? 'var(--color-accent)' : 'var(--color-divider)'}`,
+              background: open ? 'var(--color-accent-900)' : 'transparent',
+              color: open ? 'var(--color-accent)' : 'var(--color-neutral-400)',
+            }}>
+            <Icon name={open ? 'caret-up' : 'caret-down'} size={12} />
+            {staff.length} xodim
+          </button>
+        ) : (
+          <span style={{ fontSize: 11.5, color: 'var(--color-neutral-600)' }}>xodim yo‘q</span>
+        )}
+      />
+
+      {director
+        ? <UserRow user={director} store={store} onEdit={() => onEdit(director)} />
+        : (
+          <tr>
+            <td colSpan={6} style={{ padding: '10px 12px', fontSize: 12.5, color: 'var(--warn)' }}>
+              <Icon name="warning" size={13} color="var(--warn)" style={{ marginRight: 6 }} />
+              Direktor tayinlanmagan
+            </td>
+          </tr>
+        )}
+
+      {open && staff.map(u => (
+        <UserRow key={u.id} user={u} store={store} onEdit={() => onEdit(u)} indent />
+      ))}
+    </>
+  );
+}
+
+/* ── Creator sozlamalari: IMEI narxi ──────────────────────────────────── */
+function PriceSettings({ price, onSaved, onError }) {
+  const [val, setVal] = useState(String(price || ''));
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { setVal(String(price || '')); }, [price]);
+
+  const save = async () => {
+    const v = parseInt(val, 10) || 0;
+    setSaving(true);
+    const { error } = await supabase.from('platform_settings')
+      .update({ value: String(v), updated_at: new Date().toISOString() })
+      .eq('key', 'imei_price');
+    setSaving(false);
+    if (error) { onError(`Saqlanmadi: ${error.message}`); return; }
+    onSaved(v);
+  };
+
+  const dirty = String(parseInt(val, 10) || 0) !== String(price || 0);
+
+  return (
+    <Card padding="var(--space-6)" gap={14}>
+      <SectionHeader title="IMEI Block tarifi"
+        hint="Qulflash tizimiga qo‘shilgan har bir IMEI uchun do‘kondan olinadigan to‘lov" />
+
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <Field label="Bitta IMEI narxi (so‘m)">
+          <input className="input num" inputMode="numeric" value={val}
+            onChange={e => setVal(e.target.value.replace(/\D/g, '').slice(0, 9))}
+            placeholder="5000" style={{ width: 180 }} />
+        </Field>
+        <Btn variant="primary" icon="check" onClick={save} loading={saving} disabled={!dirty}>
+          Saqlash
+        </Btn>
+      </div>
+
+      <div style={{
+        display: 'flex', gap: 9, alignItems: 'flex-start', padding: 12,
+        borderRadius: 'var(--radius-md)', background: 'var(--color-accent-900)',
+      }}>
+        <Icon name="info" size={16} color="var(--color-accent)" />
+        <span style={{ fontSize: 12, color: 'var(--color-neutral-400)', lineHeight: 1.6 }}>
+          Narx o‘zgarsa barcha hisob-kitob yangi narx bo‘yicha qayta hisoblanadi.
+          Har bir IMEI faqat bir marta hisoblanadi — takroriy skaner qo‘shimcha to‘lov keltirmaydi.
+        </span>
+      </div>
+    </Card>
+  );
+}
+
 /* ── Foydalanuvchi qatori (parolni ko'rsatish/nusxalash) ───────────────── */
-function UserRow({ user, store, onEdit }) {
+function UserRow({ user, store, onEdit, indent = false }) {
   const [reveal, setReveal] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -323,11 +645,19 @@ function UserRow({ user, store, onEdit }) {
   return (
     <tr>
       <td>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-          <Avatar initials={initialsOf(user.name)} size={28}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, paddingLeft: indent ? 26 : 0 }}>
+          {indent && (
+            <span style={{
+              width: 10, height: 10, marginLeft: -14, flex: 'none',
+              borderLeft: '1px solid var(--color-divider)',
+              borderBottom: '1px solid var(--color-divider)',
+              borderBottomLeftRadius: 3,
+            }} />
+          )}
+          <Avatar initials={initialsOf(user.name)} size={indent ? 25 : 28}
             color={user.role === 'owner' || user.role === 'creator' ? undefined : 'var(--color-neutral-800)'} />
           <div>
-            <div style={{ fontWeight: 500 }}>{user.name}</div>
+            <div style={{ fontWeight: indent ? 400 : 500 }}>{user.name}</div>
             <div style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>{user.email}</div>
           </div>
         </div>
@@ -450,7 +780,8 @@ function StoreForm({ store, takenSlugs = [], onClose, onSaved, onError }) {
         )}
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
-          <Field label="Do‘kon turi" hint="Telefon do‘konida IMEI maydonlari ochiladi">
+          <Field label="Do‘kon turi"
+            hint="Telefon do‘konida IMEI maydonlari va “Kredit telefonlar” (masofadan qulflash) bo‘limi ochiladi">
             <select className="input" value={f.store_type} onChange={e => set('store_type', e.target.value)}>
               <option value="general">Oddiy do‘kon</option>
               <option value="phone">Telefon do‘koni</option>
