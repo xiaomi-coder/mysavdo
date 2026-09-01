@@ -10,6 +10,9 @@ import {
   ImageSquare, Receipt, ArrowUUpLeft, WifiSlash, ArrowClockwise, Palette,
   Percent, ClockCounterClockwise, CurrencyCircleDollar, User, Info,
   DotsThreeVertical, Funnel, ArrowRight, Star, Truck, Note,
+  // Qulflash va IMEI ekranlari uchun — bular MAP da ishlatilgani holda
+  // import qilinmay qolgan edi va ilova ishga tushishida qulatgan
+  LockSimpleOpen, Lock, QrCode, DeviceMobile, CalendarBlank,
 } from 'phosphor-react-native';
 import { useTheme } from '../ThemeContext';
 
@@ -37,7 +40,7 @@ const MAP = {
   'dots-vertical': DotsThreeVertical, funnel: Funnel, 'arrow-right': ArrowRight,
   star: Star, truck: Truck, note: Note,
   'lock-simple-open': LockSimpleOpen, 'lock-closed': Lock,
-  'qr-code': QrCode, phone_device: DeviceMobile,
+  'qr-code': QrCode, phone_device: DeviceMobile, calendar: CalendarBlank,
 };
 
 export default function Icon({ name, size = 20, color, fill, weight, style }) {

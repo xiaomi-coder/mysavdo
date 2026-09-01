@@ -361,6 +361,11 @@ function DeviceSheet({ device, onClose, onChanged }) {
         ) : schedule.map((s) => {
           const full = Number(s.paid_amount) >= Number(s.amount);
           const overdue = !full && new Date(s.due_date) < new Date();
+          // Qisman to'langan oy uchun QOLGAN summa ko'rsatiladi.
+          // Ilgari to'liq oylik turaverardi va to'lovdan keyin ham
+          // o'zgarmasdi — do'konchi qancha qolganini bilmasdi.
+          const partial = Number(s.paid_amount) > 0 && !full;
+          const left = Number(s.amount) - Number(s.paid_amount || 0);
           return (
             <Tap
               key={s.id}
@@ -384,7 +389,14 @@ function DeviceSheet({ device, onClose, onChanged }) {
                 <Txt size={13.5} color={full ? t.t3 : t.t1}>{s.n}-oy · {dateShort(s.due_date)}</Txt>
                 {overdue ? <Txt size={11} color={t.err}>muddati o‘tgan</Txt> : null}
               </View>
-              <Txt size={13.5} weight="500" color={full ? t.t4 : t.t1}>{money(s.amount)}</Txt>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Txt size={13.5} weight="500" color={full ? t.t4 : t.t1}>
+                  {money(full ? s.amount : left)}
+                </Txt>
+                {partial ? (
+                  <Txt size={11} color={t.ok} mono>{money(s.paid_amount)} to‘landi</Txt>
+                ) : null}
+              </View>
               {!full && device.status !== 'released'
                 ? <Icon name="caret-right" size={15} color={t.t4} />
                 : null}

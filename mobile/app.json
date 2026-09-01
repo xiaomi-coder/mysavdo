@@ -32,12 +32,25 @@
         "android.permission.CAMERA",
         "android.permission.VIBRATE",
         "android.permission.INTERNET",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.VIBRATE",
+        "android.permission.INTERNET",
         "android.permission.RECORD_AUDIO"
       ],
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.RECORD_AUDIO"
-      ]
+      ],
+      "runtimeVersion": {
+        "policy": "appVersion"
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -78,6 +91,12 @@
         "projectId": "3c3d12f8-a190-4b6d-8052-04cc9f191f28"
       }
     },
-    "owner": "xiaomi-coder"
+    "owner": "xiaomi-coder",
+    "updates": {
+      "url": "https://u.expo.dev/3c3d12f8-a190-4b6d-8052-04cc9f191f28"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
   }
 }

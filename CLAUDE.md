@@ -160,6 +160,9 @@ ishlatishda davom etadi.
 | `credit_device_view` | Qurilma + jadval agregatlari (qoldiq, kechikish, oy) |
 | `imei_billing_view` | Creator hisob-kitobi uchun IMEI ro'yxati |
 | `platform_settings` | Platforma sozlamalari (kalit/qiymat) |
+| `shifts` | Kassa smenasi (ochilgan/yopilgan, boshlang'ich va sanalgan pul) |
+| `shift_view` | Smena + kutilayotgan summa va **farq** (naqd bo'yicha) |
+| `move_stock(...)` | Qoldiqni o'zgartiradi — qisman qaytarish shu bilan |
 | `sync_product_photos()` | `photos[0]` ↔ `photo_url` mosligini saqlaydi |
 
 ---
@@ -200,10 +203,78 @@ psql -d mybazzar -c "NOTIFY pgrst, 'reload schema';"
   `babel.config.js` da plagin talab qiladi — bo'lmasa ilova qurilmada qulaydi.
 - **`products.stock` — butun son.** Kilogramm/litr yo'q, shuning uchun
   oziq-ovqat va vaznli savdo hozircha to'g'ri kelmaydi.
+- **Import qilinmagan ikonka butun mobil ilovani qulatadi.**
+  `mobile/src/ui/Icon.js` dagi `MAP` da nom ishlatilib, `phosphor-react-native`
+  dan import qilinmasa — `ReferenceError` modul yuklanishida chiqadi. Icon.js ni
+  hamma ekran import qilgani uchun ilova **splash'dan keyin darhol yopiladi**,
+  hech qanday xato oynasi ko'rsatmaydi. Metro buni **ushlamaydi** (bundle
+  muvaffaqiyatli yig'iladi), ESLint ham ushlamadi.
+  Tekshirish: `adb logcat` da `ReactNativeJS: ReferenceError: Property 'X'
+  doesn't exist`. Yoki `@babel/traverse` bilan `scope.hasBinding` orqali butun
+  papkani skanerlash — shu usul 4 ta yetishmayotgan importni topgan
+  (`LockSimpleOpen`, `Lock`, `QrCode`, `DeviceMobile`).
 
 ---
 
 ## 9. Bajarilgan ishlar
+
+### 2026-09-01
+
+**Tuzatish: to'lov jadvalida qolgan summa**
+- Kredit telefon jadvalida oy **to'liq summasi** ko'rsatilardi. 1 500 000 lik
+  oyga 1 000 000 to'langach ham 1 500 000 turaverardi — do'konchi qancha
+  qolganini bilmasdi
+- Baza to'g'ri ishlayotgani tekshirildi (`credit_pay` → `paid_amount`
+  to'g'ri yoziladi), xato faqat ekranda edi
+- Endi **qolgan summa** ko'rsatiladi, ostida yashil rangda "X to'landi"
+- Veb va mobil — ikkalasi ham. Mobilga **EAS Update orqali** jo'natildi
+  (APK qayta o'rnatilmadi — birinchi marta ishlatildi)
+
+**Mobil xatolar (M1–M3)**
+- **M1** Nasiya filtrlari teng ulushli qilindi (`flex: 1`) — "To‘langan"
+  endi chetga chiqmaydi. `Chip` ga `numberOfLines` + `flexShrink` qo‘shildi,
+  bu butun ilovada tor joyda matn kesilishini ta’minlaydi
+- **M2** Haftalik grafik: har ustun tepasida **summa** (1.2mln, 450m),
+  hafta cho‘qqisi belgilanadi; grafik tepasida **jami** va o‘tgan hafta
+  bilan **foiz farqi**
+- **M3** Sotuvlar tarixi: 5 ta chip o‘rniga **bitta keng tugma** (bosilganda
+  davr ro‘yxati ochiladi) va **qidiruv** — chek raqami, tovar, sotuvchi,
+  summa bo‘yicha. Ochilganda avtomatik bugun (avvaldan shunday edi)
+
+**Kassa smenasi (yangi)** — hech qayerda yo‘q edi
+- `shifts` jadvali + `shift_view` (kutilayotgan summa va farq bazada
+  hisoblanadi), `transactions.shift_id`
+- Bitta sotuvchida bir vaqtda bitta ochiq smena (unique index)
+- Mobil: `ShiftSheet` (ochish / yopish / xulosa), POS tepasida smena chizig‘i
+- Veb: `ShiftBar` + `useShift`, POS chap ustunida
+- Faqat **naqd** hisoblanadi; qaytarish manfiy summa bo‘lgani uchun o‘zi
+  ayiriladi. Yopishda: bo‘lishi kerak / sanaldi / **FARQ**
+
+**Vozvrat (qaytarish)**
+- Aniqlandi: mobil ilovada allaqachon bor edi (`ReceiptSheet`) — qisman
+  qaytarish, omborni tiklash, ikki marta qaytarishning oldini olish
+- **Vebda yo‘q edi** — yangi `src/pages/Sales.js` sahifasi: sotuvlar tarixi,
+  davr filtri, qidiruv va **aynan bir xil mantiq** bilan qaytarish
+  (`move_stock` + `<chek>-Q` manfiy yozuv). Menyuga "Sotuvlar tarixi" qo‘shildi
+- Qaytarish endi joriy **smenaga** ham bog‘lanadi (naqd chiqim to‘g‘ri chiqsin)
+
+**EAS Update (havodan yangilanish)**
+- `expo-updates` o‘rnatildi, `eas update:configure` bajarildi
+- `runtimeVersion` policy `appVersion`, kanal `preview`
+- Bundan keyin **JS tuzatishlar APK qayta o‘rnatmasdan** tarqaladi:
+  `eas update --branch preview`
+
+**Zaxira nusxa (1-navbat)** — avval umuman yo‘q edi
+- `/root/backup-mybazzar.sh` — kunlik `pg_dump` + gzip, 14 kun saqlanadi,
+  fayl juda kichik chiqsa xato deb belgilaydi
+- `mybazzar-backup.service` + `.timer` — har kuni **04:00** (03:00 crm va
+  03:30 paybox bilan to‘qnashmasin), `Persistent=true`
+- Zaxira `/var/backups/mybazzar/`, jurnal `backup.log`
+- **Tiklash sinovdan o‘tkazildi:** toza bazaga tiklanib, barcha jadval
+  qatorlari asl bilan solishtirildi — to‘liq mos (731 sotuv, 22 qarz,
+  20 mijoz, 2 kredit qurilma). Xatosiz
+- Fayllar repoda: `server/backup-mybazzar.sh`, `server/mybazzar-backup.*`
+
 
 ### 2026-08-31
 
@@ -247,6 +318,12 @@ psql -d mybazzar -c "NOTIFY pgrst, 'reload schema';"
 - Tovar qo'shishdagi "Telefon" tabi oddiy do'konda yashirildi
 
 **Tuzatilgan xatolar**
+- **Mobil ilova ishga tushishda qulardi** (splash'dan keyin 1 soniyada
+  yopilardi) — `Icon.js` da `LockSimpleOpen`, `Lock`, `QrCode`,
+  `DeviceMobile` `MAP` da ishlatilgan, lekin import qilinmagan edi.
+  `adb logcat` orqali topildi: `ReferenceError: Property 'LockSimpleOpen'
+  doesn't exist`. Barcha buildlarga ta'sir qilgan. Butun mobil va veb kodi
+  shu tur xatoga qayta skanerlandi — boshqa yo'q
 - **AI Analitika qora ekrani** — `forecast` "tayyor emas" holatda `history`
   qaytarmasdi, `undefined.map()` butun ilovani o'chirardi. Har yangi do'konda
   takrorlanardi. Qaytish shakli bir xillashtirildi
@@ -259,15 +336,77 @@ psql -d mybazzar -c "NOTIFY pgrst, 'reload schema';"
 
 ## 10. Qilinishi kerak
 
-1. **Qulflashni haqiqiy telefonda sinash** ⚠️ — server tomoni to'liq
-   sinalgan, lekin zavod holatidagi Android hali skanerlanmagan. Tizimning
-   asosiy va'dasi shunda. Kerak: yangi yoki tozalangan Android telefon
-2. **Tovar variantlari** (`o'lcham × rang`, har biriga barcode) — kiyim
-   do'koni uchun eng katta yetishmovchilik. Hozir har variant alohida tovar
-   sifatida kiritiladi: ishlaydi, lekin ko'p yozish kerak
-3. **O'lchov birligi + kasrli qoldiq** (kg, metr, litr) — qurilish va
-   oziq-ovqatni ochadi (`products.stock` hozir butun son)
-4. **Seriya raqami har turga** — hozir S/N faqat telefon rejimida
-   (quyosh paneli, maishiy texnika kafolati uchun kerak)
-5. **Parollar bazada ochiq matnda** — shifrlashga o'tish kerak (ilovaning
-   o'zi bu haqda ogohlantiradi)
+Tartib egasi bilan kelishilgan (2026-09-01). Yuqoridan pastga bajariladi.
+
+---
+
+### 1-navbat: Qolganlari
+
+**Ishonchlilik**
+- **Sentry (xato yig‘ish)** — ilova hammada qulab turgan edi, biz faqat
+  egasi aytganda bildik. Do‘kon ko‘paygach shart bo‘ladi
+- **Parollar bazada ochiq matnda** — shifrlashga o‘tish
+
+**Bozorni kengaytirish**
+- **Tovar variantlari** (`o‘lcham × rang`, har biriga barcode) — kiyim
+  bozori uchun eng katta yetishmovchilik
+- **O‘lchov birligi + kasrli qoldiq** (kg, metr, litr) — qurilish va
+  oziq-ovqatni ochadi (`products.stock` hozir butun son)
+- **Seriya raqami har turga** — hozir S/N faqat telefon rejimida
+  (quyosh paneli, maishiy texnika kafolati uchun)
+
+**Savdo qulayligi**
+- **Dollar narx va kurs** — telefon/elektronika do‘konlari narxni dollarda
+  yuritadi, sotishda kunlik kursga ko‘paytiradi. Hozir qo‘lda
+- **Avtomatik chegirma/aksiya** — "3 olsang 1 tekin", kategoriya bo‘yicha,
+  vaqtga bog‘liq. Hozir faqat qo‘lda chegirma
+- **Payme / Click QR to‘lov** — hozir "Plastik" shunchaki yorliq, pul
+  kelgani tasdiqlanmaydi. **Qaror (2026-09-01):** API orqali *dinamik* QR
+  qilinadi (summa QR ichida + to‘lov tizimi serverga xabar beradi → chek
+  o‘zi "to‘landi" bo‘ladi). Devordagi doimiy QR variantidan voz kechildi —
+  u sotuvchi qo‘lda tasdiqlashini talab qiladi, ya’ni asosiy muammo qoladi.
+  **Har do‘kon uchun alohida**, do‘kon xohlaganda ulanadi.
+
+  Muhim shartlar:
+  - **Har do‘kon o‘z merchant hisobini oladi** (YaTT/MChJ + bank hisobi
+    kerak). Pul to‘g‘ridan-to‘g‘ri do‘konga tushadi. MyBazzar vositachi
+    BO‘LMAYDI — u to‘lov agregatori faoliyati bo‘lib, Markaziy bank
+    litsenziyasini talab qiladi
+  - Ariza: [b2b-partner.payme.uz](https://b2b-partner.payme.uz/) va
+    [business.click.uz](https://business.click.uz/uz); Click hujjatlari
+    [docs.click.uz](https://docs.click.uz/en/merchant-api-request/)
+  - ⚠️ **Maxfiy kalit `mb_anon` o‘qiydigan joyda saqlanmasin** — aks holda
+    ilovadan ko‘rinadi. Kalitlar server tomonida (masalan `/etc/mybazzar/`
+    yoki PostgREST ochmaydigan jadval), callback tekshiruvi ham serverda
+- **Chekni mijozga Telegram/SMS orqali yuborish**
+- **Ta’minotchiga buyurtma ro‘yxati** — AI "nima tugayapti"ni topadi,
+  shundan avtomatik ro‘yxat tuzilsin
+
+**Mijoz ushlab qolish**
+- **Mijozga avtomatik qarz eslatmasi** (SMS/Telegram) — hozir do‘konchi
+  qo‘lda qo‘ng‘iroq qiladi
+- **Loyalty / cashback**
+
+**Creator (daromad)**
+- **Obuna to‘lovi hisobi** — hozir faqat IMEI uchun pul olinadi.
+  `PLANS` (Starter/Business/Enterprise) bor, lekin hisob yuritilmaydi:
+  qaysi do‘kon to‘lagan, kim qarzdor, qachon tugaydi
+
+**Sinov**
+- **Qulflashni haqiqiy telefonda sinash** ⚠️ — server tomoni to‘liq
+  sinalgan, zavod holatidagi Android hali skanerlanmagan. Tizimning asosiy
+  va’dasi shunda. Kerak: yangi yoki tozalangan Android telefon
+
+---
+
+### Keyinga qoldirilgan (alohida loyiha)
+
+**Fiskal chek / soliq integratsiyasi.** Egasi 2026-09-01 da keyinga
+qoldirdi. Ikki yo‘l: (A) reyestrdagi virtual kassa provayderi API’siga
+ulanish — tez; (B) MyBazzar’ni Davlat reyestriga kiritish — uzoq, lekin
+vositachisiz. Ishning ~30% i kod, ~70% i qog‘ozbozlik.
+Talab qiladi: har tovarga **MXIK (IKPU) kodi** (majburiy, tasnif.soliq.uz),
+QQS stavkasi, chekda QR + fiskal belgi, vozvrat ham fiskallashtiriladi.
+Diqqat: **offline rejim bilan ziddiyat** — fiskal chek onlayn ketishi kerak.
+OFD — Soliq qo‘mitasi huzuridagi "Yangi Texnologiyalar" markazi.
+Mantiqiy vaqt: 10-20 ta tirik do‘kon bo‘lganda.

@@ -66,6 +66,7 @@ export const ROLE_NAV = {
   owner: [
     { to: '/dashboard', icon: 'squares-four', label: 'dashboard', perm: 'dashboard_owner' },
     { to: '/pos', icon: 'cash-register', label: 'pos', perm: 'pos' },
+    { to: '/sales', icon: 'receipt', label: 'Sotuvlar tarixi', perm: 'pos' },
     { to: '/inventory', icon: 'package', label: 'inventory', badge: 'lowStock', perm: 'inventory' },
     { to: '/kirim', icon: 'truck', label: 'Ommaviy kirim', perm: 'inventory' },
     { to: '/suppliers', icon: 'handshake', label: 'Ta’minotchilar', perm: 'inventory' },
@@ -84,6 +85,7 @@ export const ROLE_NAV = {
   manager: [
     { to: '/dashboard', icon: 'squares-four', label: 'dashboard', perm: 'dashboard_owner' },
     { to: '/pos', icon: 'cash-register', label: 'pos', perm: 'pos' },
+    { to: '/sales', icon: 'receipt', label: 'Sotuvlar tarixi', perm: 'pos' },
     { to: '/inventory', icon: 'package', label: 'inventory', badge: 'lowStock', perm: 'inventory' },
     { to: '/nasiya', icon: 'hand-coins', label: 'nasiya', badge: 'urgentDebts', perm: 'nasiya' },
     { to: '/finance', icon: 'wallet', label: 'finance', perm: 'finance' },

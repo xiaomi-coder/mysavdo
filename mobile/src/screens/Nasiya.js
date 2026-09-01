@@ -67,7 +67,9 @@ export default function Nasiya({ navigation }) {
         ) : null}
       </Card>
 
-      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+      {/* Uchala filtr bitta ekranga sig'sin: har biri teng ulush oladi,
+          shuning uchun "To'langan" chetga chiqib ketmaydi */}
+      <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14 }}>
         {FILTERS.map((f) => (
           <Chip
             key={f.key}
@@ -76,6 +78,7 @@ export default function Nasiya({ navigation }) {
             active={filter === f.key}
             color={f.key === 'overdue' ? t.err : undefined}
             onPress={() => setFilter(f.key)}
+            style={{ flex: 1, paddingHorizontal: 8, justifyContent: 'center', gap: 4 }}
           />
         ))}
       </View>

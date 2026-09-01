@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { Icon, Btn, Tag, Seg, Modal, EmptyState, Avatar, Toast, SkeletonRows } from '../components/UI';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../utils/supabaseClient';
+import ShiftBar, { useShift } from '../components/ShiftBar';
 import { printReceipt } from '../utils/receipt';
 import { isLowStock } from '../utils/stock';
 
@@ -34,6 +35,7 @@ const DISCOUNTS = [0, 5, 10, 15].map(d => ({ value: d, label: `${d}%` }));
 
 export default function POS() {
   const { user, settings, addPendingTxn, refreshAlerts } = useAuth();
+  const { shift, reload: reloadShift } = useShift(user);
   const location = useLocation();
   const isPhone = user?.storeType === 'phone';
   const isDealer = user?.role === 'dealer';
@@ -176,6 +178,8 @@ export default function POS() {
         discount: discountTotal,
         payment_method: payMethod,
         status: 'completed',
+        // Sotuv qaysi smenada bo'lgani — kassa yopilganda hisob shu bo'yicha
+        shift_id: shift?.id ?? null,
       }).select().single();
 
       if (error) {
@@ -263,6 +267,9 @@ export default function POS() {
         flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column',
         padding: '18px 20px', gap: 14, borderRight: '1px solid var(--color-divider)',
       }}>
+        {/* Kassa smenasi */}
+        <ShiftBar user={user} shift={shift} onChanged={reloadShift} />
+
         {/* Qidiruv + skaner */}
         <div style={{ display: 'flex', gap: 10 }}>
           <div style={{

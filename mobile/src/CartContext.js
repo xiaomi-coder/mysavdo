@@ -129,6 +129,8 @@ export function CartProvider({ children }) {
       discount: discountTotal,
       payment_method: payMethod,
       status: 'completed',
+      // Sotuv qaysi smenada bo'lgani — kassa yopilganda hisob shu bo'yicha
+      shift_id: data.shift?.id ?? null,
     };
 
     const online = await ping();

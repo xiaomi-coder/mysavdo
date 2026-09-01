@@ -33,6 +33,51 @@ export function DataProvider({ children }) {
   const [offline, setOffline] = useState(false);
   const inflight = useRef(false);
 
+  /* ── Kassa smenasi ───────────────────────────────────────────────────
+     Har sotuvchining bir vaqtda bitta ochiq smenasi bo'ladi. Sotuv shu
+     smenaga bog'lanadi (transactions.shift_id), yopishda kassada qancha
+     bo'lishi kerakligi hisoblanib, sanalgan summa bilan solishtiriladi. */
+  const [shift, setShift] = useState(null);
+
+  const loadShift = useCallback(async () => {
+    if (!storeId || !user?.name) { setShift(null); return null; }
+    const { data } = await db.from('shift_view').select('*')
+      .eq('store_id', storeId).eq('cashier', user.name).eq('status', 'open')
+      .order('opened_at', { ascending: false }).limit(1);
+    const row = (data && data[0]) || null;
+    setShift(row);
+    return row;
+  }, [storeId, user?.name]);
+
+  useEffect(() => { loadShift(); }, [loadShift]);
+
+  const openShift = useCallback(async (openingCash) => {
+    if (!storeId || !user?.name) return { error: 'Do‘kon aniqlanmadi' };
+    const { error } = await db.from('shifts').insert({
+      store_id: storeId, cashier: user.name,
+      opening_cash: Number(openingCash) || 0, status: 'open',
+    });
+    // 23505 = allaqachon ochiq smena bor; uni shunchaki yuklab olamiz
+    if (error && error.code !== '23505') return { error: error.message };
+    const row = await loadShift();
+    return { ok: true, shift: row };
+  }, [storeId, user?.name, loadShift]);
+
+  const closeShift = useCallback(async (countedCash, note) => {
+    if (!shift) return { error: 'Ochiq smena yo‘q' };
+    const { error } = await db.from('shifts').update({
+      counted_cash: Number(countedCash) || 0,
+      note: note || null,
+      closed_at: new Date().toISOString(),
+      status: 'closed',
+    }).eq('id', shift.id);
+    if (error) return { error: error.message };
+    // Yopilgan smenaning yakuniy ko'rsatkichlarini o'qib qaytaramiz
+    const { data } = await db.from('shift_view').select('*').eq('id', shift.id).limit(1);
+    setShift(null);
+    return { ok: true, closed: (data && data[0]) || null };
+  }, [shift]);
+
   const load = useCallback(async ({ silent = false } = {}) => {
     if (!storeId) { setLoading(false); return; }
     if (inflight.current) return;
@@ -122,6 +167,7 @@ export function DataProvider({ children }) {
     patchProduct, addProduct, dropProduct,
     addTransaction, addCustomer, addDebt, patchDebt,
     setTransactions, setDebts, setCustomers,
+    shift, loadShift, openShift, closeShift,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

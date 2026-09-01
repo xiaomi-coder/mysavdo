@@ -6,6 +6,7 @@ import { Icon } from './components/UI';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import POS from './pages/POS';
+import Sales from './pages/Sales';
 import Inventory from './pages/Inventory';
 import Employees from './pages/Employees';
 import Analytics from './pages/Analytics';
@@ -77,6 +78,7 @@ function AppRoutes() {
         <Route path="creator/stats" element={<PrivateRoute permission="dashboard_creator"><CreatorPanel page="stats" /></PrivateRoute>} />
         <Route path="creator/settings" element={<PrivateRoute permission="dashboard_creator"><CreatorPanel page="settings" /></PrivateRoute>} />
         {/* Owner + Manager */}
+        <Route path="sales" element={<PrivateRoute permission="pos"><Sales /></PrivateRoute>} />
         <Route path="dashboard" element={<PrivateRoute permission="dashboard_owner"><Dashboard /></PrivateRoute>} />
         <Route path="pos" element={<POS />} />
         <Route path="inventory" element={<PrivateRoute permission="inventory"><Inventory /></PrivateRoute>} />

@@ -109,6 +109,8 @@ export default function ReceiptSheet({ transaction, onClose }) {
       discount: 0,
       payment_method: tx.payment_method,
       status: 'returned',
+      // Naqd qaytarish kassadan chiqim — joriy smenaga yoziladi
+      shift_id: d.shift?.id ?? null,
     }).select().single();
 
     setBusy(false);

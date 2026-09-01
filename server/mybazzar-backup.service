@@ -1,0 +1,7 @@
+[Unit]
+Description=MyBazzar bazasining kunlik zaxirasi
+After=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/root/backup-mybazzar.sh

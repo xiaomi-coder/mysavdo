@@ -5,7 +5,7 @@ import { useTheme } from '../ThemeContext';
 import { useAuth } from '../AuthContext';
 import { useData } from '../DataContext';
 import {
-  Screen, Card, Txt, Tap, Chip, Icon, Header, EmptyState, Skeleton,
+  Screen, Card, Txt, Tap, Chip, Icon, Header, EmptyState, Skeleton, Sheet, Input,
 } from '../ui';
 import { db } from '../lib/api';
 import { money, timeShort, dateShort, dateLong, todayStart } from '../lib/format';
@@ -53,6 +53,8 @@ export default function History({ navigation }) {
   const [from, setFrom] = useState(() => todayStart());
   const [to, setTo] = useState(() => new Date());
   const [picking, setPicking] = useState(null);      // null | 'from' | 'to'
+  const [rangeSheet, setRangeSheet] = useState(false); // davr tanlash oynasi
+  const [q, setQ] = useState('');                    // qidiruv
   const [mine, setMine] = useState(!isOwner);
   const [rows, setRows] = useState(null);
   const [receipt, setReceipt] = useState(null);
@@ -95,11 +97,26 @@ export default function History({ navigation }) {
 
   /* Ko'rinadigan cheklar */
   const visible = useMemo(() => {
-    const list = (rows || []).filter((x) => x.status === 'completed' || x.status === 'returned');
-    if (!mine) return list;
-    const me = String(user?.name || '').trim();
-    return list.filter((x) => String(x.cashier || '').split('·')[0].trim() === me);
-  }, [rows, mine, user]);
+    let list = (rows || []).filter((x) => x.status === 'completed' || x.status === 'returned');
+    if (mine) {
+      const me = String(user?.name || '').trim();
+      list = list.filter((x) => String(x.cashier || '').split('·')[0].trim() === me);
+    }
+    /* Qidiruv: chek raqami, tovar nomi, sotuvchi va summa bo'yicha.
+       Summani raqam sifatida ham qidiramiz — "450000" deb yozilsa
+       o'sha summadagi chek topiladi. */
+    const needle = q.trim().toLowerCase();
+    if (!needle) return list;
+    const digits = needle.replace(/\D/g, '');
+    return list.filter((x) => {
+      if (String(x.receipt_no || '').toLowerCase().includes(needle)) return true;
+      if (String(x.cashier || '').toLowerCase().includes(needle)) return true;
+      const items = Array.isArray(x.items) ? x.items : [];
+      if (items.some((it) => String(it.name || '').toLowerCase().includes(needle))) return true;
+      if (digits && String(Math.abs(Math.round(Number(x.total) || 0))).includes(digits)) return true;
+      return false;
+    });
+  }, [rows, mine, user, q]);
 
   const sum = useMemo(() => {
     const total = visible.reduce((s, x) => s + Number(x.total || 0), 0);
@@ -124,6 +141,12 @@ export default function History({ navigation }) {
     return [...map.entries()].sort((a, b) => b[0] - a[0]);
   }, [visible]);
 
+  /* Tugmada ko'rinadigan matn */
+  const rangeLabel = RANGES.find((r) => r.key === range)?.label || 'Davr';
+  const rangeSub = range === 'today' ? dateLong()
+    : range === 'yesterday' ? dateLong(bounds.a)
+    : `${dateShort(bounds.a)} — ${dateShort(bounds.b - DAY)}`;
+
   const multiDay = groups.length > 1;
 
   return (
@@ -131,24 +154,38 @@ export default function History({ navigation }) {
       <Screen onRefresh={refresh} refreshing={refreshing} bottomPad={40}>
         <Header title="Sotuvlar tarixi" onBack={() => navigation.goBack()} />
 
-        {/* Davr */}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-          {RANGES.map((r) => (
-            <Chip
-              key={r.key}
-              label={r.label}
-              active={range === r.key}
-              onPress={() => setRange(r.key)}
-            />
-          ))}
-        </View>
-
-        {range === 'custom' ? (
-          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
-            <DateBox label="Boshi" value={from} onPress={() => setPicking('from')} t={t} />
-            <DateBox label="Oxiri" value={to} onPress={() => setPicking('to')} t={t} />
+        {/* Davr — bitta keng tugma, bosilganda ro'yxat ochiladi.
+            Ilgari 5 ta chip yonma-yon turardi va ekranga sig'masdi. */}
+        <Tap
+          onPress={() => setRangeSheet(true)}
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: 10,
+            borderWidth: 1, borderColor: t.line2, borderRadius: R.md,
+            paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10,
+          }}
+        >
+          <Icon name="calendar" size={17} color={t.acc} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Txt size={14.5} weight="500" numberOfLines={1}>{rangeLabel}</Txt>
+            <Txt size={11.5} color={t.t4} numberOfLines={1} style={{ marginTop: 1 }}>
+              {rangeSub}
+            </Txt>
           </View>
-        ) : null}
+          <Icon name="caret-down" size={15} color={t.t4} />
+        </Tap>
+
+        {/* Qidiruv — 2-3 kun oldingi chekni tez topib qaytarish uchun */}
+        <Input
+          value={q}
+          onChangeText={setQ}
+          placeholder="Chek raqami, tovar, sotuvchi yoki summa"
+          style={{ marginBottom: 12 }}
+          right={q ? (
+            <Tap onPress={() => setQ('')} style={{ paddingHorizontal: 12 }}>
+              <Icon name="x-circle" size={18} color={t.t4} />
+            </Tap>
+          ) : null}
+        />
 
         {isOwner ? (
           <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
@@ -242,6 +279,49 @@ export default function History({ navigation }) {
           </View>
         ))}
       </Screen>
+
+      {/* Davr tanlash oynasi */}
+      {rangeSheet ? (
+        <Sheet visible onClose={() => setRangeSheet(false)} title="Davrni tanlang">
+          <View style={{ gap: 2 }}>
+            {RANGES.map((r) => {
+              const on = range === r.key;
+              return (
+                <Tap
+                  key={r.key}
+                  onPress={() => {
+                    setRange(r.key);
+                    // "Oraliq" tanlansa darhol sana tanlashga o'tamiz
+                    if (r.key === 'custom') setPicking('from');
+                    setRangeSheet(false);
+                  }}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 12,
+                    paddingVertical: 14, paddingHorizontal: 14, borderRadius: R.md,
+                    backgroundColor: on ? t.line : 'transparent',
+                  }}
+                >
+                  <Icon name={r.key === 'custom' ? 'clock' : 'calendar'} size={18}
+                    color={on ? t.acc : t.t4} />
+                  <Txt size={15} weight={on ? '600' : '400'}
+                    color={on ? t.acctext : t.t1} style={{ flex: 1 }}>
+                    {r.label}
+                  </Txt>
+                  {on ? <Icon name="check" size={17} color={t.acc} /> : null}
+                </Tap>
+              );
+            })}
+          </View>
+
+          {/* Oraliq tanlangan bo'lsa sanalarni shu yerdan o'zgartiriladi */}
+          {range === 'custom' ? (
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+              <DateBox label="Boshi" value={from} onPress={() => setPicking('from')} t={t} />
+              <DateBox label="Oxiri" value={to} onPress={() => setPicking('to')} t={t} />
+            </View>
+          ) : null}
+        </Sheet>
+      ) : null}
 
       {picking ? (
         <DateTimePicker

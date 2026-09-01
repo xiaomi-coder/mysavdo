@@ -564,6 +564,11 @@ function DeviceDetail({ device, user, onClose, onChanged, onError }) {
                 {schedule.map(s => {
                   const full = Number(s.paid_amount) >= Number(s.amount);
                   const overdue = !full && new Date(s.due_date) < new Date();
+                  // Qisman to'langan bo'lsa QOLGAN summa ko'rsatiladi.
+                  // Ilgari doim to'liq oylik chiqardi va 1 000 000 to'langach
+                  // ham 1 778 000 turaverardi — do'konchi chalkashardi.
+                  const partial = Number(s.paid_amount) > 0 && !full;
+                  const left = Number(s.amount) - Number(s.paid_amount || 0);
                   return (
                     <div key={s.id}
                       onClick={full || device.status === 'released' ? undefined : () => setPayFor(s)}
@@ -586,10 +591,17 @@ function DeviceDetail({ device, user, onClose, onChanged, onError }) {
                         </div>
                         {overdue && <div style={{ fontSize: 11, color: 'var(--dang)' }}>muddati o‘tgan</div>}
                       </div>
-                      <span className="num" style={{
-                        fontSize: 13, fontWeight: 500,
-                        color: full ? 'var(--color-neutral-500)' : 'inherit',
-                      }}>{money(s.amount)}</span>
+                      <div style={{ textAlign: 'right' }}>
+                        <span className="num" style={{
+                          fontSize: 13, fontWeight: 500,
+                          color: full ? 'var(--color-neutral-500)' : 'inherit',
+                        }}>{money(full ? s.amount : left)}</span>
+                        {partial && (
+                          <div className="num" style={{ fontSize: 11, color: 'var(--ok)' }}>
+                            {money(s.paid_amount)} to‘landi
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 })}

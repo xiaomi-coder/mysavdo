@@ -196,7 +196,12 @@ export function Chip({ label, count, active, onPress, icon, color, style }) {
       }, style]}
     >
       {icon ? <Icon name={icon} size={15} color={fg} /> : null}
-      <Text style={{ fontSize: 13, fontWeight: '500', color: fg }}>{tr(label)}</Text>
+      {/* numberOfLines + flexShrink: chip tor joyga tushsa matn kesiladi,
+          chetga chiqib ketmaydi (Nasiya filtrida shunday bo'lgan) */}
+      <Text numberOfLines={1}
+        style={{ fontSize: 13, fontWeight: '500', color: fg, flexShrink: 1 }}>
+        {tr(label)}
+      </Text>
       {count != null ? (
         <Text style={{ fontSize: 13, fontWeight: '500', color: fg, opacity: 0.65 }}>{count}</Text>
       ) : null}

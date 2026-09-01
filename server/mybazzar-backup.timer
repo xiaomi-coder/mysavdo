@@ -1,0 +1,11 @@
+[Unit]
+Description=MyBazzar zaxirasini har kuni 04:00 da olish
+
+[Timer]
+# 03:00 crm, 03:30 paybox — to'qnashmasligi uchun 04:00
+OnCalendar=*-*-* 04:00:00
+# Server o'chib qolgan bo'lsa, yoqilganda o'tkazib yuborilgan zaxirani oladi
+Persistent=true
+
+[Install]
+WantedBy=timers.target

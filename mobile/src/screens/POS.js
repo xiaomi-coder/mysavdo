@@ -11,10 +11,11 @@ import {
 import { useFeedback, buzz } from '../ui/Feedback';
 import { money } from '../lib/format';
 import { stockStatus, variantColor } from '../lib/stock';
-import { R } from '../theme';
+import { R, alpha } from '../theme';
 import CartSheet from '../sheets/CartSheet';
 import CalcSheet from '../sheets/CalcSheet';
 import QuickPickSheet from '../sheets/QuickPickSheet';
+import ShiftSheet from '../sheets/ShiftSheet';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Sotuv ekrani
@@ -35,6 +36,7 @@ const QUICK_COUNT = 6;
 
 export default function POS({ navigation }) {
   const { t } = useTheme();
+  const [shiftSheet, setShiftSheet] = useState(false);
   const insets = useSafeAreaInsets();
   const d = useData();
   const cart = useCart();
@@ -120,6 +122,34 @@ export default function POS({ navigation }) {
             onPress={() => navigation.navigate('Tarix')}
           />
         </View>
+
+        {/* Smena holati — kassa hisobi shu yerdan yuritiladi */}
+        <Tap
+          onPress={() => setShiftSheet(true)}
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12,
+            paddingHorizontal: 13, paddingVertical: 11, borderRadius: R.md,
+            borderWidth: 1,
+            borderColor: d.shift ? t.line2 : t.warn,
+            backgroundColor: d.shift ? 'transparent' : alpha(t.warnRgb, 0.08),
+          }}
+        >
+          <Icon name={d.shift ? 'cash-register' : 'warning'} size={17}
+            color={d.shift ? t.ok : t.warn} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Txt size={13.5} weight="500" numberOfLines={1}>
+              {d.shift ? 'Smena ochiq' : 'Smena ochilmagan'}
+            </Txt>
+            <Txt size={11.5} color={t.t4} numberOfLines={1} style={{ marginTop: 1 }}>
+              {d.shift
+                ? `Kassada: ${money(d.shift.expected_cash)} so‘m · ${d.shift.txn_count} chek`
+                : 'Kassa hisobi yuritilishi uchun smenani oching'}
+            </Txt>
+          </View>
+          <Txt size={12} weight="500" color={t.acctext}>
+            {d.shift ? 'Yopish' : 'Ochish'}
+          </Txt>
+        </Tap>
 
         {/* ── Tez sotuv ── */}
         {quick.length > 0 ? (
@@ -243,6 +273,7 @@ export default function POS({ navigation }) {
         />
       ) : null}
 
+      {shiftSheet ? <ShiftSheet onClose={() => setShiftSheet(false)} /> : null}
       <CartSheet visible={sheet === 'cart'} onClose={() => setSheet(null)} navigation={navigation} />
       {sheet === 'calc' && <CalcSheet onClose={() => setSheet(null)} />}
       {sheet === 'quick' && <QuickPickSheet

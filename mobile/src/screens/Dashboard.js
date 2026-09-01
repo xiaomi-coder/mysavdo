@@ -175,10 +175,34 @@ export default function Dashboard({ navigation }) {
 
           {/* Haftalik grafik */}
           <Card pad={16}>
-            <Txt size={13} weight="500" color={t.t2} style={{ marginBottom: 12 }}>
-              Haftalik sotuv <Txt size={13} color={t.t4}>· so‘m</Txt>
-            </Txt>
+            {/* Sarlavha o'rniga jami summa — grafikning o'zi raqamsiz edi */}
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginBottom: 14 }}>
+              <View style={{ flex: 1 }}>
+                <Txt size={12} color={t.t4}>Haftalik sotuv · 7 kun</Txt>
+                <Txt size={22} weight="700" mono style={{ marginTop: 2 }}>
+                  {money(stats.weekTotal)} <Txt size={13} color={t.t4}>so‘m</Txt>
+                </Txt>
+              </View>
+              {stats.weekChange != null ? (
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 4,
+                  paddingHorizontal: 9, paddingVertical: 5, borderRadius: R.pill,
+                  backgroundColor: alpha(stats.weekChange >= 0 ? t.okRgb : t.errRgb, 0.12),
+                }}>
+                  <Icon name={stats.weekChange >= 0 ? 'caret-up' : 'caret-down'} size={13}
+                    color={stats.weekChange >= 0 ? t.ok : t.err} />
+                  <Txt size={12} weight="600" color={stats.weekChange >= 0 ? t.ok : t.err}>
+                    {stats.weekChange >= 0 ? '+' : ''}{stats.weekChange}%
+                  </Txt>
+                </View>
+              ) : null}
+            </View>
             <BarChart data={stats.week} />
+            {stats.weekChange != null ? (
+              <Txt size={11.5} color={t.t4} style={{ marginTop: 10 }}>
+                O‘tgan hafta bilan solishtirilgan
+              </Txt>
+            ) : null}
           </Card>
 
           {/* Top mahsulotlar */}
@@ -313,6 +337,17 @@ function compute(transactions) {
     week.push({ label: weekdayShort(from), value: v, active: i === 0 });
   }
 
+  // Haftalik jami va o'tgan hafta bilan solishtirish — grafik tepasida
+  // ko'rsatiladi, shunda do'konchi "yaxshimi yomonmi" ni darrov biladi
+  const weekTotal = week.reduce((s, d) => s + d.value, 0);
+  const prevTotal = sum(sold.filter((x) => {
+    const ts = new Date(x.date).getTime();
+    return ts >= t0 - 13 * dayMs && ts < t0 - 6 * dayMs;
+  }));
+  const weekChange = prevTotal > 0
+    ? Math.round(((weekTotal - prevTotal) / prevTotal) * 100)
+    : null;
+
   // Bu haftaning eng ko'p sotilgan tovarlari
   const bag = new Map();
   sold.filter((x) => new Date(x.date).getTime() >= t0 - 6 * dayMs).forEach((tx) => {
@@ -330,6 +365,8 @@ function compute(transactions) {
     count: today.length,
     delta,
     week,
+    weekTotal,
+    weekChange,
     tops,
     recents: sold.slice(0, 5),
   };
