@@ -4,6 +4,7 @@
   "private": true,
   "dependencies": {
     "@phosphor-icons/web": "^2.1.1",
+    "@sentry/react": "^11.1.0",
     "@supabase/supabase-js": "^2.98.0",
     "bcryptjs": "^3.0.3",
     "lucide-react": "^0.323.0",

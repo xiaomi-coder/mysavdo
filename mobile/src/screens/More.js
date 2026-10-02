@@ -11,6 +11,8 @@ import { useTr } from '../i18n';
 import { API_URL } from '../lib/api';
 import { initials } from '../lib/format';
 import DaySheet from '../sheets/DaySheet';
+import BranchSheet from '../sheets/BranchSheet';
+import TransferSheet from '../sheets/TransferSheet';
 
 /* "Yana" bo'limi — pastki panelga sig'magan hamma narsa.
 
@@ -20,12 +22,17 @@ import DaySheet from '../sheets/DaySheet';
 
 export default function More({ navigation }) {
   const { t } = useTheme();
-  const { user, store, signOut, isOwner, can } = useAuth();
+  const { user, store, signOut, isOwner, can, branches, branchInfo, pinnedBranch } = useAuth();
   const d = useData();
   const cart = useCart();
   const { notify } = useFeedback();
   const tr = useTr();
   const [daySheet, setDaySheet] = useState(false);
+  const [branchSheet, setBranchSheet] = useState(false);
+  const [transferSheet, setTransferSheet] = useState(false);
+  // Filial bo'limi faqat ikki va undan ko'p filial bo'lsa — oddiy
+  // do'konga ortiqcha narsa ko'rinmasin
+  const multi = branches.length > 1;
 
   const version = Constants.expoConfig?.version || '1.0.0';
   // IMEI/qulflash bo'limlari faqat telefon do'konida ma'noga ega
@@ -95,6 +102,26 @@ export default function More({ navigation }) {
         </View>
       </Card>
 
+      {multi ? (
+        <Card pad={0} style={{ overflow: 'hidden', marginBottom: 14 }}>
+          <Row
+            first
+            icon="map-pin"
+            label={branchInfo?.name || 'Filial'}
+            sub={pinnedBranch ? 'Siz shu filialga biriktirilgansiz' : 'Filialni almashtirish'}
+            lock={Boolean(pinnedBranch)}
+            chevron={!pinnedBranch}
+            onPress={pinnedBranch ? undefined : () => setBranchSheet(true)}
+          />
+          <Row
+            icon="truck"
+            label="Filiallar o‘rtasida ko‘chirish"
+            sub="Yuborish va kelgan tovarni qabul qilish"
+            onPress={() => setTransferSheet(true)}
+          />
+        </Card>
+      ) : null}
+
       {/* Yuborilmagan sotuvlar */}
       {cart.queue.length > 0 ? (
         <Card border={t.warn} pad={13} style={{ marginBottom: 14 }}>
@@ -158,6 +185,8 @@ export default function More({ navigation }) {
       </Txt>
 
       {daySheet && <DaySheet onClose={() => setDaySheet(false)} />}
+      {branchSheet && <BranchSheet onClose={() => setBranchSheet(false)} />}
+      {transferSheet && <TransferSheet onClose={() => setTransferSheet(false)} />}
     </Screen>
   );
 }

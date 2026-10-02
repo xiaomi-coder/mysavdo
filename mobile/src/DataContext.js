@@ -20,7 +20,7 @@ import { isLowStock, isOutOfStock } from './lib/stock';
 const Ctx = createContext(null);
 
 export function DataProvider({ children }) {
-  const { user, store } = useAuth();
+  const { user, store, branch } = useAuth();
   const storeId = user?.store_id ?? store?.id ?? null;
 
   const [products, setProducts] = useState([]);
@@ -47,21 +47,22 @@ export function DataProvider({ children }) {
     const row = (data && data[0]) || null;
     setShift(row);
     return row;
-  }, [storeId, user?.name]);
+    // branch: filial almashsa smena ham o'sha filialniki bo'ladi
+  }, [storeId, user?.name, branch]);
 
   useEffect(() => { loadShift(); }, [loadShift]);
 
   const openShift = useCallback(async (openingCash) => {
     if (!storeId || !user?.name) return { error: 'Do‘kon aniqlanmadi' };
     const { error } = await db.from('shifts').insert({
-      store_id: storeId, cashier: user.name,
+      store_id: storeId, cashier: user.name, branch_id: branch ?? null,
       opening_cash: Number(openingCash) || 0, status: 'open',
     });
     // 23505 = allaqachon ochiq smena bor; uni shunchaki yuklab olamiz
     if (error && error.code !== '23505') return { error: error.message };
     const row = await loadShift();
     return { ok: true, shift: row };
-  }, [storeId, user?.name, loadShift]);
+  }, [storeId, user?.name, branch, loadShift]);
 
   const closeShift = useCallback(async (countedCash, note) => {
     if (!shift) return { error: 'Ochiq smena yo‘q' };
@@ -107,7 +108,8 @@ export function DataProvider({ children }) {
     setCustomers(c.data || []);
     setTransactions(tx.data || []);
     setDebts(d.data || []);
-  }, [storeId]);
+    // branch: X-Branch sarlavhasi o'zgaradi → qoldiq va sotuvlar boshqa
+  }, [storeId, branch]);
 
   useEffect(() => { load(); }, [load]);
 

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { View, ScrollView } from 'react-native';
 import { useTheme } from '../ThemeContext';
 import { useAuth } from '../AuthContext';
@@ -8,6 +8,7 @@ import {
 } from '../ui';
 import { money, dateLong, timeShort, todayStart, weekdayShort } from '../lib/format';
 import { alpha, R } from '../theme';
+import { db } from '../lib/api';
 import ReceiptSheet from '../sheets/ReceiptSheet';
 import AlertsSheet from '../sheets/AlertsSheet';
 
@@ -25,8 +26,17 @@ import AlertsSheet from '../sheets/AlertsSheet';
 
 export default function Dashboard({ navigation }) {
   const { t, mode, toggleMode } = useTheme();
-  const { store } = useAuth();
+  const { store, user, branches, branchInfo } = useAuth();
   const d = useData();
+
+  /* Obuna ogohlantirishi — to'lov qo'lda olinadi, egasi muddat
+     yaqinlashganini o'zi ko'rishi kerak (faqat egasi va manager) */
+  const [sub, setSub] = useState(null);
+  const canPay = ['owner', 'manager'].includes(user?.role);
+  useEffect(() => {
+    if (!canPay) return;
+    db.rpc('my_subscription').then(({ data }) => setSub(data || null));
+  }, [canPay]);
   const [receipt, setReceipt] = useState(null);
   const [alerts, setAlerts] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -85,7 +95,10 @@ export default function Dashboard({ navigation }) {
           <Txt size={17} weight="500" numberOfLines={1}>
             {store?.name || 'MyBazzar'}
           </Txt>
-          <Txt size={12} color={t.t3} style={{ marginTop: 2 }}>{dateLong()}</Txt>
+          <Txt size={12} color={t.t3} style={{ marginTop: 2 }} numberOfLines={1}>
+            {/* Ko'p filialda raqamlar qaysi filialniki ekani aniq ko'rinsin */}
+            {branches.length > 1 && branchInfo ? `${branchInfo.name} · ` : ''}{dateLong()}
+          </Txt>
         </View>
         {/* Dizayndagi ikki tugma: mavzu almashtirish va ogohlantirishlar.
             Qo'ng'irog'dagi qizil nuqta faqat haqiqatan e'tibor talab
@@ -105,6 +118,23 @@ export default function Dashboard({ navigation }) {
           </Tap>
         </View>
       </View>
+
+      {sub && ['soon', 'grace', 'paused'].includes(sub.status) ? (
+        <Card pad={13} border={sub.status === 'soon' ? t.warn : t.err}
+          style={{ marginBottom: 12, flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+          <Icon name={sub.status === 'soon' ? 'clock' : 'warning'} size={18}
+            color={sub.status === 'soon' ? t.warn : t.err} />
+          <Txt size={13} color={sub.status === 'soon' ? t.warn : t.err} style={{ flex: 1, lineHeight: 19 }}>
+            {sub.status === 'paused'
+              ? 'Do‘kon obunasi to‘xtatilgan. Davom ettirish uchun ma’muriyat bilan bog‘laning.'
+              : sub.status === 'grace'
+                ? `Obuna muddati tugagan. ${Math.max(0, Number(sub.grace_days) + Number(sub.days_left))} kundan keyin do‘kon to‘xtatiladi.`
+                : Number(sub.days_left) === 0
+                  ? 'Obuna bugun tugaydi. Uzaytirish uchun ma’muriyat bilan bog‘laning.'
+                  : `Obuna ${sub.days_left} kundan keyin tugaydi. Uzaytirish uchun ma’muriyat bilan bog‘laning.`}
+          </Txt>
+        </Card>
+      ) : null}
 
       {d.loading ? (
         <View style={{ gap: 12 }}>

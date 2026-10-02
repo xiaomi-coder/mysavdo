@@ -13,6 +13,7 @@ import {
   // Qulflash va IMEI ekranlari uchun — bular MAP da ishlatilgani holda
   // import qilinmay qolgan edi va ilova ishga tushishida qulatgan
   LockSimpleOpen, Lock, QrCode, DeviceMobile, CalendarBlank,
+  MapPin,
 } from 'phosphor-react-native';
 import { useTheme } from '../ThemeContext';
 
@@ -38,7 +39,7 @@ const MAP = {
   percent: Percent, history: ClockCounterClockwise,
   coin: CurrencyCircleDollar, user: User, info: Info,
   'dots-vertical': DotsThreeVertical, funnel: Funnel, 'arrow-right': ArrowRight,
-  star: Star, truck: Truck, note: Note,
+  star: Star, truck: Truck, note: Note, 'map-pin': MapPin,
   'lock-simple-open': LockSimpleOpen, 'lock-closed': Lock,
   'qr-code': QrCode, phone_device: DeviceMobile, calendar: CalendarBlank,
 };

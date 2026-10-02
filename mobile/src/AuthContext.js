@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { db } from './lib/api';
+import { db, setToken, setBranch, onAuthExpired } from './lib/api';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Kirish va ruxsatlar
@@ -11,6 +11,7 @@ import { db } from './lib/api';
 
 const Ctx = createContext(null);
 const KEY = 'mb.session';
+const BRANCH_KEY = 'mb.branch';   // { list, active } — oflayn ishga tushish uchun ham
 
 /* ══════════════════════════════════════════════════════════════════════════
    Ruxsatlar
@@ -48,16 +49,68 @@ const PERM_ALIAS = {
 
 const CASHIER_PERMS = ['pos', 'inventory', 'crm', 'nasiya', 'chek'];
 
+/* Tokendagi biriktirilgan filial. Server ham aynan shunga qaraydi —
+   eski sessiyada branch_id alohida saqlanmagan bo'lsa ham to'g'ri chiqadi. */
+function tokenBranch(token) {
+  try {
+    const part = String(token).split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const claims = JSON.parse(global.atob(part + '='.repeat((4 - (part.length % 4)) % 4)));
+    return claims.branch_id ? Number(claims.branch_id) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [store, setStore] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  /* ── Filiallar ─────────────────────────────────────────────────────────
+     Telefonda doim aniq bitta filial tanlangan bo'ladi ("barcha
+     filiallar" rejimi faqat vebda — hisobot uchun). Sotuvchi filialga
+     biriktirilgan bo'lsa (pinned) — o'zgartira olmaydi. */
+  const [branches, setBranches] = useState([]);
+  const [branch, setActive] = useState(null);
+  const [pinned, setPinned] = useState(null);
+
+  const applyBranch = useCallback((id) => {
+    setBranch(id);
+    setActive(id);
+  }, []);
+
+  const loadBranches = useCallback(async (pin) => {
+    let cache = null;
+    try { cache = JSON.parse((await AsyncStorage.getItem(BRANCH_KEY)) || 'null'); } catch {}
+    const { data, error } = await db.from('branches').select('*')
+      .eq('is_active', true).order('is_main', { ascending: false }).order('id');
+    // Internet yo'q — oxirgi ma'lum ro'yxat bilan ishlayveramiz
+    const list = error ? (cache?.list || []) : (data || []);
+    const want = pin || cache?.active;
+    const active = list.some((b) => b.id === want) ? want : (pin || list[0]?.id || null);
+    setBranches(list);
+    setPinned(pin || null);
+    applyBranch(active);
+    AsyncStorage.setItem(BRANCH_KEY, JSON.stringify({ list, active })).catch(() => {});
+  }, [applyBranch]);
+
+  const chooseBranch = useCallback(async (id) => {
+    if (pinned) return;
+    applyBranch(id);
+    AsyncStorage.setItem(BRANCH_KEY, JSON.stringify({ list: branches, active: id })).catch(() => {});
+  }, [pinned, branches, applyBranch]);
+
   const signOut = useCallback(async () => {
+    setToken(null);
+    setBranch(null);
     setUser(null);
     setStore(null);
-    await AsyncStorage.removeItem(KEY);
+    setBranches([]); setActive(null); setPinned(null);
+    await AsyncStorage.multiRemove([KEY, BRANCH_KEY]);
   }, []);
+
+  // Token muddati o'tsa (30 kun) yoki bekor qilinsa — qayta kirish
+  useEffect(() => { onAuthExpired(() => { signOut(); }); }, [signOut]);
 
   /* Serverdagi yozuvni qayta o'qiymiz: xodimning ruxsatlari
      o'zgargan yoki hisobi to'xtatilgan bo'lishi mumkin. */
@@ -77,38 +130,50 @@ export function AuthProvider({ children }) {
         const raw = await AsyncStorage.getItem(KEY);
         if (raw) {
           const s = JSON.parse(raw);
-          setUser(s.user);
-          setStore(s.store);
-          refresh(s.user?.id);   // fon rejimida yangilaymiz
+          if (s.token) {
+            setToken(s.token);
+            // Filial foydalanuvchidan OLDIN tanlanadi — aks holda birinchi
+            // yuklash asosiy filial ma'lumoti bilan ketib qoladi
+            await loadBranches(tokenBranch(s.token));
+            setUser(s.user);
+            setStore(s.store);
+            refresh(s.user?.id);   // fon rejimida yangilaymiz
+          } else {
+            // Eski versiyadagi sessiya — tokeni yo'q, qayta kirish kerak
+            await AsyncStorage.removeItem(KEY);
+          }
         }
       } catch {}
       setLoading(false);
     })();
-  }, [refresh]);
+  }, [refresh, loadBranches]);
 
+  /* Parol SERVERDA tekshiriladi (login funksiyasi). Ilgari parol
+     bazadan telefonga olinib shu yerda solishtirilardi. */
   const signIn = useCallback(async (email, password) => {
     const clean = String(email || '').trim().toLowerCase();
     if (!clean || !password) return { error: 'Email va parolni kiriting' };
 
-    const { data, error } = await db.from('users')
-      .select('*').eq('email', clean).maybeSingle();
-
-    if (error) return { error: error.offline ? 'Internet aloqasi yo\u2018q' : 'Server bilan aloqa yo\u2018q' };
-    if (!data) return { error: 'Bunday foydalanuvchi topilmadi' };
-    if (data.password !== password) return { error: 'Parol xato' };
-    if (data.is_active === false) return { error: 'Hisobingiz to\u2018xtatilgan. Do\u2018kon egasiga murojaat qiling.' };
-
-    const safe = { ...data, password: undefined };
-    let st = null;
-    if (data.store_id) {
-      const r = await db.from('stores').select('*').eq('id', data.store_id).maybeSingle();
-      st = r.data;
+    const { data, error } = await db.rpc('login', { p_email: clean, p_password: password });
+    if (error) {
+      if (error.offline) return { error: 'Internet aloqasi yo‘q' };
+      return { error: error.message || 'Server bilan aloqa yo‘q' };
     }
+    if (data?.user?.type === 'dealer') {
+      return { error: 'Diler hisobi mobil ilovada ishlamaydi — veb portaldan kiring' };
+    }
+
+    const safe = { ...data.user, password: undefined };
+    const st = data.store || null;
+    setToken(data.token);
+    await loadBranches(data.branch_id ?? tokenBranch(data.token));
     setUser(safe);
     setStore(st);
-    await AsyncStorage.setItem(KEY, JSON.stringify({ user: safe, store: st }));
+    await AsyncStorage.setItem(KEY, JSON.stringify({
+      user: safe, store: st, token: data.token, branch_id: data.branch_id ?? null,
+    }));
     return { user: safe };
-  }, []);
+  }, [loadBranches]);
 
   /* Ruxsat tekshiruvi. Egaga hammasi ochiq — do'kon uniki. */
   const can = useCallback((perm) => {
@@ -124,7 +189,12 @@ export function AuthProvider({ children }) {
   const isOwner = user?.role === 'owner' || user?.role === 'creator' || user?.role === 'admin';
 
   return (
-    <Ctx.Provider value={{ user, store, loading, signIn, signOut, can, isOwner, refresh, setStore }}>
+    <Ctx.Provider value={{
+      user, store, loading, signIn, signOut, can, isOwner, refresh, setStore,
+      branches, branch, pinnedBranch: pinned, chooseBranch,
+      reloadBranches: () => loadBranches(pinned),
+      branchInfo: branches.find((b) => b.id === branch) || null,
+    }}>
       {children}
     </Ctx.Provider>
   );

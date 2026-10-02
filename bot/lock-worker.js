@@ -161,6 +161,13 @@ async function runOverdue() {
   if (rows.length) {
     console.log(`[overdue] ${rows.length} qurilma holati o'zgardi`);
   }
+
+  // Obuna muddati o'tib, imtiyoz kunlari ham tugagan do'konlarni to'xtatamiz.
+  // Muddati belgilanmagan (paid_until = NULL) do'konlarga tegilmaydi.
+  const expired = await many('SELECT * FROM subscription_expire()');
+  expired.forEach((s) => {
+    console.log(`[obuna] "${s.name}" to'xtatildi — to'langan muddat ${s.paid_until}`);
+  });
 }
 
 /* ── Ishga tushirish ──────────────────────────────────────────────────── */

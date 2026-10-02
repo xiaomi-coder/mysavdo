@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Icon, Btn } from '../components/UI';
+import { supabase } from '../utils/supabaseClient';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Ochiq sahifa (landing) — professional marketing sahifasi
@@ -236,6 +237,11 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── Narxlar ──
+          Tariflar bazadan olinadi (creator panelida o'zgartiriladi) —
+          sayt bilan tizimdagi narx hech qachon bir-biridan farq qilmasin. */}
+      <Pricing />
+
       {/* ── Yakuniy chaqiruv ── */}
       <section id="cta" className="lp-section">
         <div className="lp-final reveal">
@@ -259,9 +265,58 @@ export default function LandingPage() {
           <div className="lp-logo-mark"><Icon name="storefront" fill size={16} /></div>
           <span>MyBazzar</span>
         </div>
-        <span className="lp-footer-note">Do‘kon boshqaruv tizimi · mybazzar.uz</span>
+        <span className="lp-footer-note">
+          Do‘kon boshqaruv tizimi · mybazzar.uz ·{' '}
+          <a href="/maxfiylik" style={{ color: 'inherit', textDecoration: 'underline' }}>Maxfiylik siyosati</a>
+        </span>
       </footer>
     </div>
+  );
+}
+
+function Pricing() {
+  const [plans, setPlans] = useState([]);
+
+  useEffect(() => {
+    // Narxsiz tarif qaytmaydi — ro'yxat bo'sh bo'lsa bo'lim ko'rinmaydi
+    supabase.rpc('public_plans').then(({ data }) => setPlans(Array.isArray(data) ? data : []));
+  }, []);
+
+  if (plans.length === 0) return null;
+
+  const limit = (v, one, many) => (v == null || v === '' ? `Cheklovsiz ${many}` : `${v} ${one}`);
+
+  return (
+    <section id="narx" className="lp-section">
+      <div className="lp-head reveal">
+        <h2>Narxlar</h2>
+        <p>Oylik to‘lov. Do‘kon soni emas, imkoniyat bo‘yicha — hamma bo‘lim har tarifda ochiq</p>
+      </div>
+      <div className="lp-prices">
+        {plans.map((p, i) => (
+          <div key={p.key} className={`lp-price reveal${i === 1 ? ' lp-price-best' : ''}`}
+            style={{ transitionDelay: `${i * 70}ms` }}>
+            {i === 1 && <span className="lp-price-badge">Ko‘p tanlanadi</span>}
+            <div className="lp-price-name">{p.name}</div>
+            <div className="lp-price-value">
+              {Number(p.price).toLocaleString('ru-RU')}
+              <span className="lp-price-unit"> so‘m / oy</span>
+            </div>
+            <ul className="lp-price-list">
+              <li><Icon name="check" size={14} color="var(--color-accent)" /> {limit(p.max_branches, 'filial', 'filial')}</li>
+              <li><Icon name="check" size={14} color="var(--color-accent)" /> {limit(p.max_users, 'xodim', 'xodim')}</li>
+              <li><Icon name="check" size={14} color="var(--color-accent)" /> Kassa, ombor, nasiya, hisobot</li>
+              <li><Icon name="check" size={14} color="var(--color-accent)" /> Onlayn katalog va Telegram bot</li>
+              <li><Icon name="check" size={14} color="var(--color-accent)" /> Mobil ilova (Android)</li>
+            </ul>
+          </div>
+        ))}
+      </div>
+      <p className="lp-price-note reveal">
+        Nasiya telefonni masofadan qulflash xizmati alohida hisoblanadi — har IMEI uchun.
+        Ulanish va do‘kon ma’lumotlarini ko‘chirishda yordam beramiz.
+      </p>
+    </section>
   );
 }
 
@@ -553,6 +608,22 @@ const CSS = `
 .lp-tg { display:inline-flex; align-items:center; gap:8px; padding:0 18px; height:44px; border-radius:10px;
   font-size:14.5px; color:var(--color-neutral-200); border:1px solid var(--color-divider); transition:border-color .2s, color .2s; }
 .lp-tg:hover { color:#fff; border-color:color-mix(in srgb, var(--color-accent) 50%, transparent); }
+
+/* narxlar */
+.lp-prices { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px;
+  max-width:1000px; margin:0 auto; }
+.lp-price { position:relative; border:1px solid var(--color-divider); border-radius:var(--radius-lg);
+  padding:22px 20px; background:var(--color-surface); display:flex; flex-direction:column; gap:12px; }
+.lp-price-best { border-color:var(--color-accent); box-shadow:0 0 0 1px var(--color-accent); }
+.lp-price-badge { position:absolute; top:-10px; left:20px; font-size:11px; padding:3px 9px;
+  border-radius:10px; background:var(--color-accent); color:var(--color-bg); font-weight:500; }
+.lp-price-name { font-size:13px; color:var(--color-neutral-400); text-transform:uppercase; letter-spacing:.06em; }
+.lp-price-value { font-size:30px; font-weight:600; line-height:1.1; }
+.lp-price-unit { font-size:13px; font-weight:400; color:var(--color-neutral-500); }
+.lp-price-list { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px; }
+.lp-price-list li { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--color-neutral-300); }
+.lp-price-note { max-width:700px; margin:18px auto 0; text-align:center; font-size:12.5px;
+  color:var(--color-neutral-500); line-height:1.7; }
 
 /* footer */
 .lp-footer { border-top:1px solid var(--color-divider); padding:26px; max-width:1120px; margin:0 auto;

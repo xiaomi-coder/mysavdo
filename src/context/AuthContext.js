@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { supabase } from '../utils/supabaseClient';
+import { supabase, setAuthToken, setActiveBranch } from '../utils/supabaseClient';
 import { isLowStock, isOutOfStock } from '../utils/stock';
+import { markUser } from '../utils/errorReport';
 
 // Simulated Telegram Toast for global use
 function TelegramToast({ msg, onClose }) {
@@ -103,6 +104,34 @@ export const ROLE_NAV = {
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+
+  /* ── Filiallar ─────────────────────────────────────────────────────────
+     activeBranch: filial id yoki 'all' (barcha filiallar). Sotuvchi
+     filialga biriktirilgan bo'lsa (pinnedBranch) — o'zgartira olmaydi.
+     Tanlov do'kon bo'yicha eslab qolinadi. */
+  const [branches, setBranches] = useState([]);
+  const [activeBranch, setActive] = useState(null);
+  const [pinnedBranch, setPinned] = useState(null);
+
+  const chooseBranch = useCallback((b, storeId) => {
+    setActive(b);
+    setActiveBranch(b);
+    try { if (storeId) localStorage.setItem(`mb_branch_${storeId}`, String(b)); } catch (_) { /* yopiq */ }
+  }, []);
+
+  const loadBranches = useCallback(async (storeId, pin) => {
+    const { data } = await supabase.from('branches').select('*')
+      .eq('is_active', true).order('is_main', { ascending: false }).order('id');
+    const list = data || [];
+    setBranches(list);
+    setPinned(pin || null);
+    if (pin) { chooseBranch(pin, null); return list; }
+    let saved = null;
+    try { saved = localStorage.getItem(`mb_branch_${storeId}`); } catch (_) { /* yopiq */ }
+    const valid = saved === 'all' ? list.length > 1 : list.some(b => String(b.id) === saved);
+    chooseBranch(valid ? (saved === 'all' ? 'all' : Number(saved)) : (list[0]?.id ?? null), storeId);
+    return list;
+  }, [chooseBranch]);
   const [tgAlert, setTgAlert] = useState(null);
 
   // Settings & Offline State
@@ -130,15 +159,69 @@ export function AuthProvider({ children }) {
     });
   };
 
+  /* Oflayn sotuvlarni bazaga yuborish. Ilgari bu yerda faqat navbat
+     tozalanib "yuborildi" deyilardi — sotuvlar aslida yo'qolardi.
+     Endi har biri alohida yoziladi va ombordan yechiladi; o'tmaganlari
+     navbatda qoladi (masalan qoldiq yetmasa) va keyingi safar qayta
+     urinib ko'riladi. Token bo'lmasa (tizimdan chiqilgan) kutadi. */
+  const syncing = React.useRef(false);
+  const attempted = React.useRef('');   // o'tmagan navbat bilan qayta-qayta urinmaslik uchun
   useEffect(() => {
-    if (settings.isOnline && pendingTxns.length > 0) {
-      setTimeout(() => {
-        setTgAlert(`✅ Sinxronizatsiya qilindi!\nInternet uzilishi vaqtida saqlangan ${pendingTxns.length} ta sotuv bazaga yuborildi.`);
-        setPendingTxns([]);
-        localStorage.removeItem('mybazzar_pending_txns');
-      }, 2000);
-    }
-  }, [settings.isOnline, pendingTxns]);
+    if (!settings.isOnline) { attempted.current = ''; return; }   // internet qaytganda yana urinadi
+    if (!user?.store_id || pendingTxns.length === 0 || syncing.current) return;
+    const key = pendingTxns.map(p => p.id).join(',');
+    if (key === attempted.current) return;
+    attempted.current = key;
+    syncing.current = true;
+    (async () => {
+      const left = [];
+      let sent = 0;
+      let lastErr = '';
+      for (const p of pendingTxns) {
+        const { data: txn, error } = await supabase.from('transactions').insert({
+          store_id: p.store_id || user.store_id,
+          customer_id: p.customer_id || null,
+          receipt_no: p.receipt_no || `#OF-${p.id}`,
+          cashier: p.cashier || user.name,
+          items: p.items, total: p.total, discount: p.discount || 0,
+          payment_method: p.method, status: 'completed',
+          date: p.time,
+          shift_id: p.shift_id ?? null,
+          branch_id: p.branch_id ?? null,
+        }).select().single();
+        if (error) { left.push(p); lastErr = error.message; continue; }
+        const { error: stockErr } = await supabase.rpc('apply_sale', { p_txn: txn.id, p_actor: p.cashier || user.name });
+        if (stockErr) {
+          await supabase.from('transactions').delete().eq('id', txn.id);
+          left.push(p); lastErr = stockErr.message; continue;
+        }
+        if (p.method === 'nasiya' && p.customer_id) {
+          const due = new Date(p.time);
+          due.setDate(due.getDate() + (parseInt(p.due_days, 10) || 30));
+          const paid = Number(p.paid) || 0;
+          await supabase.from('debts').insert({
+            store_id: p.store_id || user.store_id, customer_id: p.customer_id,
+            client: p.customer_name || '', phone: p.customer_phone || '',
+            amount: p.total, paid_amount: paid, due_date: due.toISOString(),
+            status: paid >= p.total ? "To'landi" : "To'lanmagan",
+          });
+        }
+        if (p.customer_id) await supabase.rpc('increment_customer_spent', { cid: p.customer_id, amnt: p.total });
+        sent += 1;
+      }
+      // Sinxronlash davomida yangi oflayn sotuv qo'shilgan bo'lishi mumkin
+      setPendingTxns(cur => {
+        const rest = [...left, ...cur.filter(c => !pendingTxns.some(p => p.id === c.id))];
+        localStorage.setItem('mybazzar_pending_txns', JSON.stringify(rest));
+        // Faqat o'tmaganlar qolsa — shu tarkib bilan qayta urinilmaydi
+        attempted.current = left.map(p => p.id).join(',');
+        return rest;
+      });
+      if (left.length > 0) setTgAlert(`⚠️ ${left.length} ta oflayn sotuv yuborilmadi: ${lastErr}. Keyinroq qayta urinadi.`);
+      else if (sent > 0) setTgAlert(`✅ Internet uzilganda saqlangan ${sent} ta sotuv bazaga yuborildi.`);
+      syncing.current = false;
+    })();
+  }, [settings.isOnline, pendingTxns, user]);
 
   useEffect(() => {
     const handleOnline = () => { setSettings(p => ({ ...p, isOnline: true })); setTgAlert('🌐 Internet ulandi! Tizim onlayn rejimda.'); };
@@ -200,97 +283,82 @@ export function AuthProvider({ children }) {
     setTgAlert(msg);
   };
 
+  /* Login SERVERDA tekshiriladi (login() funksiyasi). Ilgari parol
+     bazadan brauzerga olinib shu yerda solishtirilardi — ya'ni har
+     kim hamma parolni ko'ra olardi. Endi server faqat token va
+     parolsiz foydalanuvchi ma'lumotini qaytaradi. */
   const login = async (email, password) => {
     try {
-      // Birinchi users dan qidiramiz
-      let { data, error } = await supabase
-        .from('users')
-        .select('*, stores(name, store_type, slug)')
-        .eq('email', email)
-        .single();
-
-      if (error || !data) {
-        // Agar users dan topilmasa, customers (diler) dan login orqali qidiramiz
-        const { data: dData, error: dErr } = await supabase
-          .from('customers')
-          .select('*')
-          .eq('login', email)
-          .eq('type', 'dealer')
-          .single();
-
-        if (!dErr && dData) {
-          // Bu diler! Parolini tekshiramiz
-          if (dData.password !== password) return { error: "Parol noto'g'ri" };
-
-          // Diler do'koni nomlarini to'g'ridan to'g'ri o'zida saqlaydi (shop_name) 
-          // yoki unga ulangan do'konni o'qib olishi mumkin. Vaqtincha general nomi
-          setUser({
-            ...dData,
-            role: 'dealer',
-            store_id: dData.store_id, // Bu muhim, shu orqali u katta do'kon hamma tovarini ko'radi
-            storeType: 'general',
-            icon: ROLES['dealer'].icon,
-            color: ROLES['dealer'].color,
-            label: dData.shop_name || dData.name,
-            permissions: ROLES['dealer'].permissions
-          });
-          return { success: true };
-        }
-
-        // Fallback for demo accounts if DB is empty
-        if (email === 'owner@mybazzar.uz' && password === 'owner123') {
-          setUser({ id: 'demo1', email, role: 'owner', name: 'Demo Egasi', storeName: "Demo Do'kon", icon: '🏪', color: '#3B82F6', label: "Do'kon Egasi", permissions: ROLES['owner'].permissions, store_id: 'demo-store-1' });
-          return { success: true };
-        }
-        if (email === 'manager@mybazzar.uz' && password === 'manager123') {
-          setUser({ id: 'demo2', email, role: 'manager', name: 'Demo Manager', storeName: "Demo Do'kon", icon: '📦', color: '#10B981', label: 'Manager', permissions: ROLES['manager'].permissions, store_id: 'demo-store-1' });
-          return { success: true };
-        }
-        if (email === 'kassir@mybazzar.uz' && password === 'kassir123') {
-          setUser({ id: 'demo3', email, role: 'cashier', name: 'Demo Kassir', storeName: "Demo Do'kon", icon: '💳', color: '#A78BFA', label: 'Kassir', permissions: ROLES['cashier'].permissions, store_id: 'demo-store-1' });
-          return { success: true };
-        }
-        return { error: "Login yoki Email topilmadi" };
-      }
-      if (data.password !== password) return { error: "Parol noto'g'ri" };
-
-      // Xodimlar sahifasidan o'chirilgan hisob tizimga kira olmaydi
-      if (data.is_active === false) {
-        return { error: "Sizning hisobingiz vaqtincha to'xtatilgan. Do'kon egasiga murojaat qiling." };
+      const { data, error } = await supabase.rpc('login', {
+        p_email: String(email || '').trim(),
+        p_password: password,
+      });
+      if (error) {
+        // Server xabari foydalanuvchi uchun yozilgan (o'zbekcha)
+        return { error: error.message || "Tizimga kirishda xatolik yuz berdi" };
       }
 
-      // Block if store is inactive
-      if (data.role !== 'creator' && data.stores && data.stores.is_active === false) {
-        return { error: "Sizning do'koningiz faoliyati to'xtatilgan. Iltimos, ma'muriyat bilan bog'laning." };
+      setAuthToken(data.token);
+      const u = data.user || {};
+
+      if (u.type === 'dealer') {
+        setUser({
+          ...u,
+          role: 'dealer',
+          store_id: u.store_id,
+          storeType: 'general',
+          icon: ROLES.dealer.icon,
+          color: ROLES.dealer.color,
+          label: u.shop_name || u.name,
+          permissions: ROLES.dealer.permissions,
+        });
+        return { success: true };
       }
 
-      const roleDefaults = ROLES[data.role] || {};
-      const finalPermissions = Array.isArray(data.permissions) && data.permissions.length > 0
-        ? data.permissions
+      const roleDefaults = ROLES[u.role] || {};
+      const finalPermissions = Array.isArray(u.permissions) && u.permissions.length > 0
+        ? u.permissions
         : roleDefaults.permissions;
 
+      if (u.store_id) await loadBranches(u.store_id, data.branch_id);
+
+      // Xato yuborilsa qaysi do'konda bo'lganini bilaylik
+      markUser({ id: u.id, store_id: u.store_id, storeName: data.store?.name, role: u.role });
+
       setUser({
-        ...data,
-        storeName: data.stores?.name,
-        storeType: data.stores?.store_type || 'general',
-        storeSlug: data.stores?.slug,
+        ...u,
+        stores: data.store,
+        storeName: data.store?.name,
+        storeType: data.store?.store_type || 'general',
+        storeSlug: data.store?.slug,
         icon: roleDefaults.icon,
         color: roleDefaults.color,
         label: roleDefaults.label,
-        permissions: finalPermissions
+        permissions: finalPermissions,
       });
       return { success: true };
     } catch (err) {
-      console.error("Login error:", err);
-      return { error: "Tizimga kirishda xatolik yuz berdi" };
+      console.error('Login error:', err);
+      return { error: 'Tizimga kirishda xatolik yuz berdi' };
     }
   };
 
-  const logout = () => setUser(null);
+  const logout = () => {
+    markUser(null);
+    setAuthToken(null); setActiveBranch(null);
+    setBranches([]); setActive(null); setPinned(null);
+    setUser(null);
+  };
   const hasPermission = (perm) => user?.permissions?.includes(perm);
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, hasPermission, sendTgAlert, settings, toggleSetting, addPendingTxn, pendingTxns, setSettings, alerts, refreshAlerts }}>
+    <AuthContext.Provider value={{
+      user, login, logout, hasPermission, sendTgAlert, settings, toggleSetting, addPendingTxn,
+      pendingTxns, setSettings, alerts, refreshAlerts,
+      branches, activeBranch, pinnedBranch,
+      chooseBranch: (b) => chooseBranch(b, user?.store_id),
+      reloadBranches: () => loadBranches(user?.store_id, pinnedBranch),
+    }}>
       {children}
       {tgAlert && <TelegramToast msg={tgAlert} onClose={() => setTgAlert(null)} />}
     </AuthContext.Provider>

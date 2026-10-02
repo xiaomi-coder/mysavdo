@@ -1,0 +1,35 @@
+# MyBazzar AI maslahat xizmati
+#
+#   sudo cp mybazzar-ai.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now mybazzar-ai
+#
+# Faqat 127.0.0.1:3003 da tinglaydi — tashqariga nginx orqali
+# (mybazzar.uz/ai/) chiqadi. AI kaliti bazadagi private sxemada.
+
+[Unit]
+Description=MyBazzar AI maslahat xizmati
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/mybazzar-bot
+ExecStart=/usr/bin/node ai-service.js
+EnvironmentFile=/etc/mybazzar/bot.env
+
+Restart=always
+RestartSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/mybazzar-bot
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mybazzar-ai
+
+[Install]
+WantedBy=multi-user.target

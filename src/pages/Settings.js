@@ -15,7 +15,13 @@ import { storeUrl } from '../utils/storeHost';
    ══════════════════════════════════════════════════════════════════════ */
 
 export default function Settings() {
-  const { user, settings, toggleSetting, setSettings, pendingTxns } = useAuth();
+  const { user, settings, toggleSetting, setSettings, pendingTxns, reloadBranches } = useAuth();
+  const [sub, setSub] = useState(null);
+  const loadSub = useCallback(async () => {
+    const { data } = await supabase.rpc('my_subscription');
+    setSub(data || null);
+  }, []);
+  useEffect(() => { loadSub(); }, [loadSub]);
   const { t } = useTranslation();
 
   const [loading, setLoading] = useState(true);
@@ -123,22 +129,9 @@ export default function Settings() {
             </div>
           </Card>
 
-          <Card padding="var(--space-6)" gap={10}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 500 }}>
-                <Icon name="crown-simple" size={16} color="var(--warn)" />
-                Joriy tarif
-              </div>
-              <Tag variant="accent">Business</Tag>
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--color-neutral-400)' }}>
-              Business — <b style={{ color: 'var(--color-text)', fontWeight: 500 }}>$59/oy</b>
-            </div>
-            <Btn variant="secondary" disabled title="Tarif o‘zgartirish — tez orada"
-              style={{ alignSelf: 'flex-start' }}>
-              Tarifni O‘zgartirish
-            </Btn>
-          </Card>
+          <PlanCard sub={sub} />
+          <BranchesCard user={user} sub={sub} onToast={setToast}
+            onChanged={() => { reloadBranches(); loadSub(); }} />
         </div>
 
         {/* ── Telegram bot ── */}
@@ -212,6 +205,163 @@ export default function Settings() {
 
       {toast && <Toast message={toast.msg} variant={toast.variant} onClose={() => setToast(null)} />}
     </Page>
+  );
+}
+
+/* Tarif — ilgari bu yerda qattiq yozilgan "Business $59/oy" turardi,
+   haqiqiy tarifga hech qanday aloqasi yo'q edi. Endi bazadagi obuna. */
+function PlanCard({ sub }) {
+  const [plans, setPlans] = useState([]);
+  useEffect(() => {
+    supabase.from('platform_settings').select('value').eq('key', 'plans').maybeSingle()
+      .then(({ data }) => {
+        try { setPlans(JSON.parse(data?.value || '[]')); } catch (_) { setPlans([]); }
+      });
+  }, []);
+  if (!sub) return null;
+  const plan = plans.find(p => p.key === sub.plan);
+  const until = sub.paid_until ? new Date(sub.paid_until).toLocaleDateString('uz-UZ') : null;
+  const left = sub.days_left == null ? ''
+    : sub.days_left < 0 ? ` · ${-sub.days_left} kun o‘tgan` : ` · ${sub.days_left} kun qoldi`;
+  const lim = (n, max) => (max == null ? `${n} ta · cheklovsiz` : `${n} / ${max}`);
+  return (
+    <Card padding="var(--space-6)" gap={10}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 500 }}>
+          <Icon name="crown-simple" size={16} color="var(--warn)" />
+          Tarif
+        </div>
+        <Tag variant="accent">{plan?.name || 'Belgilanmagan'}</Tag>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 14px', fontSize: 13 }}>
+        <span style={{ color: 'var(--color-neutral-500)' }}>To‘langan muddat</span>
+        <span>{until ? `${until} gacha${left}` : 'belgilanmagan'}</span>
+        <span style={{ color: 'var(--color-neutral-500)' }}>Xodimlar</span>
+        <span className="num">{lim(sub.users, sub.max_users)}</span>
+        <span style={{ color: 'var(--color-neutral-500)' }}>Filiallar</span>
+        <span className="num">{lim(sub.branches ?? 1, sub.max_branches)}</span>
+      </div>
+      <div style={{ fontSize: 11.5, color: 'var(--color-neutral-500)' }}>
+        Tarifni o‘zgartirish yoki uzaytirish uchun MyBazzar bilan bog‘laning.
+      </div>
+    </Card>
+  );
+}
+
+/* Filiallar. Faqat egasi qo'sha/tahrirlay oladi (baza ham shunday
+   tekshiradi). Filial o'chirilmaydi, faqat yopiladi — sotuv tarixi
+   saqlanib qolishi kerak. Qoldig'i bor filialni baza yopishga qo'ymaydi. */
+function BranchesCard({ user, sub, onChanged, onToast }) {
+  const isOwner = user?.role === 'owner';
+  const [rows, setRows] = useState(null);
+  const [edit, setEdit] = useState(null);     // {id?, name, address, phone}
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from('branches').select('*')
+      .order('is_main', { ascending: false }).order('id');
+    setRows(data || []);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const active = (rows || []).filter(b => b.is_active);
+  const full = sub?.max_branches != null && active.length >= sub.max_branches;
+
+  const save = async () => {
+    const body = {
+      name: String(edit.name || '').trim(),
+      address: String(edit.address || '').trim() || null,
+      phone: String(edit.phone || '').trim() || null,
+    };
+    if (!body.name) { onToast({ msg: 'Filial nomini kiriting', variant: 'warn' }); return; }
+    setSaving(true);
+    const { error } = edit.id
+      ? await supabase.from('branches').update(body).eq('id', edit.id)
+      : await supabase.from('branches').insert({ ...body, store_id: user.store_id });
+    setSaving(false);
+    if (error) { onToast({ msg: error.message, variant: 'dang' }); return; }
+    onToast({ msg: edit.id ? 'Filial saqlandi' : 'Filial ochildi', variant: 'ok' });
+    setEdit(null);
+    await load(); onChanged();
+  };
+
+  const setActive = async (b, on) => {
+    const { error } = await supabase.from('branches').update({ is_active: on }).eq('id', b.id);
+    if (error) { onToast({ msg: error.message, variant: 'dang' }); return; }
+    onToast({ msg: on ? `${b.name} qayta ochildi` : `${b.name} yopildi`, variant: 'ok' });
+    await load(); onChanged();
+  };
+
+  return (
+    <Card padding="var(--space-6)" gap={12}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 500 }}>
+          <Icon name="map-pin" size={16} color="var(--color-accent)" />
+          Filiallar
+        </div>
+        {isOwner && !edit && (
+          <Btn variant="secondary" size="sm" icon="plus" disabled={full}
+            title={full ? 'Tarif chegarasiga yetildi' : ''}
+            onClick={() => setEdit({ name: '', address: '', phone: '' })}>
+            Filial qo‘shish
+          </Btn>
+        )}
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--color-neutral-500)', lineHeight: 1.5 }}>
+        Har filialning o‘z qoldig‘i, kassasi va sotuvlari bo‘ladi. Tovar katalogi va mijozlar umumiy.
+        {full && isOwner ? ' Tarifingizdagi filiallar soni to‘ldi.' : ''}
+      </div>
+
+      {rows == null ? <SkeletonRows count={2} widths={['100%']} /> : rows.map(b => (
+        <div key={b.id} style={{
+          display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0',
+          borderTop: '1px solid var(--color-divider)', opacity: b.is_active ? 1 : 0.55,
+        }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 500, display: 'flex', gap: 7, alignItems: 'center' }}>
+              {b.name}
+              {b.is_main && <Tag variant="accent">asosiy</Tag>}
+              {!b.is_active && <Tag>yopilgan</Tag>}
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--color-neutral-500)' }}>
+              {[b.address, b.phone].filter(Boolean).join(' · ') || 'manzil kiritilmagan'}
+            </div>
+          </div>
+          {isOwner && (
+            <>
+              <Btn variant="ghost" size="sm" icon="pencil-simple"
+                onClick={() => setEdit({ id: b.id, name: b.name, address: b.address || '', phone: b.phone || '' })}>
+                Tahrirlash
+              </Btn>
+              {!b.is_main && (b.is_active
+                ? <Btn variant="ghost" size="sm" onClick={() => setActive(b, false)}>Yopish</Btn>
+                : <Btn variant="ghost" size="sm" disabled={full} onClick={() => setActive(b, true)}>Ochish</Btn>)}
+            </>
+          )}
+        </div>
+      ))}
+
+      {edit && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 9, paddingTop: 10, borderTop: '1px solid var(--color-divider)' }}>
+          <Field label="Filial nomi">
+            <input className="input" value={edit.name} autoFocus placeholder="Masalan: Chilonzor"
+              onChange={e => setEdit(p => ({ ...p, name: e.target.value }))} />
+          </Field>
+          <Field label="Manzil" hint="Chekda chiqadi">
+            <input className="input" value={edit.address} placeholder="Shahar, ko‘cha, uy"
+              onChange={e => setEdit(p => ({ ...p, address: e.target.value }))} />
+          </Field>
+          <Field label="Telefon">
+            <input className="input num" value={edit.phone} placeholder="+998 90 000 00 00"
+              onChange={e => setEdit(p => ({ ...p, phone: e.target.value }))} />
+          </Field>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Btn variant="primary" icon="check" onClick={save} loading={saving}>Saqlash</Btn>
+            <Btn variant="ghost" onClick={() => setEdit(null)}>Bekor qilish</Btn>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }
 

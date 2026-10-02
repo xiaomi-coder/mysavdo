@@ -5,6 +5,7 @@ import {
 } from '../components/UI';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../utils/supabaseClient';
+import { aiTest } from '../utils/aiClient';
 import { uniqueSlug } from '../utils/slug';
 import { storeUrl } from '../utils/storeHost';
 
@@ -12,12 +13,28 @@ const money = n => Math.round(Number(n) || 0).toLocaleString('ru-RU');
 const initialsOf = (name = '') =>
   name.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '??';
 
-const PLANS = [
-  { value: 1, label: 'Starter' },
-  { value: 3, label: 'Business' },
-  { value: 10, label: 'Enterprise' },
-];
-const planOf = n => PLANS.slice().reverse().find(p => (n || 1) >= p.value)?.label || 'Starter';
+/* Obuna muddati: qolgan kun (manfiy = o'tib ketgan). Sana yo'q = belgilanmagan */
+const daysLeft = d => (d ? Math.round((new Date(d + 'T00:00:00') - new Date(new Date().toDateString())) / 86400000) : null);
+const addMonths = (base, n) => {
+  const d = base ? new Date(base + 'T00:00:00') : new Date();
+  if (d < new Date(new Date().toDateString())) d.setTime(new Date(new Date().toDateString()).getTime());
+  d.setMonth(d.getMonth() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+/* Jadvaldagi obuna belgisi */
+function SubBadge({ paidUntil }) {
+  const d = daysLeft(paidUntil);
+  if (d === null) return <span style={{ fontSize: 12, color: 'var(--color-neutral-500)' }}>belgilanmagan</span>;
+  const date = new Date(paidUntil + 'T00:00:00').toLocaleDateString('ru-RU');
+  const [variant, text] = d < 0 ? ['dang', `${-d} kun o‘tdi`] : d <= 3 ? ['warn', `${d} kun qoldi`] : ['ok', `${d} kun`];
+  return (
+    <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
+      <span className="num" style={{ fontSize: 12.5 }}>{date}</span>
+      <Tag variant={variant}>{text}</Tag>
+    </span>
+  );
+}
 
 const ROLE_LABEL = { owner: 'Egasi', manager: 'Manager', cashier: 'Sotuvchi', creator: 'Creator' };
 
@@ -42,6 +59,7 @@ export default function CreatorPanel({ page = 'dashboard' }) {
   /* IMEI Block — qulflash xizmati hisob-kitobi */
   const [imeis, setImeis] = useState([]);
   const [price, setPrice] = useState(0);
+  const [plans, setPlans] = useState([]);       // creator yaratgan tariflar
   const [period, setPeriod] = useState('month');      // month | prev | all
   const [imeiStore, setImeiStore] = useState(null);   // tafsilot uchun do'kon
 
@@ -54,12 +72,14 @@ export default function CreatorPanel({ page = 'dashboard' }) {
         .gte('date', new Date(Date.now() - 365 * 86400000).toISOString()),
       supabase.from('imei_billing_view').select('*')
         .order('created_at', { ascending: false }).limit(5000),
-      supabase.from('platform_settings').select('value').eq('key', 'imei_price'),
+      supabase.from('platform_settings').select('key, value').in('key', ['imei_price', 'plans']),
     ]);
     setStores(storeRes.data || []);
     setUsers(userRes.data || []);
     setImeis(imeiRes.data || []);
-    setPrice(Number(cfgRes.data?.[0]?.value) || 0);
+    const cfg = Object.fromEntries((cfgRes.data || []).map(r => [r.key, r.value]));
+    setPrice(Number(cfg.imei_price) || 0);
+    try { setPlans(JSON.parse(cfg.plans || '[]')); } catch { setPlans([]); }
 
     const byStore = {};
     (txnRes.data || []).forEach(t => {
@@ -191,7 +211,7 @@ export default function CreatorPanel({ page = 'dashboard' }) {
                     <table className="table" style={{ fontSize: 13 }}>
                       <thead>
                         <tr>
-                          <th>Do‘kon</th><th>Egasi</th><th>Tarif</th>
+                          <th>Do‘kon</th><th>Egasi</th><th>Tarif</th><th>Obuna</th>
                           <th style={{ textAlign: 'right' }}>Aylanma</th>
                           <th>Yaratilgan</th><th>Holat</th><th />
                         </tr>
@@ -218,7 +238,12 @@ export default function CreatorPanel({ page = 'dashboard' }) {
                             <td style={{ color: s.is_active ? undefined : 'var(--color-neutral-400)' }}>
                               {users.find(u => u.store_id === s.id && u.role === 'owner')?.name || s.owner_email || '—'}
                             </td>
-                            <td><Tag variant={s.max_branches > 1 ? 'accent' : 'neutral'}>{planOf(s.max_branches)}</Tag></td>
+                            <td>
+                              {s.plan
+                                ? <Tag variant="accent">{plans.find(p => p.key === s.plan)?.name || s.plan}</Tag>
+                                : <span style={{ fontSize: 12, color: 'var(--color-neutral-500)' }}>—</span>}
+                            </td>
+                            <td><SubBadge paidUntil={s.paid_until} /></td>
                             <td className="num" style={{ textAlign: 'right' }}>{money(revenue[s.id] || 0)}</td>
                             <td style={{ color: 'var(--color-neutral-500)' }}>
                               {s.created_at ? new Date(s.created_at).toLocaleDateString('ru-RU') : '—'}
@@ -269,7 +294,7 @@ export default function CreatorPanel({ page = 'dashboard' }) {
 
             <div style={{ fontSize: 11, color: 'var(--color-neutral-500)', display: 'flex', alignItems: 'center', gap: 6 }}>
               <Icon name="shield-warning" size={13} color="var(--warn)" />
-              Parollar bazada ochiq matnda saqlanadi — bu vaqtinchalik yechim, shifrlashga o‘tish rejalashtirilgan.
+              Parollar shifrlangan holda saqlanadi va hech kimga ko‘rinmaydi. Unutilgan parolni tahrirlash orqali yangisiga almashtiring.
             </div>
           </>
         )}
@@ -364,14 +389,20 @@ export default function CreatorPanel({ page = 'dashboard' }) {
         )}
 
         {page === 'settings' && (
-          <PriceSettings price={price} onSaved={(v) => { setPrice(v); notify('Narx saqlandi'); }}
-            onError={m => notify(m, 'dang')} />
+          <>
+            <PlansEditor plans={plans} onSaved={(v) => { setPlans(v); notify('Tariflar saqlandi'); }}
+              onError={m => notify(m, 'dang')} />
+            <PriceSettings price={price} onSaved={(v) => { setPrice(v); notify('Narx saqlandi'); }}
+              onError={m => notify(m, 'dang')} />
+            <AiSettings onDone={(m) => notify(m)} onError={m => notify(m, 'dang')} />
+          </>
         )}
       </div>
 
       {storeForm && (
         <StoreForm
           store={storeForm === 'new' ? null : storeForm}
+          plans={plans}
           takenSlugs={stores.map(s => s.slug)}
           onClose={() => setStoreForm(null)}
           onSaved={(name) => { setStoreForm(null); load(); notify(`"${name}" saqlandi`); }}
@@ -582,6 +613,178 @@ function StoreGroup({ group, onEdit }) {
 }
 
 /* ── Creator sozlamalari: IMEI narxi ──────────────────────────────────── */
+/* ── Tariflar (creator o'zi yaratadi) ──────────────────────────────────
+   platform_settings.plans da JSON. Do'konga tarif tanlanganda xodim
+   chegarasi shu yerdan KO'CHIRILADI — keyin tarif o'zgarsa, mavjud
+   do'konlarniki o'zicha o'zgarmaydi (mijoz bilan kelishuv buzilmasin). */
+/* ── AI sozlamasi ────────────────────────────────────────────────────────
+   Kalit shu yerdan qo'yiladi va BAZANING YASHIRIN sxemasiga tushadi
+   (private.secrets). Uni qaytarib o'qib bo'lmaydi — parol kabi. Ilovaga
+   ham berilmaydi: AI chaqiruvi serverdagi xizmatda bajariladi.
+
+   Nega platform_settings emas: u jadvalni har bir do'kon ilovasi o'qiy
+   oladi, ya'ni kalit hammaga ko'rinib qolardi. */
+function AiSettings({ onDone, onError }) {
+  const [cfg, setCfg] = useState(null);
+  const [provider, setProvider] = useState('claude');
+  const [model, setModel] = useState('');
+  const [key, setKey] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [test, setTest] = useState(null);
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.rpc('ai_config');
+    setCfg(data || null);
+    if (data) { setProvider(data.provider || 'claude'); setModel(data.model || ''); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const save = async () => {
+    setSaving(true);
+    const { error } = await supabase.rpc('set_ai_config', {
+      p_provider: provider,
+      p_model: model.trim() || null,
+      p_key: key.trim() || null,     // bo'sh qoldirilsa eski kalit saqlanadi
+    });
+    setSaving(false);
+    if (error) { onError(`Saqlanmadi: ${error.message}`); return; }
+    setKey(''); setTest(null);
+    await load();
+    onDone('AI sozlamasi saqlandi');
+  };
+
+  const runTest = async () => {
+    setTesting(true); setTest(null);
+    const r = await aiTest();
+    setTesting(false);
+    setTest(r.error ? { ok: false, msg: r.error } : { ok: true, msg: `${r.provider} javob berdi: ${r.text}` });
+  };
+
+  const MODELS = {
+    claude: 'claude-haiku-4-5-20251001',
+    gemini: 'gemini-2.5-flash',
+  };
+
+  return (
+    <Card padding="var(--space-6)" gap={14}>
+      <SectionHeader title="AI maslahat"
+        hint="Do‘kon raqamlariga qarab o‘zbekcha maslahat beradi. Kalit serverda saqlanadi va ilovaga berilmaydi" />
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13 }}>
+        <Icon name={cfg?.has_key ? 'check-circle' : 'warning-circle'} fill size={17}
+          color={cfg?.has_key ? 'var(--ok)' : 'var(--warn)'} />
+        {cfg?.has_key
+          ? <span>Kalit o‘rnatilgan · do‘konlarda AI maslahat ishlayapti</span>
+          : <span>Kalit yo‘q — do‘konlarda AI bo‘limi ko‘rinmaydi</span>}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: 9 }}>
+        <Field label="Provayder">
+          <select className="input" value={provider}
+            onChange={e => { setProvider(e.target.value); setModel(MODELS[e.target.value] || ''); }}>
+            <option value="claude">Claude (Anthropic)</option>
+            <option value="gemini">Gemini (Google)</option>
+          </select>
+        </Field>
+        <Field label="Model" hint={`Bo‘sh qoldirilsa: ${MODELS[provider]}`}>
+          <input className="input" value={model} onChange={e => setModel(e.target.value)}
+            placeholder={MODELS[provider]} />
+        </Field>
+      </div>
+
+      <Field label={cfg?.has_key ? 'Yangi kalit' : 'API kaliti'}
+        hint={cfg?.has_key
+          ? 'O‘zgartirmasangiz bo‘sh qoldiring — eski kalit saqlanadi'
+          : provider === 'claude' ? 'console.anthropic.com → API keys' : 'aistudio.google.com → API key'}>
+        <input className="input" type="password" value={key} autoComplete="new-password"
+          onChange={e => setKey(e.target.value)} placeholder={cfg?.has_key ? '••••••••' : 'kalitni joylashtiring'} />
+      </Field>
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <Btn variant="primary" icon="check" onClick={save} loading={saving}>Saqlash</Btn>
+        <Btn variant="secondary" icon="sparkle" onClick={runTest} loading={testing}
+          disabled={!cfg?.has_key}>Sinab ko‘rish</Btn>
+        {test && (
+          <span style={{ fontSize: 12.5, color: test.ok ? 'var(--ok)' : 'var(--dang)' }}>
+            {test.msg}
+          </span>
+        )}
+      </div>
+
+      <div style={{ fontSize: 11.5, color: 'var(--color-neutral-500)', lineHeight: 1.6 }}>
+        Har tahlil taxminan 30–100 so‘m turadi va do‘kon uchun kuniga bir marta
+        hisoblanadi. AI ga mijoz ismi, telefoni va IMEI yuborilmaydi — faqat
+        savdo raqamlari va tovar nomlari.
+      </div>
+    </Card>
+  );
+}
+
+function PlansEditor({ plans, onSaved, onError }) {
+  const [rows, setRows] = useState(plans);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setRows(plans); }, [plans]);
+
+  const setRow = (i, k, v) => setRows(r => r.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
+  const add = () => setRows(r => [...r, { key: '', name: '', price: null, max_users: null, max_branches: 1 }]);
+  const remove = (i) => setRows(r => r.filter((_, j) => j !== i));
+
+  const save = async () => {
+    const used = new Set();
+    const clean = rows.filter(r => String(r.name || '').trim()).map(r => {
+      let key = r.key || String(r.name).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'tarif';
+      while (used.has(key)) key += '-2';
+      used.add(key);
+      return {
+        key,
+        name: String(r.name).trim(),
+        price: r.price === '' || r.price == null ? null : Number(r.price),
+        max_users: r.max_users === '' || r.max_users == null ? null : Number(r.max_users),
+        max_branches: r.max_branches === '' || r.max_branches == null ? null : Number(r.max_branches),
+      };
+    });
+    setSaving(true);
+    const { error } = await supabase.from('platform_settings')
+      .update({ value: JSON.stringify(clean), updated_at: new Date().toISOString() })
+      .eq('key', 'plans');
+    setSaving(false);
+    if (error) { onError(`Saqlanmadi: ${error.message}`); return; }
+    onSaved(clean);
+  };
+
+  const num = v => String(v).replace(/\D/g, '').slice(0, 10);
+
+  return (
+    <Card padding="var(--space-6)" gap={14}>
+      <SectionHeader title="Tariflar"
+        hint="Do‘kon formasida shu ro‘yxatdan tanlanadi. To‘lov qo‘lda olinadi — tizim muddat va xodim chegarasini yuritadi" />
+      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr 34px', gap: 8, fontSize: 11.5, color: 'var(--color-neutral-500)' }}>
+        <span>Nomi</span><span>Oylik narx (so‘m)</span><span>Xodimlar</span><span>Filiallar</span><span />
+      </div>
+      {rows.map((r, i) => (
+        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr 34px', gap: 8 }}>
+          <input className="input" value={r.name || ''} onChange={e => setRow(i, 'name', e.target.value)} placeholder="Biznes" />
+          <input className="input num" inputMode="numeric" value={r.price ?? ''} onChange={e => setRow(i, 'price', num(e.target.value))} placeholder="narx" />
+          <input className="input num" inputMode="numeric" value={r.max_users ?? ''} onChange={e => setRow(i, 'max_users', num(e.target.value))} placeholder="cheklovsiz" />
+          <input className="input num" inputMode="numeric" value={r.max_branches ?? ''} onChange={e => setRow(i, 'max_branches', num(e.target.value))} placeholder="cheklovsiz" />
+          <Btn variant="ghost" iconOnly icon="trash" title="O‘chirish" onClick={() => remove(i)}
+            style={{ width: 34, height: 34, color: 'var(--dang)' }} />
+        </div>
+      ))}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <Btn variant="secondary" icon="plus" onClick={add}>Tarif qo‘shish</Btn>
+        <div style={{ flex: 1 }} />
+        <Btn variant="primary" icon="check" onClick={save} loading={saving}>Saqlash</Btn>
+      </div>
+      <div style={{ fontSize: 11.5, color: 'var(--color-neutral-500)', lineHeight: 1.6 }}>
+        Bo‘sh = cheklovsiz. Tarif o‘zgarsa, unga ulangan do‘konlarning xodim va filial chegarasi o‘zicha o‘zgarmaydi —
+        kerak bo‘lsa do‘kon formasida tarifni qayta tanlang.
+      </div>
+    </Card>
+  );
+}
+
 function PriceSettings({ price, onSaved, onError }) {
   const [val, setVal] = useState(String(price || ''));
   const [saving, setSaving] = useState(false);
@@ -632,15 +835,9 @@ function PriceSettings({ price, onSaved, onError }) {
 }
 
 /* ── Foydalanuvchi qatori (parolni ko'rsatish/nusxalash) ───────────────── */
+/* Parol faqat yoziladi: bazada xesh saqlanadi va uni ko'rsatib bo'lmaydi.
+   Ilgari parol shu yerda ochiq ko'rinardi va nusxalanardi. */
 function UserRow({ user, store, onEdit, indent = false }) {
-  const [reveal, setReveal] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const copy = () => {
-    navigator.clipboard?.writeText(user.password || '');
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
 
   return (
     <tr>
@@ -665,15 +862,9 @@ function UserRow({ user, store, onEdit, indent = false }) {
       <td>{store?.name || <span style={{ color: 'var(--color-neutral-500)' }}>Platforma</span>}</td>
       <td><Tag variant="neutral">{ROLE_LABEL[user.role] || user.role}</Tag></td>
       <td>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-          <span className={reveal ? 'mono' : ''} style={{ letterSpacing: reveal ? 0 : 2, color: 'var(--color-neutral-400)' }}>
-            {reveal ? user.password : '••••••••'}
-          </span>
-          <Icon name={reveal ? 'eye-slash' : 'eye'} size={14} color="var(--color-neutral-500)"
-            style={{ cursor: 'pointer' }} onClick={() => setReveal(r => !r)} />
-          <Icon name={copied ? 'check' : 'copy'} size={14}
-            color={copied ? 'var(--ok)' : 'var(--color-neutral-500)'}
-            style={{ cursor: 'pointer' }} onClick={copy} />
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--color-neutral-500)', fontSize: 12 }}>
+          <Icon name="lock-simple" size={13} color="var(--color-neutral-500)" />
+          shifrlangan
         </span>
       </td>
       <td>{user.is_active === false ? <Tag variant="neutral">Noaktiv</Tag> : <Tag variant="ok">Aktiv</Tag>}</td>
@@ -685,17 +876,36 @@ function UserRow({ user, store, onEdit, indent = false }) {
 }
 
 /* ── Do'kon yaratish / tahrirlash ──────────────────────────────────────── */
-function StoreForm({ store, takenSlugs = [], onClose, onSaved, onError }) {
+function StoreForm({ store, plans = [], takenSlugs = [], onClose, onSaved, onError }) {
   const editing = Boolean(store);
   const [f, setF] = useState({
     name: store?.name || '',
     owner_email: store?.owner_email || '',
     store_type: store?.store_type || 'general',
-    max_branches: store?.max_branches || 1,
     slug: store?.slug || '',
     owner: '', password: '',
+    // Obuna — to'lov qo'lda olinadi, bu yerda faqat hisobi yuritiladi
+    plan: store?.plan || '',
+    max_users: store?.max_users ?? '',
+    max_branches: store ? (store.max_branches ?? '') : 1,
+    paid_until: store?.paid_until || '',
   });
   const [slugEdited, setSlugEdited] = useState(Boolean(store?.slug));
+
+  const choosePlan = (key) => {
+    const p = plans.find(x => x.key === key);
+    setF(prev => ({
+      ...prev, plan: key,
+      max_users: p ? (p.max_users ?? '') : prev.max_users,
+      max_branches: p && 'max_branches' in p ? (p.max_branches ?? '') : prev.max_branches,
+    }));
+  };
+  const sub = {
+    plan: f.plan || null,
+    max_users: f.max_users === '' ? null : Number(f.max_users),
+    max_branches: f.max_branches === '' ? null : Number(f.max_branches),
+    paid_until: f.paid_until || null,
+  };
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
 
@@ -718,8 +928,7 @@ function StoreForm({ store, takenSlugs = [], onClose, onSaved, onError }) {
     if (editing) {
       const { error } = await supabase.from('stores').update({
         name: f.name.trim(), owner_email: f.owner_email.trim(),
-        store_type: f.store_type, max_branches: Number(f.max_branches),
-        slug: f.slug || null,
+        store_type: f.store_type, slug: f.slug || null, ...sub,
       }).eq('id', store.id);
       setSaving(false);
       return error ? onError(`Saqlanmadi: ${error.message}`) : onSaved(f.name);
@@ -728,7 +937,7 @@ function StoreForm({ store, takenSlugs = [], onClose, onSaved, onError }) {
     // Yangi do'kon + uning egasi bir vaqtda yaratiladi
     const { data, error } = await supabase.from('stores').insert({
       name: f.name.trim(), owner_email: f.owner_email.trim(),
-      store_type: f.store_type, max_branches: Number(f.max_branches),
+      store_type: f.store_type, max_branches: 1, ...sub,
       slug: f.slug || uniqueSlug(f.name, takenSlugs), is_active: true,
     }).select().single();
 
@@ -788,11 +997,47 @@ function StoreForm({ store, takenSlugs = [], onClose, onSaved, onError }) {
             </select>
           </Field>
           <Field label="Tarif">
-            <select className="input" value={f.max_branches} onChange={e => set('max_branches', e.target.value)}>
-              {PLANS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+            <select className="input" value={f.plan} onChange={e => choosePlan(e.target.value)}>
+              <option value="">— tanlanmagan —</option>
+              {plans.map(p => (
+                <option key={p.key} value={p.key}>
+                  {p.name}{p.price ? ` · ${money(p.price)} so‘m` : ''}
+                </option>
+              ))}
             </select>
           </Field>
         </div>
+
+        {/* Obuna muddati. Bo'sh qoldirilsa do'kon hech qachon avtomatik
+            to'xtatilmaydi — mavjud mijozlar shu holatda */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
+            <Field label="Xodimlar" hint="Egasidan tashqari. Bo‘sh = cheklovsiz">
+              <input className="input num" inputMode="numeric" value={f.max_users}
+                onChange={e => set('max_users', e.target.value.replace(/\D/g, ''))} placeholder="cheklovsiz" />
+            </Field>
+            <Field label="Filiallar" hint="Asosiy filial ham sanaladi">
+              <input className="input num" inputMode="numeric" value={f.max_branches}
+                onChange={e => set('max_branches', e.target.value.replace(/\D/g, ''))} placeholder="cheklovsiz" />
+            </Field>
+          </div>
+          <Field label="To‘langan muddat" hint={
+            f.paid_until
+              ? (daysLeft(f.paid_until) < 0 ? `${-daysLeft(f.paid_until)} kun o‘tgan` : `${daysLeft(f.paid_until)} kun qoldi`)
+              : 'Bo‘sh = muddat belgilanmagan'}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input className="input num" type="date" value={f.paid_until}
+                onChange={e => set('paid_until', e.target.value)} style={{ flex: 1 }} />
+              <Btn variant="secondary" size="sm" onClick={() => set('paid_until', addMonths(f.paid_until, 1))}>+1 oy</Btn>
+              <Btn variant="secondary" size="sm" onClick={() => set('paid_until', addMonths(f.paid_until, 12))}>+1 yil</Btn>
+            </div>
+          </Field>
+        </div>
+        {editing && store?.is_active === false && f.paid_until && daysLeft(f.paid_until) >= 0 && (
+          <div style={{ fontSize: 12, color: 'var(--warn)' }}>
+            Do‘kon hozir to‘xtatilgan. Saqlagach jadvaldagi ▶ tugmasi bilan davom ettiring.
+          </div>
+        )}
 
         <Field label="Egasining emaili" hint={editing ? null : 'Egasi shu email bilan tizimga kiradi'}>
           <input className="input" value={f.owner_email} onChange={e => set('owner_email', e.target.value)}
@@ -820,21 +1065,23 @@ function StoreForm({ store, takenSlugs = [], onClose, onSaved, onError }) {
 function UserForm({ user, stores, onClose, onSaved, onError }) {
   const editing = Boolean(user);
   const [f, setF] = useState({
-    name: user?.name || '', email: user?.email || '', password: user?.password || '',
+    name: user?.name || '', email: user?.email || '', password: '',
     role: user?.role || 'cashier', store_id: user?.store_id || '',
   });
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
 
-  const valid = f.name.trim() && f.email.trim() && f.password.trim() &&
+  // Tahrirda parol bo'sh qoldirilsa eskisi o'zgarmaydi
+  const valid = f.name.trim() && f.email.trim() && (editing || f.password.trim()) &&
     (f.role === 'creator' || f.store_id);
 
   const save = async () => {
     setSaving(true);
     const row = {
-      name: f.name.trim(), email: f.email.trim(), password: f.password,
+      name: f.name.trim(), email: f.email.trim(),
       role: f.role, store_id: f.role === 'creator' ? null : Number(f.store_id),
     };
+    if (f.password.trim()) row.password = f.password;   // bazada xeshlanadi
     const { error } = editing
       ? await supabase.from('users').update(row).eq('id', user.id)
       : await supabase.from('users').insert(row);
@@ -858,8 +1105,9 @@ function UserForm({ user, stores, onClose, onSaved, onError }) {
           <Field label="Email">
             <input className="input" value={f.email} onChange={e => set('email', e.target.value)} />
           </Field>
-          <Field label="Parol">
-            <input className="input mono" value={f.password} onChange={e => set('password', e.target.value)} />
+          <Field label={editing ? 'Yangi parol' : 'Parol'}>
+            <input className="input mono" value={f.password} onChange={e => set('password', e.target.value)}
+              placeholder={editing ? 'O‘zgarmasa bo‘sh qoldiring' : ''} />
           </Field>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>

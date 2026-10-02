@@ -279,17 +279,15 @@ export default function Storefront({ storeKey: keyFromHost }) {
 
   const load = useCallback(async (key) => {
     setLoading(true);
-    const query = /^\d+$/.test(String(key))
-      ? supabase.from('stores').select('*').eq('id', Number(key))
-      : supabase.from('stores').select('*').eq('slug', String(key));
-
-    const { data: stores } = await query.limit(1);
-    const found = stores?.[0] || null;
+    /* Katalog bitta server funksiyasidan keladi: faqat mijozga
+       ko'rsatiladigan maydonlar. Ilgari select('*') bilan tannarx,
+       barcode va IMEI ham brauzerga tushardi. */
+    const { data: res } = await supabase.rpc('storefront', { p_key: String(key) });
+    const found = res?.store || null;
     setStore(found);
 
     if (found) {
-      const { data } = await supabase.from('products').select('*')
-        .eq('store_id', found.id).eq('is_online', true);
+      const data = res.products || [];
       /* Suratli tovarlar oldinga, tugaganlari orqaga. Katalogning
          birinchi ekrani do'konning yuzi — u yerda bo'sh kvadratlar
          turmasligi kerak. */
@@ -359,33 +357,19 @@ export default function Storefront({ storeKey: keyFromHost }) {
     if (!name.trim() || !phone.trim() || items.length === 0) return;
     setSubmitting(true);
 
-    const { data: existing } = await supabase.from('customers')
-      .select('id').eq('store_id', store.id).eq('phone', phone.trim()).maybeSingle();
-
-    let customerId = existing?.id ?? null;
-    if (!customerId) {
-      const { data: created } = await supabase.from('customers').insert({
-        store_id: store.id, name: name.trim(), phone: phone.trim(),
-        type: 'regular', total_spent: 0, purchases: 0,
-      }).select().single();
-      customerId = created?.id ?? null;
-    }
-
-    const { error } = await supabase.from('transactions').insert({
-      store_id: store.id,
-      customer_id: customerId,
-      receipt_no: `#WEB-${Math.floor(1000 + Math.random() * 9000)}`,
-      cashier: `Saytdan: ${name.trim()} · ${phone.trim()}`,
-      items,
-      total,
-      discount: 0,
-      payment_method: 'online',
-      status: 'online_pending',
+    /* Buyurtma serverda yoziladi va NARX BAZADAN olinadi. Ilgari summani
+       brauzer yuborardi — istalgan tovarni 1 so'mga buyurtma qilish
+       mumkin edi. Endi faqat tovar id va miqdor ketadi. */
+    const { data: res, error } = await supabase.rpc('place_order', {
+      p_store: store.id,
+      p_name: name.trim(),
+      p_phone: phone.trim(),
+      p_items: items.map(it => ({ id: it.id, qty: it.qty })),
     });
 
     setSubmitting(false);
     if (error) { setToast(`Buyurtma yuborilmadi: ${error.message}`); return; }
-    setDone({ total, count: itemCount });
+    setDone({ total: res?.total ?? total, count: itemCount });
     setCart({});
   };
 

@@ -31,7 +31,7 @@ export const PAY_METHODS = [
 ];
 
 export function CartProvider({ children }) {
-  const { user } = useAuth();
+  const { user, branch } = useAuth();
   const data = useData();
 
   const [items, setItems] = useState([]);
@@ -131,6 +131,9 @@ export function CartProvider({ children }) {
       status: 'completed',
       // Sotuv qaysi smenada bo'lgani — kassa yopilganda hisob shu bo'yicha
       shift_id: data.shift?.id ?? null,
+      // Filial shu yerda yoziladi: oflayn navbatdagi sotuv ulanguncha
+      // boshqa filial tanlansa ham o'z joyiga tushsin
+      branch_id: branch ?? null,
     };
 
     const online = await ping();
@@ -203,7 +206,7 @@ export function CartProvider({ children }) {
         status: paid >= total ? "To'landi" : "To'lanmagan",
       };
     }
-  }, [items, totals, payMethod, customer, paidAmount, dueDays, user, data, queue, persistQueue]);
+  }, [items, totals, payMethod, customer, paidAmount, dueDays, user, branch, data, queue, persistQueue]);
 
   /* ── Navbatni yuborish ──────────────────────────────────────────────── */
 

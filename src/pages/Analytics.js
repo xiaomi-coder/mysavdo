@@ -9,6 +9,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../utils/supabaseClient';
 import { analyze } from '../utils/insights';
+import { aiReport } from '../utils/aiClient';
 
 /* ══════════════════════════════════════════════════════════════════════════
    AI Analitika
@@ -45,6 +46,25 @@ export default function Analytics() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [raw, setRaw] = useState(null);
+
+  /* AI maslahat. Kalit platforma egasida bo'lsa yoqiladi — bo'lmasa
+     sahifa hozirgidek faqat formulalar bilan ishlayveradi. */
+  const [aiOn, setAiOn] = useState(false);
+  const [ai, setAi] = useState(null);         // {text, cached, at}
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiErr, setAiErr] = useState(null);
+
+  useEffect(() => {
+    supabase.rpc('ai_config').then(({ data }) => setAiOn(Boolean(data?.enabled)));
+  }, []);
+
+  const askAi = async (refresh = false) => {
+    setAiBusy(true); setAiErr(null);
+    const r = await aiReport(refresh);
+    setAiBusy(false);
+    if (r.error) { setAiErr(r.error); return; }
+    setAi(r);
+  };
 
   const load = useCallback(async (storeId) => {
     setLoading(true);
@@ -108,12 +128,64 @@ export default function Analytics() {
     <Page>
       <PageHeader
         title="AI Analitika"
-        subtitle="Hisob-kitob shu kompyuterda bajariladi — ma’lumot hech qayerga yuborilmaydi"
+        subtitle={aiOn
+          ? 'Hisob-kitob shu kompyuterda; AI maslahat uchun faqat raqamlar yuboriladi'
+          : 'Hisob-kitob shu kompyuterda bajariladi — ma’lumot hech qayerga yuborilmaydi'}
       >
         <Btn variant="secondary" icon="arrows-clockwise" onClick={() => load(user.store_id)}>
           Yangilash
         </Btn>
       </PageHeader>
+
+      {/* ── AI maslahat ──
+          Do'kon raqamlari serverda yig'ilib AI ga yuboriladi va o'zbekcha
+          maslahat qaytadi. Mijoz ismi, telefoni, IMEI yuborilmaydi.
+          Javob kuniga bir marta hisoblanadi — qayta ochganda tayyor keladi. */}
+      {aiOn && (
+        <Card padding="var(--space-6)" gap={12} style={{ borderColor: 'var(--color-accent)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+            <Icon name="sparkle" fill size={18} color="var(--color-accent)" />
+            <span style={{ fontSize: 14, fontWeight: 500, flex: 1 }}>AI maslahat</span>
+            {ai && (
+              <Btn variant="ghost" size="sm" icon="arrows-clockwise" loading={aiBusy}
+                onClick={() => askAi(true)}>Qayta hisoblash</Btn>
+            )}
+          </div>
+
+          {!ai && !aiErr && (
+            <>
+              <div style={{ fontSize: 13, color: 'var(--color-neutral-400)', lineHeight: 1.6 }}>
+                Do‘koningiz raqamlariga qarab nima qilish kerakligini aytadi: qaysi tovar
+                yotib qolgan, qaysi biri tugayapti, qayerda pul yo‘qotyapsiz.
+              </div>
+              <Btn variant="primary" icon="sparkle" loading={aiBusy} onClick={() => askAi(false)}
+                style={{ alignSelf: 'flex-start' }}>
+                Maslahat olish
+              </Btn>
+            </>
+          )}
+
+          {aiErr && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13, color: 'var(--dang)' }}>
+              <Icon name="warning-circle" size={16} />
+              <span style={{ flex: 1 }}>{aiErr}</span>
+              <Btn variant="secondary" size="sm" onClick={() => askAi(false)}>Qayta urinish</Btn>
+            </div>
+          )}
+
+          {ai && (
+            <>
+              <div style={{ fontSize: 13.5, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{ai.text}</div>
+              {ai.at && (
+                <div style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>
+                  {new Date(ai.at).toLocaleString('uz-UZ')} da hisoblangan
+                  {ai.cached ? ' · tayyor javob' : ''}
+                </div>
+              )}
+            </>
+          )}
+        </Card>
+      )}
 
       {thin && (
         <Card padding="var(--space-6)" style={{

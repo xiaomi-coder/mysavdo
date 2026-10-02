@@ -10,6 +10,7 @@ import { imageUrl } from '../utils/upload';
 import { stockStatus } from '../utils/stock';
 import StockHistory from '../components/StockHistory';
 import LabelPrint from '../components/LabelPrint';
+import Transfers from '../components/Transfers';
 
 /* ── doimiylar ─────────────────────────────────────────────────────────── */
 
@@ -21,12 +22,11 @@ const CONDITIONS = [
   { value: 'B/U', label: '♻️ B/U' },
   { value: 'Refurbished', label: '🔧 Refurbished' },
 ];
-const BRANCHES = ['Chilonzor', 'Yunusobod', "Qo'yliq"];
 const EMOJIS = ['📦', '📱', '🎧', '🔌', '⌚', '💻', '🖥️', '⌨️', '🔗', '🥤', '🍪', '🧋'];
 
 const TABS = [
   { id: 'list', label: 'Ombor', icon: 'package' },
-  { id: 'transfer', label: "Filiallarga Ko'chirish", icon: 'truck' },
+  { id: 'transfer', label: "Filiallar o'rtasida ko'chirish", icon: 'truck' },
   { id: 'audit', label: 'Inventarizatsiya', icon: 'clipboard-text' },
 ];
 
@@ -45,7 +45,10 @@ const statusOf = stockStatus;
    ══════════════════════════════════════════════════════════════════════ */
 
 export default function Inventory() {
-  const { user, refreshAlerts } = useAuth();
+  const { user, refreshAlerts, branches, activeBranch, pinnedBranch, chooseBranch } = useAuth();
+  // Barcha filiallar rejimi: qoldiq jami ko'rinadi, uni o'zgartirib
+  // bo'lmaydi (qaysi filialniki ekani noma'lum) — baza ham rad etadi
+  const allMode = activeBranch === 'all';
   const isPhoneStore = user?.storeType === 'phone';
 
   const [tab, setTab] = useState('list');
@@ -66,6 +69,7 @@ export default function Inventory() {
   const [labelsFor, setLabelsFor] = useState(null);
 
   const notify = (msg, variant = 'ok') => setToast({ msg, variant });
+  const onTransferError = useCallback((m) => setToast({ msg: m, variant: 'dang' }), []);
 
   const load = useCallback(async (storeId) => {
     setLoading(true);
@@ -146,6 +150,22 @@ export default function Inventory() {
           );
         })}
       </div>
+
+      {allMode && tab !== 'transfer' && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10,
+          background: 'var(--warnbg)', color: 'var(--warn)', fontSize: 12.5,
+        }}>
+          <Icon name="map-pin" size={16} />
+          <span style={{ flex: 1 }}>
+            Barcha filiallar ko‘rsatilmoqda — qoldiq <b style={{ fontWeight: 500 }}>jami</b>.
+            Kirim, tuzatish va inventarizatsiya uchun filialni tanlang.
+          </span>
+          {(branches || []).map(b => (
+            <Btn key={b.id} variant="secondary" size="sm" onClick={() => chooseBranch(b.id)}>{b.name}</Btn>
+          ))}
+        </div>
+      )}
 
       {tab === 'list' && (
         <>
@@ -324,7 +344,8 @@ export default function Inventory() {
                               <div style={{ display: 'flex', gap: 5, justifyContent: 'flex-end' }}>
                                 <Btn
                                   variant={st.key === 'out' ? 'primary' : 'secondary'} size="sm" icon="plus"
-                                  onClick={() => setKirimFor(p)}
+                                  onClick={() => setKirimFor(p)} disabled={allMode}
+                                  title={allMode ? 'Avval filialni tanlang' : undefined}
                                 >
                                   Kirim
                                 </Btn>
@@ -346,14 +367,15 @@ export default function Inventory() {
       )}
 
       {tab === 'transfer' && (
-        <TransferTab
-          products={products} actor={user?.name}
+        <Transfers
+          products={products} branches={branches || []}
+          activeBranch={activeBranch} pinnedBranch={pinnedBranch} onChooseBranch={chooseBranch}
           onDone={(msg) => { load(user.store_id); refreshAlerts(); notify(msg); }}
-          onError={(m) => notify(m, 'dang')}
+          onError={onTransferError}
         />
       )}
 
-      {tab === 'audit' && (
+      {tab === 'audit' && !allMode && (
         <AuditTab
           products={products} actor={user?.name}
           onDone={(msg) => { load(user.store_id); refreshAlerts(); notify(msg); }}
@@ -884,109 +906,6 @@ function MoneyInput({ value, onChange, accent }) {
       />
       <span style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>so‘m</span>
     </div>
-  );
-}
-
-/* ── Filiallarga ko'chirish ────────────────────────────────────────────── */
-function TransferTab({ products, actor, onDone, onError }) {
-  const [branch, setBranch] = useState(BRANCHES[0]);
-  const [productId, setProductId] = useState('');
-  const [qty, setQty] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const product = products.find(p => String(p.id) === productId);
-  const n = parseInt(qty, 10) || 0;
-  const valid = product && n > 0 && n <= product.stock;
-
-  const apply = async () => {
-    setSaving(true);
-    const { error } = await supabase.rpc('move_stock', {
-      p_product: product.id,
-      p_qty: -n,
-      p_type: 'kochirish',
-      p_note: `${branch} filialiga`,
-      p_actor: actor || null,
-    });
-    setSaving(false);
-    if (error) return onError(`Ko‘chirilmadi: ${error.message}`);
-    setProductId(''); setQty('');
-    onDone(`${branch} filialiga ${n} dona "${product.name}" ko‘chirildi`);
-  };
-
-  return (
-    <Card padding="var(--space-6)" gap={13} style={{ maxWidth: 620 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Icon name="truck" size={18} color="var(--color-accent)" />
-        <span style={{ fontSize: 15, fontWeight: 500 }}>Filiallarga Ko‘chirish</span>
-      </div>
-
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 12, padding: 13, borderRadius: 10,
-        background: 'color-mix(in srgb, var(--color-text) 4%, transparent)',
-      }}>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'center', textAlign: 'center' }}>
-          <Icon name="storefront" fill size={20} color="var(--color-accent)" />
-          <span style={{ fontSize: 12.5, fontWeight: 500 }}>Asosiy do‘kon</span>
-          <span style={{ fontSize: 10.5, color: 'var(--color-neutral-500)' }}>Manba</span>
-        </div>
-        <Icon name="arrow-right" size={20} color="var(--color-neutral-500)" />
-        <div style={{ flex: 1.6, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <span style={{ fontSize: 10.5, color: 'var(--color-neutral-500)', textAlign: 'center' }}>Qaysi filialga?</span>
-          <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
-            {BRANCHES.map(b => (
-              <button key={b} onClick={() => setBranch(b)} style={{
-                padding: '7px 13px', borderRadius: 14, border: 0, cursor: 'pointer', font: 'inherit',
-                fontSize: 12, fontWeight: branch === b ? 500 : 400,
-                background: branch === b ? 'var(--color-accent)' : 'color-mix(in srgb, var(--color-text) 6%, transparent)',
-                color: branch === b ? 'var(--color-bg)' : 'var(--color-neutral-300)',
-              }}>{b}</button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <Field label="Tovar">
-        <select className="input" value={productId} onChange={e => { setProductId(e.target.value); setQty(''); }}>
-          <option value="">Tovarni tanlang…</option>
-          {products.filter(p => p.stock > 0).map(p => (
-            <option key={p.id} value={p.id}>{p.name} — qoldiq: {p.stock}</option>
-          ))}
-        </select>
-      </Field>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: 9, alignItems: 'end' }}>
-        <Field label="Miqdor">
-          <input className="input num" inputMode="numeric" value={qty} disabled={!product}
-            onChange={e => setQty(e.target.value.replace(/\D/g, ''))}
-            style={{ fontWeight: 600, borderColor: valid ? 'var(--color-accent)' : undefined }} />
-        </Field>
-        <div style={{ fontSize: 11.5, color: 'var(--color-neutral-500)', paddingBottom: 9 }}>
-          {product && n > 0 && (
-            n > product.stock
-              ? <span style={{ color: 'var(--dang)' }}>Omborda faqat {product.stock} dona bor</span>
-              : <>Ko‘chirishdan keyin asosiy do‘konda: <b style={{ color: 'var(--color-text)', fontWeight: 500 }}>{product.stock - n} ta</b>
-                {' · '}{branch}da: <b style={{ color: 'var(--color-text)', fontWeight: 500 }}>+{n}</b></>
-          )}
-        </div>
-      </div>
-
-      <Btn variant="primary" icon="truck" block disabled={!valid} loading={saving}
-        onClick={apply} style={{ minHeight: 44 }}>
-        Ko‘chirishni Tasdiqlash
-      </Btn>
-
-      <div style={{
-        display: 'flex', gap: 9, alignItems: 'flex-start',
-        padding: '10px 12px', borderRadius: 8,
-        background: 'color-mix(in srgb, var(--color-text) 4%, transparent)',
-      }}>
-        <Icon name="info" size={14} color="var(--color-neutral-500)" style={{ marginTop: 1 }} />
-        <span style={{ fontSize: 11.5, color: 'var(--color-neutral-500)', lineHeight: 1.45 }}>
-          Ko‘chirish asosiy do‘kon qoldig‘idan yechiladi va harakat tarixiga
-          yoziladi. Filialning o‘z ombori hozircha alohida yuritilmaydi.
-        </span>
-      </div>
-    </Card>
   );
 }
 

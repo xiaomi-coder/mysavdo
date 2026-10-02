@@ -26,7 +26,7 @@ const TERMS = [7, 14, 30, 60];
 
 export default function CartSheet({ visible, onClose, navigation }) {
   const { t } = useTheme();
-  const { user, store } = useAuth();
+  const { user, store, branchInfo } = useAuth();
   const d = useData();
   const cart = useCart();
   const { notify, showSuccess, closeSuccess } = useFeedback();
@@ -81,6 +81,7 @@ export default function CartSheet({ visible, onClose, navigation }) {
       cashier: user?.name,
       customer: cart.customer,
       storeName: store?.name,
+      branch: branchInfo,
     };
 
     cart.clear();

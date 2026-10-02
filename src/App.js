@@ -24,6 +24,7 @@ import Orders from './pages/Orders';
 import BulkReceive from './pages/BulkReceive';
 import Suppliers from './pages/Suppliers';
 import DeviceLock from './pages/DeviceLock';
+import Privacy from './pages/Privacy';
 import { storeSlugFromHost } from './utils/storeHost';
 
 function PrivateRoute({ children, permission, storeType }) {
@@ -68,6 +69,8 @@ function AppRoutes() {
       <Route path="/" element={user ? <RoleRedirect /> : <LandingPage />} />
       <Route path="/login" element={user ? <RoleRedirect /> : <Login />} />
       <Route path="/shop/:storeId" element={<Storefront />} />
+      {/* Ochiq: Google Play / App Store maxfiylik siyosati havolasini talab qiladi */}
+      <Route path="/maxfiylik" element={<Privacy />} />
       <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
         <Route path="no-access" element={<NoAccess />} />
         {/* Creator */}

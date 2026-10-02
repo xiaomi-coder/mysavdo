@@ -77,9 +77,10 @@ function compactHtml(d) {
   return `
   ${d.logo ? `<div class="center" style="margin-bottom:4px"><img src="${esc(d.logo)}" style="max-height:14mm;margin:0 auto"></div>` : ''}
   <div class="center bold" style="font-size:16px;margin-bottom:4px;text-transform:uppercase">${esc(d.storeName)}</div>
+  ${d.branchName ? `<div class="center" style="font-size:10px">${esc(d.branchName)}</div>` : ''}
   ${d.address ? `<div class="center" style="font-size:10px">${esc(d.address)}</div>` : ''}
   ${d.phone ? `<div class="center" style="font-size:10px;margin-bottom:4px">${esc(d.phone)}</div>` : ''}
-  <div class="center" style="margin-bottom:6px">Chek: ${String(d.receiptNo).padStart(6, '0')}</div>
+  <div class="center" style="margin-bottom:6px">Chek: ${fmtNo(d.receiptNo)}</div>
   <div class="center" style="margin-bottom:6px;font-size:10px">${esc(d.dateText)}</div>
 
   <div>Kassir: ${esc(d.cashier)}</div>
@@ -129,11 +130,12 @@ function detailedHtml(d) {
   return `
   ${d.logo ? `<div class="center" style="margin-bottom:4px"><img src="${esc(d.logo)}" style="max-height:16mm;margin:0 auto"></div>` : ''}
   <div class="center bold" style="font-size:16px;margin-bottom:4px;text-transform:uppercase">${esc(d.storeName)}</div>
+  ${d.branchName ? `<div class="center info-text">${esc(d.branchName)}</div>` : ''}
   ${d.address ? `<div class="center info-text">${esc(d.address)}</div>` : ''}
   ${d.phone ? `<div class="center info-text">${esc(d.phone)}</div>` : ''}
   <div class="center bold" style="font-size:12px;margin-bottom:6px">Mahsulot chek bilan 30 KUN ichida qaytariladi</div>
 
-  <div class="center bold" style="font-size:13px;margin-bottom:4px">Tovar cheki № ${String(d.receiptNo).padStart(6, '0')}</div>
+  <div class="center bold" style="font-size:13px;margin-bottom:4px">Tovar cheki № ${fmtNo(d.receiptNo)}</div>
   <div class="center info-text" style="margin-bottom:8px">${esc(d.dateText)}</div>
 
   <div class="info-text">Sotuvchi: ${esc(d.cashier)}</div>
@@ -196,10 +198,12 @@ const STYLES = {
  * bir xil chek chiqadi. Mobil tomon sozlamalarni o'zi uzatadi
  * (u yerda localStorage yo'q).
  */
+const fmtNo = (n) => (/^\d+$/.test(String(n)) ? String(n).padStart(6, '0') : String(n));
+
 export function buildReceiptHtml({
   items, subtotal, discount, total, paidAmount = 0,
   payMethod, receiptNo, cashier, customer, storeName, isPhone,
-  settings,
+  settings, branch,
 }) {
   const cfg = { ...DEFAULT_RECEIPT_SETTINGS, ...(settings || getReceiptSettings()) };
   const compact = cfg.template === 'compact' || cfg.template === 'standard';
@@ -212,7 +216,12 @@ export function buildReceiptHtml({
     payLabel: PAY_LABELS[payMethod] || 'Naqd',
     receiptNo, cashier: cashier || 'Kassir', customer, isPhone,
     storeName: cfg.storeName || storeName || 'MyBazzar',
-    address: cfg.address, phone: cfg.phone,
+    /* Filial bo'lsa chekda o'sha filial nomi, manzili va telefoni —
+       mijoz qaytarishga qaysi do'konga borishini bilsin. Asosiy filialda
+       sozlamadagi manzil ustun (egasi uni qo'lda to'g'rilagan bo'lishi mumkin). */
+    branchName: branch && !branch.is_main ? branch.name : null,
+    address: (branch && !branch.is_main && branch.address) || cfg.address,
+    phone: (branch && !branch.is_main && branch.phone) || cfg.phone,
     footer: cfg.footer || 'Xaridingiz uchun rahmat!',
     logo: cfg.showLogo && cfg.logoUrl ? cfg.logoUrl : null,
     qr: cfg.showQr && cfg.qrUrl ? qrImageUrl(cfg.qrUrl) : null,

@@ -47,6 +47,7 @@ export async function printReceipt(payload) {
     customer: payload.customer,
     storeName: payload.storeName,
     isPhone: payload.isPhone,
+    branch: payload.branch || null,
     settings,
   });
 

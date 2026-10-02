@@ -29,7 +29,7 @@ const REASONS = ['Nuqsonli', 'Yoqmadi', 'Noto‘g‘ri tovar', 'Boshqa sabab'];
 
 export default function ReceiptSheet({ transaction, onClose }) {
   const { t } = useTheme();
-  const { user, store } = useAuth();
+  const { user, store, branches } = useAuth();
   const d = useData();
   const { notify } = useFeedback();
 
@@ -90,6 +90,8 @@ export default function ReceiptSheet({ transaction, onClose }) {
         p_note: reason,
         p_actor: user?.name,
         p_txn: tx.id,
+        // Tovar sotilgan filialga qaytadi (joriy tanlangan filialga emas)
+        p_branch: tx.branch_id ?? null,
       });
       if (error) {
         setBusy(false);
@@ -110,7 +112,9 @@ export default function ReceiptSheet({ transaction, onClose }) {
       payment_method: tx.payment_method,
       status: 'returned',
       // Naqd qaytarish kassadan chiqim — joriy smenaga yoziladi
-      shift_id: d.shift?.id ?? null,
+      // Smena boshqa filialniki bo'lsa bog'lanmaydi — kassa hisobi aralashmasin
+      shift_id: d.shift && d.shift.branch_id === tx.branch_id ? d.shift.id : null,
+      branch_id: tx.branch_id ?? null,
     }).select().single();
 
     setBusy(false);
@@ -241,6 +245,7 @@ export default function ReceiptSheet({ transaction, onClose }) {
           customer: d.customers.find((c) => c.id === tx.customer_id),
           storeName: store?.name,
           isPhone: store?.store_type === 'phone',
+          branch: branches.find((b) => b.id === tx.branch_id) || null,
         }).catch(() => notify('Chop etib bo‘lmadi', 'error'))}
       />
     </Sheet>

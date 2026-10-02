@@ -26,6 +26,13 @@ if [ "$SIZE" -lt 10000 ]; then
   exit 1
 fi
 
+# Serverdan tashqariga nusxa: egasining kompyuteri har kuni shu faylni
+# oladi. mbbackup kaliti faqat shu faylni o'qiy oladi (authorized_keys dagi
+# majburiy buyruq), boshqa hech narsa qila olmaydi.
+if id mbbackup >/dev/null 2>&1; then
+  install -o mbbackup -g mbbackup -m 600 "$FILE" /home/mbbackup/latest.sql.gz
+fi
+
 # 14 kundan eski nusxalarni o'chirish
 find "$DIR" -name 'mybazzar-*.sql.gz' -mtime +$KEEP_DAYS -delete
 

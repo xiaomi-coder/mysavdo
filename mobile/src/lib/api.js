@@ -21,12 +21,36 @@ export const API_URL = cfg.apiUrl || 'https://mybazzar.uz';
 const ANON_KEY = cfg.anonKey || '';
 const REST = `${API_URL}/rest/v1`;
 
-const HEADERS = {
+/* ── Foydalanuvchi tokeni ───────────────────────────────────────────────
+   Login serverda bajariladi va JWT qaytaradi (ichida store_id va rol).
+   Baza qatorlarni shu token bo'yicha filtrlaydi — boshqa do'konning
+   ma'lumoti umuman qaytmaydi.
+
+   Token yo'q bo'lsa Authorization yuborilmaydi: server so'rovni anonim
+   deb qabul qiladi va faqat login'ga ruxsat beradi. Ilgari hamma so'rov
+   anon kalit bilan ketardi va u barcha jadvallarni ochardi. */
+let TOKEN = null;
+let onAuthLost = null;
+
+export function setToken(token) { TOKEN = token || null; }
+
+/* Tanlangan filial — har so'rov X-Branch bilan ketadi. Baza qoldiq,
+   sotuv va smenani shu filial bo'yicha qaytaradi. Filialga biriktirilgan
+   xodimda server sarlavhaga qaramaydi — tokendagi filial ustun. */
+let BRANCH = null;
+export function setBranch(id) { BRANCH = id == null ? null : String(id); }
+
+/* Token muddati o'tsa yoki bekor bo'lsa (401) — AuthContext sessiyani
+   yopib, kirish ekraniga qaytaradi */
+export function onAuthExpired(fn) { onAuthLost = fn; }
+
+const headers = () => ({
   apikey: ANON_KEY,
-  Authorization: `Bearer ${ANON_KEY}`,
+  ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {}),
+  ...(TOKEN && BRANCH ? { 'X-Branch': BRANCH } : {}),
   'Content-Type': 'application/json',
   Accept: 'application/json',
-};
+});
 
 /* Internet yo'qligini alohida ajratamiz — foydalanuvchiga
    "server xato berdi" emas, "internet yo'q" deb aytish kerak. */
@@ -47,6 +71,7 @@ async function send(url, options) {
   const text = await res.text();
   let body = null;
   if (text) { try { body = JSON.parse(text); } catch { body = text; } }
+  if (res.status === 401 && TOKEN && onAuthLost) onAuthLost();
   if (!res.ok) {
     const msg = (body && (body.message || body.hint)) || `Xato ${res.status}`;
     const err = new Error(msg);
@@ -132,7 +157,7 @@ class Query {
   then(resolve, reject) {
     send(this._url(), {
       method: this.method,
-      headers: { ...HEADERS, ...this.headers },
+      headers: { ...headers(), ...this.headers },
       body: this.body ? JSON.stringify(this.body) : undefined,
     })
       .then((data) => {
@@ -160,7 +185,7 @@ export const db = {
     try {
       const data = await send(`${REST}/rpc/${name}`, {
         method: 'POST',
-        headers: HEADERS,
+        headers: headers(),
         body: JSON.stringify(args),
       });
       return { data, error: null };
@@ -171,10 +196,31 @@ export const db = {
 };
 
 /* Serverga yetib boryaptimizmi — offline bannerini ko'rsatish uchun */
+/* Server javob bersa (hatto 401 bo'lsa ham) — internet bor. Ilgari
+   stores jadvalini anonim o'qirdi; endi anonimga u yopiq, shuning uchun
+   ildiz manzilga murojaat qilamiz va har qanday javobni "onlayn" deymiz. */
+/* AI maslahat xizmati — PostgREST dan tashqarida (mybazzar.uz/ai).
+   Kalit serverda qoladi, telefon faqat natijani oladi. */
+export async function aiCall(path, body) {
+  if (!TOKEN) return { error: 'Avval tizimga kiring' };
+  try {
+    const res = await fetch(`${API_URL}/ai${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify(body || {}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return { error: data.error || `Xatolik ${res.status}` };
+    return data;
+  } catch {
+    return { error: 'AI xizmatiga ulanib bo‘lmadi' };
+  }
+}
+
 export async function ping() {
   try {
-    const res = await fetch(`${REST}/stores?select=id&limit=1`, { headers: HEADERS });
-    return res.ok;
+    const res = await fetch(`${REST}/`, { method: 'HEAD', headers: headers() });
+    return res.status < 500;
   } catch {
     return false;
   }

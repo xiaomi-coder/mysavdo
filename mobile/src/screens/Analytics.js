@@ -6,7 +6,7 @@ import { useData } from '../DataContext';
 import {
   Screen, Card, Txt, Btn, Icon, Header, SectionLabel, Skeleton,
 } from '../ui';
-import { db } from '../lib/api';
+import { db, aiCall } from '../lib/api';
 import { analyze } from '../lib/insights';
 import { money, shortMoney, weekdayShort } from '../lib/format';
 import { alpha, R } from '../theme';
@@ -94,6 +94,9 @@ export default function Analytics({ navigation }) {
         sub={store?.name}
         onBack={() => navigation.goBack()}
       />
+
+      {/* AI maslahat — kalit platforma egasida bo'lsagina ko'rinadi */}
+      <AiCard t={t} />
 
       {thin ? (
         <Card border={t.accdim} pad={14} style={{ marginBottom: 14, flexDirection: 'row', gap: 11 }}>
@@ -584,4 +587,69 @@ function dowDate(dow) {
   const d = new Date();
   d.setDate(d.getDate() - d.getDay() + (dow ?? 0));
   return d;
+}
+
+/* ── AI maslahat ──────────────────────────────────────────────────────────
+   Do'kon raqamlari serverda yig'ilib AI ga yuboriladi, o'zbekcha maslahat
+   qaytadi. Mijoz ismi, telefoni, IMEI yuborilmaydi. Javob kuniga bir
+   marta hisoblanadi — qayta ochilganda tayyori keladi. */
+function AiCard({ t }) {
+  const [on, setOn] = useState(false);
+  const [text, setText] = useState(null);
+  const [at, setAt] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    db.rpc('ai_config').then(({ data }) => setOn(Boolean(data && data.enabled)));
+  }, []);
+
+  const ask = async (refresh) => {
+    setBusy(true); setErr(null);
+    const r = await aiCall('/report', { refresh });
+    setBusy(false);
+    if (r.error) { setErr(r.error); return; }
+    setText(r.text); setAt(r.at || null);
+  };
+
+  if (!on) return null;
+
+  return (
+    <Card border={t.acc} pad={14} style={{ marginBottom: 14, gap: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Icon name="sparkle" size={18} color={t.acc} />
+        <Txt size={14} weight="500" style={{ flex: 1 }}>AI maslahat</Txt>
+        {text ? (
+          <Btn title="Yangilash" size="sm" variant="ghost" loading={busy} onPress={() => ask(true)} />
+        ) : null}
+      </View>
+
+      {!text && !err ? (
+        <>
+          <Txt size={12.5} color={t.t3} style={{ lineHeight: 18 }}>
+            Qaysi tovar yotib qolgan, qaysi biri tugayapti, qayerda pul yo‘qotyapsiz —
+            raqamlaringizga qarab aytadi.
+          </Txt>
+          <Btn title="Maslahat olish" icon="sparkle" loading={busy} onPress={() => ask(false)} full />
+        </>
+      ) : null}
+
+      {err ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Icon name="warning-circle" size={16} color={t.err} />
+          <Txt size={12.5} color={t.err} style={{ flex: 1 }}>{err}</Txt>
+          <Btn title="Qayta" size="sm" variant="secondary" onPress={() => ask(false)} />
+        </View>
+      ) : null}
+
+      {text ? (
+        <>
+          <Txt size={13} style={{ lineHeight: 20 }}>{text}</Txt>
+          {at ? (
+            <Txt size={11} color={t.t4}>{new Date(at).toLocaleString('uz-UZ')} da hisoblangan</Txt>
+          ) : null}
+        </>
+      ) : null}
+    </Card>
+  );
 }

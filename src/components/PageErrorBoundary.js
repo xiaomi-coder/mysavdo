@@ -1,4 +1,5 @@
 import React from 'react';
+import { reportError } from '../utils/errorReport';
 import { Icon, Btn } from './UI';
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -26,6 +27,8 @@ export default class PageErrorBoundary extends React.Component {
   componentDidCatch(error, info) {
     // Brauzer konsolida to'liq iz qoladi — nosozlikni topish uchun
     console.error('Sahifa xatosi:', error, info?.componentStack);
+    // Va bizga ham yuboriladi: do'konchi aytmasa ham xabardor bo'laylik
+    reportError(error, 'sahifa');
   }
 
   render() {

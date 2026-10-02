@@ -20,7 +20,7 @@ function formatDate(d) {
 export default function Topbar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, pendingTxns, alerts, settings, toggleSetting } = useAuth();
+  const { user, pendingTxns, alerts, settings, toggleSetting, branches, activeBranch, pinnedBranch, chooseBranch } = useAuth();
   const dark = settings?.dark !== false;
   const { t } = useTranslation();
   const [showNotif, setShowNotif] = useState(false);
@@ -117,6 +117,34 @@ export default function Topbar() {
       </div>
 
       <div style={{ flex: 1 }} />
+
+      {/* Filial. Bittagina filial bo'lsa ko'rsatilmaydi — oddiy do'konga
+          ortiqcha tanlov kerak emas. Biriktirilgan xodim faqat nomini ko'radi. */}
+      {branches?.length > 1 && (
+        pinnedBranch ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, color: 'var(--color-neutral-300)' }}>
+            <Icon name="map-pin" size={15} color="var(--color-accent)" />
+            {branches.find(b => b.id === pinnedBranch)?.name || 'Filial'}
+          </div>
+        ) : (
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 7, padding: '0 10px', minHeight: 32,
+            borderRadius: 'var(--radius-md)', border: '1px solid var(--color-divider)',
+            background: 'var(--color-surface)', fontSize: 13,
+          }}>
+            <Icon name="map-pin" size={15} color="var(--color-accent)" />
+            <select
+              value={String(activeBranch ?? '')}
+              onChange={e => chooseBranch(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+              style={{ background: 'transparent', border: 0, color: 'var(--color-text)', fontSize: 13, outline: 'none', cursor: 'pointer' }}
+            >
+              {branches.map(b => <option key={b.id} value={b.id}>{b.name}{b.is_main ? ' (asosiy)' : ''}</option>)}
+              {user?.role === 'owner' || user?.role === 'manager'
+                ? <option value="all">Barcha filiallar</option> : null}
+            </select>
+          </label>
+        )
+      )}
 
       {/* Sinxronlash holati */}
       <div style={{

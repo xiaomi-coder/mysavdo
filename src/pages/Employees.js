@@ -33,7 +33,7 @@ const ROLE_LABEL = { owner: 'Do‘kon egasi', manager: 'Manager', cashier: 'Sotu
    ══════════════════════════════════════════════════════════════════════ */
 
 export default function Employees() {
-  const { user } = useAuth();
+  const { user, branches } = useAuth();
   const [loading, setLoading] = useState(true);
   const [staff, setStaff] = useState([]);
   const [showForm, setShowForm] = useState(null); // null | 'new' | xodim
@@ -145,6 +145,7 @@ export default function Employees() {
                               </div>
                               <div style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>
                                 {ROLE_LABEL[s.role] || s.role}
+                                {branches?.length > 1 && ` · ${branches.find(b => b.id === s.branch_id)?.name || 'barcha filiallar'}`}
                               </div>
                             </div>
                           </div>
@@ -253,11 +254,13 @@ export default function Employees() {
 /* ── Xodim qo'shish / tahrirlash ───────────────────────────────────────── */
 function EmployeeForm({ storeId, employee, onClose, onSaved, onError }) {
   const editing = Boolean(employee);
+  const { branches } = useAuth();
   const [f, setF] = useState({
     name: employee?.name || '',
     phone: employee?.phone || '',
     email: employee?.email || '',
-    password: employee?.password || '',
+    password: '',   // parol bazada xesh, ko'rsatib bo'lmaydi
+    branch_id: employee?.branch_id ?? '',
   });
   const [perms, setPerms] = useState(() => {
     if (Array.isArray(employee?.permissions)) return new Set(employee.permissions);
@@ -273,7 +276,8 @@ function EmployeeForm({ storeId, employee, onClose, onSaved, onError }) {
     return n;
   });
 
-  const valid = f.name.trim() && f.email.trim() && f.password.trim() && perms.size > 0;
+  // Tahrirda parol bo'sh qoldirilsa eskisi o'zgarmaydi
+  const valid = f.name.trim() && f.email.trim() && (editing || f.password.trim()) && perms.size > 0;
 
   const save = async () => {
     setSaving(true);
@@ -282,8 +286,12 @@ function EmployeeForm({ storeId, employee, onClose, onSaved, onError }) {
     const role = permissions.includes('settings') || permissions.includes('employees') ? 'manager' : 'cashier';
     const row = {
       store_id: storeId, name: f.name.trim(), phone: f.phone.trim() || null,
-      email: f.email.trim(), password: f.password, role, permissions,
+      email: f.email.trim(), role, permissions,
+      // Biriktirilgan xodim faqat o'z filialini ko'radi va sotadi —
+      // buni baza tokendagi filial orqali majburlaydi, ilova emas
+      branch_id: f.branch_id === '' ? null : Number(f.branch_id),
     };
+    if (f.password.trim()) row.password = f.password;   // bazada xeshlanadi
 
     const { error } = editing
       ? await supabase.from('users').update(row).eq('id', employee.id)
@@ -315,7 +323,8 @@ function EmployeeForm({ storeId, employee, onClose, onSaved, onError }) {
             <input className="input" value={f.email} onChange={e => set('email', e.target.value)}
               placeholder="sardor@mybazzar.uz" />
           </Field>
-          <Field label="Parol">
+          <Field label={editing ? 'Yangi parol' : 'Parol'}
+            hint={editing ? 'O‘zgartirmasangiz bo‘sh qoldiring' : undefined}>
             <div className="input" style={{ display: 'flex', alignItems: 'center', padding: 0, paddingInline: 10 }}>
               <input
                 type={reveal ? 'text' : 'password'} value={f.password}
@@ -327,6 +336,17 @@ function EmployeeForm({ storeId, employee, onClose, onSaved, onError }) {
             </div>
           </Field>
         </div>
+
+        {branches?.length > 1 && (
+          <Field label="Filial" hint={f.branch_id === ''
+            ? 'Hamma filialda ishlay oladi — tepada filialni o‘zi tanlaydi'
+            : 'Faqat shu filialning qoldig‘i, sotuvi va kassasini ko‘radi'}>
+            <select className="input" value={String(f.branch_id)} onChange={e => set('branch_id', e.target.value)}>
+              <option value="">Barcha filiallar</option>
+              {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </Field>
+        )}
 
         <div>
           <label style={{ fontSize: 12, color: 'var(--color-neutral-400)', display: 'block', marginBottom: 7 }}>
@@ -363,7 +383,6 @@ function EmployeeForm({ storeId, employee, onClose, onSaved, onError }) {
 
 /* ── Xodim detali ──────────────────────────────────────────────────────── */
 function EmployeeDetail({ employee: e, onClose, onEdit }) {
-  const [reveal, setReveal] = useState(false);
   const perms = Array.isArray(e.permissions) ? e.permissions : [];
   const permLabels = perms.map(p => MODULES.find(m => m.perm === p)?.label).filter(Boolean);
 
@@ -397,11 +416,7 @@ function EmployeeDetail({ employee: e, onClose, onEdit }) {
         <DetailRow label="Telefon" value={<span className="num">{e.phone || '—'}</span>} />
         <DetailRow label="Email" value={e.email || '—'} />
         <DetailRow label="Parol" value={
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ letterSpacing: reveal ? 0 : 2 }}>{reveal ? e.password : '••••••••'}</span>
-            <Icon name={reveal ? 'eye-slash' : 'eye'} size={14} color="var(--color-neutral-500)"
-              style={{ cursor: 'pointer' }} onClick={() => setReveal(r => !r)} />
-          </span>
+          <span style={{ color: 'var(--color-neutral-500)' }}>shifrlangan · tahrirlashda yangilanadi</span>
         } />
         <DetailRow label="Ruxsatlar" last
           value={permLabels.length ? permLabels.join(' · ') : 'Rol bo‘yicha standart'} />

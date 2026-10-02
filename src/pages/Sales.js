@@ -264,6 +264,8 @@ function ReceiptModal({ tx, all, user, onClose, onReturned, onError }) {
         p_note: reason,
         p_actor: user?.name,
         p_txn: tx.id,
+        // Tovar sotilgan filialga qaytadi (joriy tanlangan filialga emas)
+        p_branch: tx.branch_id ?? null,
       });
       if (error) { setBusy(false); onError(`Ombor yangilanmadi: ${error.message}`); return; }
     }
@@ -273,6 +275,7 @@ function ReceiptModal({ tx, all, user, onClose, onReturned, onError }) {
     if (user?.store_id && user?.name) {
       const { data: sh } = await supabase.from('shifts').select('id')
         .eq('store_id', user.store_id).eq('cashier', user.name).eq('status', 'open')
+        .eq('branch_id', tx.branch_id ?? -1)
         .order('opened_at', { ascending: false }).limit(1);
       shiftId = sh?.[0]?.id ?? null;
     }
@@ -288,6 +291,7 @@ function ReceiptModal({ tx, all, user, onClose, onReturned, onError }) {
       payment_method: tx.payment_method,
       status: 'returned',
       shift_id: shiftId,
+      branch_id: tx.branch_id ?? null,
     });
 
     setBusy(false);

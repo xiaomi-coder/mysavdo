@@ -34,7 +34,12 @@ const DISCOUNTS = [0, 5, 10, 15].map(d => ({ value: d, label: `${d}%` }));
    ══════════════════════════════════════════════════════════════════════ */
 
 export default function POS() {
-  const { user, settings, addPendingTxn, refreshAlerts } = useAuth();
+  const { user, settings, addPendingTxn, refreshAlerts, branches, activeBranch, chooseBranch } = useAuth();
+  const branch = branches?.find(b => b.id === activeBranch) || null;
+  /* Chek raqami filial ichida sanaladi (baza faqat joriy filial sotuvini
+     qaytaradi). Ikki filialda bir xil "#15" chiqmasligi uchun asosiy
+     bo'lmagan filial raqami oldiga qo'shiladi: "#F2-15". */
+  const rcptPrefix = branch && !branch.is_main ? `F${branch.id}-` : '';
   const { shift, reload: reloadShift } = useShift(user);
   const location = useLocation();
   const isPhone = user?.storeType === 'phone';
@@ -161,17 +166,24 @@ export default function POS() {
     const offline = !settings.isOnline && settings.offline;
 
     if (offline) {
-      // Internet yo'q — sotuvni xotiraga saqlaymiz, ulanganda yuboriladi
+      // Internet yo'q — sotuvni xotiraga saqlaymiz, ulanganda yuboriladi.
+      // Filial va smena shu yerda yoziladi: ulanguncha foydalanuvchi
+      // boshqa filialga o'tib qo'ysa ham sotuv o'z joyiga tushsin.
       addPendingTxn({
         id: Date.now(), items, total, discount: discountTotal,
         method: payMethod, customer_id: customer?.id || null,
         time: new Date().toISOString(),
+        store_id: user.store_id, cashier: user.name,
+        receipt_no: `#${rcptPrefix}${receiptNo}-OF`,
+        branch_id: branch?.id ?? null, shift_id: shift?.id ?? null,
+        paid: Number(paidAmount) || 0, due_days: dueDays,
+        customer_name: customer?.name || '', customer_phone: customer?.phone || '',
       });
     } else {
       const { data: txn, error } = await supabase.from('transactions').insert({
         store_id: user.store_id,
         customer_id: customer?.id || null,
-        receipt_no: `#${receiptNo}`,
+        receipt_no: `#${rcptPrefix}${receiptNo}`,
         cashier: user.name,
         items,
         total,
@@ -180,6 +192,7 @@ export default function POS() {
         status: 'completed',
         // Sotuv qaysi smenada bo'lgani — kassa yopilganda hisob shu bo'yicha
         shift_id: shift?.id ?? null,
+        branch_id: branch?.id ?? null,
       }).select().single();
 
       if (error) {
@@ -230,13 +243,13 @@ export default function POS() {
 
     const printed = printReceipt({
       items, subtotal, discount: discountTotal, total, paidAmount,
-      payMethod, receiptNo, cashier: user?.name, customer,
-      storeName: user?.storeName, isPhone,
+      payMethod, receiptNo: `${rcptPrefix}${receiptNo}`, cashier: user?.name, customer,
+      storeName: user?.storeName, isPhone, branch,
     });
 
     setSaving(false);
     setSuccess({
-      receiptNo, total, printed, offline,
+      receiptNo: `${rcptPrefix}${receiptNo}`, total, printed, offline,
       payLabel: PAY_METHODS.find(m => m.id === payMethod)?.label,
     });
   };
@@ -257,6 +270,29 @@ export default function POS() {
       [c.name, c.phone, c.shop_name].some(v => String(v || '').toLowerCase().includes(q))
     );
   }, [customers, custSearch]);
+
+  /* Barcha filiallar rejimida qoldiq jami ko'rinadi — shu holatda sotilsa
+     qaysi filialdan yechilishi noma'lum. Shuning uchun avval filial so'raladi. */
+  if (activeBranch === 'all') {
+    return (
+      <div style={{ display: 'grid', placeItems: 'center', height: '100%', padding: 24 }}>
+        <div style={{ maxWidth: 420, textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+          <Icon name="map-pin" size={34} color="var(--color-accent)" />
+          <div style={{ fontSize: 17, fontWeight: 500 }}>Qaysi filialda sotyapsiz?</div>
+          <div style={{ fontSize: 13, color: 'var(--color-neutral-400)' }}>
+            Hozir barcha filiallar birga ko‘rsatilmoqda. Sotuv qoldig‘i aniq bir filialdan yechiladi.
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 6 }}>
+            {branches.map(b => (
+              <Btn key={b.id} variant={b.is_main ? 'primary' : 'secondary'} onClick={() => chooseBranch(b.id)}>
+                {b.name}
+              </Btn>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   /* ══ ko'rinish ══ */
   return (
@@ -718,7 +754,7 @@ export default function POS() {
               <Btn variant="secondary" icon="printer" onClick={() => printReceipt({
                 items, subtotal, discount: discountTotal, total, paidAmount,
                 payMethod, receiptNo: success.receiptNo, cashier: user?.name,
-                customer, storeName: user?.storeName, isPhone,
+                customer, storeName: user?.storeName, isPhone, branch,
               })}>
                 Qayta chop etish
               </Btn>

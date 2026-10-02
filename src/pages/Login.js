@@ -115,6 +115,9 @@ export default function Login() {
           <div style={{ fontSize: 11, color: 'var(--color-neutral-500)', textAlign: 'center' }}>
             Dilerlar o‘zlariga berilgan login bilan kiradi
           </div>
+          <a href="/maxfiylik" style={{ fontSize: 11, color: 'var(--color-neutral-500)', textAlign: 'center' }}>
+            Maxfiylik siyosati
+          </a>
         </div>
       </form>
     </div>
